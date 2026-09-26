@@ -5,103 +5,271 @@ on:
 
 jobs:
   build:
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
+      # --------------------------------------------------
+      # 1. Checkout repository
+      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find ZIP
+      # --------------------------------------------------
+      # 2. Find uploaded ZIP
+      # --------------------------------------------------
+      - name: Find Majdoor Hisaab ZIP
         shell: bash
         run: |
           set -e
-          ZIP_FILE=$(find . -maxdepth 2 -type f -name "Majdoor_Hisaab_v1_1_source.zip" | head -n 1)
+
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
+            -type f \
+            -name "Majdoor_Hisaab_v1_1_source.zip" \
+            -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "Majdoor Hisaab ZIP नहीं मिली"
+            echo "ERROR: Majdoor_Hisaab_v1_1_source.zip नहीं मिली।"
+            echo ""
+            echo "Repository files:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort
             exit 1
           fi
 
-          echo "ZIP मिली: $ZIP_FILE"
-          mkdir -p build-source
-          unzip -q "$ZIP_FILE" -d build-source
+          echo "ZIP मिली:"
+          echo "$ZIP_FILE"
 
-      - name: Find Android Project
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 3. Extract ZIP
+      # --------------------------------------------------
+      - name: Extract Majdoor Hisaab ZIP
         shell: bash
         run: |
           set -e
 
+          rm -rf "$GITHUB_WORKSPACE/build-source"
+          mkdir -p "$GITHUB_WORKSPACE/build-source"
+
+          unzip -q "$ZIP_FILE" \
+            -d "$GITHUB_WORKSPACE/build-source"
+
+          echo "ZIP extract हो गई।"
+          echo ""
+          echo "Extracted structure:"
+          find "$GITHUB_WORKSPACE/build-source" \
+            -maxdepth 5 \
+            -type f | sort | head -200
+
+      # --------------------------------------------------
+      # 4. Locate Android project
+      # --------------------------------------------------
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT_DIR=""
+
           PROJECT_DIR=$(find "$GITHUB_WORKSPACE/build-source" \
-            -type f -name "settings.gradle.kts" \
-            -print -quit | xargs -r dirname)
+            -type f \
+            -name "settings.gradle.kts" \
+            -print -quit \
+            | xargs -r dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
             PROJECT_DIR=$(find "$GITHUB_WORKSPACE/build-source" \
-              -type f -name "settings.gradle" \
-              -print -quit | xargs -r dirname)
+              -type f \
+              -name "settings.gradle" \
+              -print -quit \
+              | xargs -r dirname)
           fi
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "Android project नहीं मिला"
-            find "$GITHUB_WORKSPACE/build-source" -maxdepth 4 -type f
+            echo "ERROR: Android project नहीं मिला।"
+            echo ""
+            echo "settings.gradle files:"
+            find "$GITHUB_WORKSPACE/build-source" \
+              -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -print
+
+            echo ""
+            echo "Complete extracted structure:"
+            find "$GITHUB_WORKSPACE/build-source" \
+              -maxdepth 6 \
+              -type f | sort
+
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project मिला: $PROJECT_DIR"
+          echo "Android project मिला:"
+          echo "$PROJECT_DIR"
 
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 5. Verify Android project
+      # --------------------------------------------------
+      - name: Verify Android project
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "Project directory:"
+          pwd
+
+          echo ""
+          echo "Project files:"
+          find . -maxdepth 3 -type f | sort
+
+          if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
+            echo "ERROR: settings.gradle / settings.gradle.kts नहीं मिला"
+            exit 1
+          fi
+
+          if [ ! -d "app" ]; then
+            echo "ERROR: app folder नहीं मिला"
+            exit 1
+          fi
+
+          if [ ! -f "app/build.gradle.kts" ] && [ ! -f "app/build.gradle" ]; then
+            echo "ERROR: app/build.gradle(.kts) नहीं मिला"
+            exit 1
+          fi
+
+          echo ""
+          echo "Android project verification OK."
+
+      # --------------------------------------------------
+      # 6. Java 17
+      # --------------------------------------------------
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Setup Android
-        uses: android-actions/setup-android@v3
+      # --------------------------------------------------
+      # 7. Android SDK
+      # --------------------------------------------------
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
 
-      - name: Install Android SDK
+      # --------------------------------------------------
+      # 8. Install required Android SDK packages
+      # --------------------------------------------------
+      - name: Install Android SDK packages
+        shell: bash
         run: |
-          sdkmanager "platform-tools" \
+          set -e
+
+          yes | sdkmanager --licenses >/dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
+          echo ""
+          echo "Installed Android SDK packages:"
+          sdkmanager --list_installed
+
+      # --------------------------------------------------
+      # 9. Gradle
+      # --------------------------------------------------
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # --------------------------------------------------
+      # 10. Make Gradle wrapper executable
+      # --------------------------------------------------
+      - name: Prepare Gradle
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            echo "Gradle wrapper मिला।"
+          else
+            echo "Gradle wrapper नहीं मिला।"
+            echo "System Gradle इस्तेमाल होगा।"
+          fi
+
+      # --------------------------------------------------
+      # 11. Build Release APK
+      # --------------------------------------------------
       - name: Build Release APK
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
+          echo "Release APK build शुरू..."
+
           if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleRelease --no-daemon
+            ./gradlew \
+              assembleRelease \
+              --no-daemon \
+              --stacktrace
           else
-            gradle assembleRelease --no-daemon
+            gradle \
+              assembleRelease \
+              --no-daemon \
+              --stacktrace
           fi
 
+      # --------------------------------------------------
+      # 12. Find APK
+      # --------------------------------------------------
       - name: Find Release APK
         shell: bash
         run: |
           set -e
 
+          echo "APK खोज रहे हैं..."
+
           APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f -name "*.apk" \
-            | grep -i release \
+            -type f \
+            -name "*.apk" \
+            | grep -i "release" \
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "Release APK नहीं मिली"
-            find "$PROJECT_DIR/app/build/outputs" -type f || true
+            echo "ERROR: Release APK नहीं मिली।"
+
+            echo ""
+            echo "Available output files:"
+            find "$PROJECT_DIR/app/build/outputs" \
+              -type f \
+              -print || true
+
             exit 1
           fi
 
-          cp "$APK" "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+          echo ""
+          echo "Release APK मिली:"
+          echo "$APK"
 
-      - name: Upload APK
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
+          echo ""
+          echo "Final APK:"
+          ls -lh "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
+      # --------------------------------------------------
+      # 13. Upload APK artifact
+      # --------------------------------------------------
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-Release-APK
           path: Majdoor-Hisaab-Release.apk
           if-no-files-found: error
+          retention-days: 30
