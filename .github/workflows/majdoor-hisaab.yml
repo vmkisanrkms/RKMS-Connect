@@ -9,14 +9,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # --------------------------------------------------
       # 1. Checkout repository
       # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
       # --------------------------------------------------
-      # 2. Find uploaded ZIP
+      # 2. Find source ZIP
       # --------------------------------------------------
       - name: Find Majdoor Hisaab ZIP
         shell: bash
@@ -33,7 +35,9 @@ jobs:
             echo "ERROR: Majdoor_Hisaab_v1_1_source.zip नहीं मिली।"
             echo ""
             echo "Repository files:"
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 3 \
+              -type f | sort
             exit 1
           fi
 
@@ -41,6 +45,7 @@ jobs:
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
 
       # --------------------------------------------------
       # 3. Extract ZIP
@@ -51,17 +56,20 @@ jobs:
           set -e
 
           rm -rf "$GITHUB_WORKSPACE/build-source"
+
           mkdir -p "$GITHUB_WORKSPACE/build-source"
 
           unzip -q "$ZIP_FILE" \
             -d "$GITHUB_WORKSPACE/build-source"
 
           echo "ZIP extract हो गई।"
+
           echo ""
           echo "Extracted structure:"
           find "$GITHUB_WORKSPACE/build-source" \
             -maxdepth 5 \
-            -type f | sort | head -200
+            -type f | sort | head -300
+
 
       # --------------------------------------------------
       # 4. Locate Android project
@@ -89,11 +97,16 @@ jobs:
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERROR: Android project नहीं मिला।"
+
             echo ""
-            echo "settings.gradle files:"
+            echo "Gradle settings files:"
             find "$GITHUB_WORKSPACE/build-source" \
               -type f \
-              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              \( \
+                -name "settings.gradle" \
+                -o \
+                -name "settings.gradle.kts" \
+              \) \
               -print
 
             echo ""
@@ -109,6 +122,7 @@ jobs:
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
 
       # --------------------------------------------------
       # 5. Verify Android project
@@ -126,7 +140,8 @@ jobs:
           echo "Project files:"
           find . -maxdepth 3 -type f | sort
 
-          if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
+          if [ ! -f "settings.gradle.kts" ] && \
+             [ ! -f "settings.gradle" ]; then
             echo "ERROR: settings.gradle / settings.gradle.kts नहीं मिला"
             exit 1
           fi
@@ -136,13 +151,15 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "app/build.gradle.kts" ] && [ ! -f "app/build.gradle" ]; then
+          if [ ! -f "app/build.gradle.kts" ] && \
+             [ ! -f "app/build.gradle" ]; then
             echo "ERROR: app/build.gradle(.kts) नहीं मिला"
             exit 1
           fi
 
           echo ""
           echo "Android project verification OK."
+
 
       # --------------------------------------------------
       # 6. Java 17
@@ -153,6 +170,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+
       # --------------------------------------------------
       # 7. Android SDK
       # --------------------------------------------------
@@ -161,8 +179,9 @@ jobs:
         with:
           packages: "platform-tools"
 
+
       # --------------------------------------------------
-      # 8. Install required Android SDK packages
+      # 8. Install Android SDK packages
       # --------------------------------------------------
       - name: Install Android SDK packages
         shell: bash
@@ -180,19 +199,23 @@ jobs:
           echo "Installed Android SDK packages:"
           sdkmanager --list_installed
 
+
       # --------------------------------------------------
-      # 9. Gradle
+      # 9. Setup Gradle
       # --------------------------------------------------
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+
       # --------------------------------------------------
-      # 10. Make Gradle wrapper executable
+      # 10. Prepare Gradle
       # --------------------------------------------------
       - name: Prepare Gradle
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
+          set -e
+
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
             echo "Gradle wrapper मिला।"
@@ -201,8 +224,175 @@ jobs:
             echo "System Gradle इस्तेमाल होगा।"
           fi
 
+
       # --------------------------------------------------
-      # 11. Build Release APK
+      # 11. FIX JAVA / KOTLIN JVM TARGET
+      #     Java 1.8 → Java 17
+      #     Kotlin 1.8 → Kotlin 17
+      # --------------------------------------------------
+      - name: Fix Java Kotlin JVM Target
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "Java/Kotlin JVM target को 17 किया जा रहा है..."
+
+          if [ -f "app/build.gradle.kts" ]; then
+
+            python3 <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+
+          # Java 1.8 को Java 17 करें
+          s = s.replace(
+              "JavaVersion.VERSION_1_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          s = s.replace(
+              "JavaVersion.VERSION_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          # Kotlin JVM target 1.8 को 17 करें
+          s = s.replace(
+              'jvmTarget = "1.8"',
+              'jvmTarget = "17"'
+          )
+
+          s = s.replace(
+              'jvmTarget = "8"',
+              'jvmTarget = "17"'
+          )
+
+          s = s.replace(
+              "jvmTarget = '1.8'",
+              "jvmTarget = '17'"
+          )
+
+          s = s.replace(
+              "jvmTarget = '8'",
+              "jvmTarget = '17'"
+          )
+
+          # अगर Java compileOptions नहीं हैं,
+          # तो उन्हें जोड़ें
+          if "compileOptions" not in s and "android {" in s:
+              s = s.replace(
+                  "android {",
+                  """android {
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          """,
+                  1
+              )
+
+          # अगर Kotlin jvmTarget पहले से नहीं है,
+          # तो Kotlin task level पर 17 लगाएं
+          if 'jvmTarget = "17"' not in s:
+              s += """
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          """
+
+          p.write_text(s)
+
+          print("Patched: app/build.gradle.kts")
+          PY
+
+          else
+
+            python3 <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle")
+          s = p.read_text()
+
+          # Java 1.8 → Java 17
+          s = s.replace(
+              "JavaVersion.VERSION_1_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          s = s.replace(
+              "JavaVersion.VERSION_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          # Kotlin 1.8 → 17
+          s = s.replace(
+              'jvmTarget = "1.8"',
+              'jvmTarget = "17"'
+          )
+
+          s = s.replace(
+              'jvmTarget = "8"',
+              'jvmTarget = "17"'
+          )
+
+          s = s.replace(
+              "jvmTarget = '1.8'",
+              "jvmTarget = '17'"
+          )
+
+          s = s.replace(
+              "jvmTarget = '8'",
+              "jvmTarget = '17'"
+          )
+
+          # Java compile options नहीं हैं तो जोड़ें
+          if "compileOptions" not in s and "android {" in s:
+              s = s.replace(
+                  "android {",
+                  """android {
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          """,
+                  1
+              )
+
+          # Kotlin task target 17
+          if 'kotlinOptions.jvmTarget = "17"' not in s:
+              s += """
+
+          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+              kotlinOptions.jvmTarget = "17"
+          }
+          """
+
+          p.write_text(s)
+
+          print("Patched: app/build.gradle")
+          PY
+
+          fi
+
+          echo ""
+          echo "===== FINAL JVM SETTINGS ====="
+
+          grep -nEi \
+            "VERSION_1_8|VERSION_8|VERSION_17|jvmTarget|compileOptions|kotlinOptions" \
+            app/build.gradle* || true
+
+          echo ""
+          echo "Java/Kotlin JVM target fix complete."
+
+
+      # --------------------------------------------------
+      # 12. Build Release APK
       # --------------------------------------------------
       - name: Build Release APK
         working-directory: ${{ env.PROJECT_DIR }}
@@ -213,26 +403,31 @@ jobs:
           echo "Release APK build शुरू..."
 
           if [ -f "./gradlew" ]; then
+
             ./gradlew \
               assembleRelease \
               --no-daemon \
               --stacktrace
+
           else
+
             gradle \
               assembleRelease \
               --no-daemon \
               --stacktrace
+
           fi
 
+
       # --------------------------------------------------
-      # 12. Find APK
+      # 13. Find Release APK
       # --------------------------------------------------
       - name: Find Release APK
         shell: bash
         run: |
           set -e
 
-          echo "APK खोज रहे हैं..."
+          echo "Release APK खोज रहे हैं..."
 
           APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
@@ -241,10 +436,12 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
+
             echo "ERROR: Release APK नहीं मिली।"
 
             echo ""
             echo "Available output files:"
+
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
               -print || true
@@ -261,10 +458,12 @@ jobs:
 
           echo ""
           echo "Final APK:"
-          ls -lh "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+          ls -lh \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
 
       # --------------------------------------------------
-      # 13. Upload APK artifact
+      # 14. Upload final APK
       # --------------------------------------------------
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
