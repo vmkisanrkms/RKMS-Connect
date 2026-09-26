@@ -11,7 +11,7 @@ env:
   GRADLE_VERSION: "8.11.1"
   ANDROID_API: "35"
   BUILD_TOOLS: "35.0.0"
-  SOURCE_ZIP: Majdoor_Hisaab_PRO_v2_4_LOCAL_SQLITE_FINAL_APK_BUILD.zip"
+  SOURCE_ZIP: Majdoor_Hisaab_PRO_v2_4_LOCAL_SQLITE_FINAL_APK_BUILD.zip
 
 jobs:
   build-release-apk:
