@@ -7,22 +7,23 @@ permissions:
   contents: read
 
 env:
-  ANDROID_API: "35"
-  BUILD_TOOLS: "35.0.0"
   JAVA_VERSION: "17"
   GRADLE_VERSION: "8.11.1"
-
+  ANDROID_API: "35"
+  BUILD_TOOLS: "35.0.0"
   SOURCE_ZIP: "Majdoor_Hisaab_v1_1_source.zip"
 
 jobs:
   build-release-apk:
+
     name: Build Final Release APK
+
     runs-on: ubuntu-24.04
 
     steps:
 
       # ============================================================
-      # CHECKOUT
+      # 1. CHECKOUT
       # ============================================================
 
       - name: Checkout repository
@@ -30,7 +31,7 @@ jobs:
 
 
       # ============================================================
-      # JAVA 17
+      # 2. JAVA 17
       # ============================================================
 
       - name: Setup Java 17
@@ -49,7 +50,7 @@ jobs:
 
 
       # ============================================================
-      # ANDROID SDK
+      # 3. ANDROID SDK
       # ============================================================
 
       - name: Setup Android SDK
@@ -57,7 +58,7 @@ jobs:
         with:
           packages: "platform-tools"
 
-      - name: Install Android API 35
+      - name: Install Android SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -71,7 +72,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK packages installed successfully."
+          echo "Android SDK installed."
 
 
       - name: Verify Android SDK
@@ -81,75 +82,70 @@ jobs:
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
-          command -v adb
-          command -v sdkmanager
-
-          test -x \
-            "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
-
-          test -x \
-            "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
 
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" version
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" version
 
           adb version
-          sdkmanager --version
 
           echo "Android SDK verification: PASS"
 
 
       # ============================================================
-      # SOURCE ZIP
+      # 4. FIND SOURCE ZIP
       # ============================================================
 
-      - name: Locate Majdoor Hisaab source ZIP
+      - name: Locate source ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Expected source ZIP:"
+          echo "Looking for:"
           echo "$SOURCE_ZIP"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
 
-            FOUND_ZIP="$(
+            FOUND="$(
               find . \
                 -type f \
                 -name "$SOURCE_ZIP" \
-                -print -quit || true
+                -print -quit
             )"
 
-            if [ -z "$FOUND_ZIP" ]; then
-
-              echo "ERROR: Source ZIP not found."
-
+            if [ -z "$FOUND" ]; then
+              echo "ERROR: $SOURCE_ZIP not found."
               echo ""
-              echo "Available ZIP files:"
-              find . \
-                -type f \
-                -iname "*.zip" \
-                -print || true
-
+              echo "ZIP files available:"
+              find . -type f -iname "*.zip" -print
               exit 1
             fi
 
-            cp "$FOUND_ZIP" "./$SOURCE_ZIP"
+            cp "$FOUND" "$SOURCE_ZIP"
 
           fi
 
           test -f "$SOURCE_ZIP"
 
-          echo ""
-          echo "SOURCE ZIP FOUND:"
           ls -lh "$SOURCE_ZIP"
 
 
       # ============================================================
-      # EXTRACT SOURCE
+      # 5. EXTRACT
+      #
+      # AUDITED ZIP STRUCTURE:
+      #
+      # build-source/
+      # ├── settings.gradle.kts
+      # ├── build.gradle.kts
+      # ├── gradle.properties
+      # └── app/
+      #
+      # No extra nested project folder exists.
       # ============================================================
 
-      - name: Extract Majdoor Hisaab source
+      - name: Extract source
         shell: bash
         run: |
           set -euo pipefail
@@ -162,343 +158,188 @@ jobs:
             "$SOURCE_ZIP" \
             -d build-source
 
-          echo "Source ZIP extracted."
-
           echo ""
-          echo "Extracted structure:"
+          echo "Extracted files:"
           find build-source \
             -maxdepth 6 \
-            -type f | sort | head -300
+            -type f \
+            -print | sort
 
 
       # ============================================================
-      # LOCATE ANDROID PROJECT
+      # 6. USE EXACT AUDITED PROJECT ROOT
       # ============================================================
 
-      - name: Locate Android project
+      - name: Set Android project
         shell: bash
         run: |
           set -euo pipefail
 
-          PROJECT_DIR=""
+          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
 
-          PROJECT_DIR="$(
-            find build-source \
-              -type f \
-              -name "settings.gradle.kts" \
-              -print -quit \
-              | xargs -r dirname
-          )"
-
-          if [ -z "$PROJECT_DIR" ]; then
-
-            PROJECT_DIR="$(
-              find build-source \
-                -type f \
-                -name "settings.gradle" \
-                -print -quit \
-                | xargs -r dirname
-            )
-
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-
-            echo "ERROR: Android project नहीं मिला."
-
-            find build-source \
-              -type f \
-              \( \
-                -name "settings.gradle" \
-                -o \
-                -name "settings.gradle.kts" \
-              \) \
-              -print
-
-            exit 1
-          fi
-
-          echo "Android project:"
+          echo "PROJECT_DIR:"
           echo "$PROJECT_DIR"
+
+          echo ""
+          echo "Checking project files..."
+
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -f "$PROJECT_DIR/build.gradle.kts"
+          test -f "$PROJECT_DIR/gradle.properties"
+
+          test -d "$PROJECT_DIR/app"
+
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
+
+          test -f \
+            "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+
+          test -f \
+            "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          echo ""
+          echo "Android project structure: PASS"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
 
       # ============================================================
-      # VERIFY ANDROID PROJECT
+      # 7. SHOW ORIGINAL PROJECT CONFIG
       # ============================================================
 
-      - name: Verify Android project
+      - name: Audit project configuration
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Project directory:"
-          pwd
+          echo "================ ROOT BUILD ================"
+          cat build.gradle.kts
 
-          if [ ! -f "settings.gradle" ] && \
-             [ ! -f "settings.gradle.kts" ]; then
+          echo ""
+          echo "================ APP BUILD ================"
+          cat app/build.gradle.kts
 
-            echo "ERROR: settings.gradle(.kts) नहीं मिला."
-            exit 1
+          echo ""
+          echo "================ SETTINGS ================"
+          cat settings.gradle.kts
 
-          fi
-
-          if [ ! -d "app" ]; then
-
-            echo "ERROR: app directory नहीं मिला."
-            exit 1
-
-          fi
-
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-
-            echo "ERROR: app/build.gradle(.kts) नहीं मिला."
-            exit 1
-
-          fi
-
-          echo "Android project verification: PASS"
+          echo ""
+          echo "================ MAIN ACTIVITY ================"
+          grep -n "onCreate" \
+            app/src/main/java/com/majdoor/hisaab/MainActivity.kt \
+            || true
 
 
       # ============================================================
-      # GRADLE 8.11.1
+      # 8. FIX MainActivity
+      #
+      # AUDIT FOUND:
+      # fun onCreate(...)
+      #
+      # It must be:
+      # override fun onCreate(...)
       # ============================================================
 
-      - name: Setup Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-
-
-      # ============================================================
-      # VERIFY GRADLE
-      # ============================================================
-
-      - name: Verify Gradle
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          gradle --version
-
-          GRADLE_VERSION_FOUND="$(
-            gradle --version \
-              | grep '^Gradle ' \
-              | awk '{print $2}'
-          )"
-
-          echo "Gradle version: $GRADLE_VERSION_FOUND"
-
-          test "$GRADLE_VERSION_FOUND" = "8.11.1"
-
-          echo "Gradle 8.11.1 verification: PASS"
-
-
-      # ============================================================
-      # FIX MAINACTIVITY
-      # ============================================================
-
-      - name: Fix MainActivity onCreate
+      - name: Fix MainActivity
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
-          MAIN_ACTIVITY="$(
-            find . \
-              -type f \
-              -name "MainActivity.kt" \
-              -print -quit || true
-          )"
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          if [ -z "$MAIN_ACTIVITY" ]; then
+          test -f "$FILE"
 
-            echo "MainActivity.kt नहीं मिली."
-
-          else
-
-            echo "MainActivity:"
-            echo "$MAIN_ACTIVITY"
-
-            python3 - "$MAIN_ACTIVITY" <<'PY'
-          import sys
-          import re
+          python3 <<'PY'
           from pathlib import Path
+          import re
 
-          path = Path(sys.argv[1])
-          text = path.read_text()
+          p = Path("app/src/main/java/com/majdoor/hisaab/MainActivity.kt")
 
-          # Already correct
-          if re.search(
-              r'\boverride\s+fun\s+onCreate\s*\(',
-              text
-          ):
-              print("onCreate already has override.")
+          s = p.read_text()
 
+          # Only change the MainActivity declaration's onCreate.
+          pattern = r'(?m)^(\s*)fun\s+onCreate\s*\('
+
+          s2, count = re.subn(
+              pattern,
+              r'\1override fun onCreate(',
+              s,
+              count=1
+          )
+
+          if count:
+              p.write_text(s2)
+              print("MainActivity onCreate override added.")
           else:
+              print("onCreate already patched or not found.")
 
-              pattern = (
-                  r'(?m)^(\s*)'
-                  r'(?:(public|protected)\s+)?'
-                  r'fun\s+onCreate\s*\('
-              )
-
-              def replace(match):
-
-                  indent = match.group(1)
-                  visibility = match.group(2)
-
-                  if visibility:
-                      return (
-                          indent +
-                          visibility +
-                          " override fun onCreate("
-                      )
-
-                  return (
-                      indent +
-                      "override fun onCreate("
-                  )
-
-              new_text, count = re.subn(
-                  pattern,
-                  replace,
-                  text,
-                  count=1
-              )
-
-              if count == 0:
-
-                  print(
-                      "WARNING: onCreate() नहीं मिला."
-                  )
-
-              else:
-
-                  path.write_text(new_text)
-
-                  print(
-                      "onCreate override added."
-                  )
           PY
 
-            echo ""
-            echo "onCreate check:"
-            grep -n \
-              -A4 \
-              -B2 \
-              "onCreate" \
-              "$MAIN_ACTIVITY" || true
-
-          fi
+          echo ""
+          grep -n -A2 -B2 "onCreate" "$FILE"
 
 
       # ============================================================
-      # FINAL JAVA/KOTLIN JVM FIX
+      # 9. FIX JAVA + KOTLIN JVM TARGETS
       #
       # IMPORTANT:
-      # options.release.set(17) नहीं लगाना है।
-      # Android Gradle Plugin के साथ यह गलत है।
+      # Do NOT use options.release.
       #
-      # JavaCompile:
+      # Android:
       # sourceCompatibility = 17
       # targetCompatibility = 17
       #
       # Kotlin:
-      # jvmTarget = 17
+      # JVM_17
       # ============================================================
 
-      - name: Fix Android Java and Kotlin JVM targets
+      - name: Configure Java 17 and Kotlin 17
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
-          echo "FIXING ANDROID JVM TARGETS"
-          echo "=========================================="
-
-          if [ -f "app/build.gradle.kts" ]; then
-
-            python3 <<'PY'
+          python3 <<'PY'
           from pathlib import Path
-          import re
 
           p = Path("app/build.gradle.kts")
           s = p.read_text()
 
-          print("Patching:", p)
-
           # --------------------------------------------------
-          # Java 8 -> Java 17
-          # --------------------------------------------------
-
-          s = s.replace(
-              "JavaVersion.VERSION_1_8",
-              "JavaVersion.VERSION_17"
-          )
-
-          s = s.replace(
-              "JavaVersion.VERSION_8",
-              "JavaVersion.VERSION_17"
-          )
-
-          # --------------------------------------------------
-          # Kotlin 1.8 / 8 -> 17
-          # --------------------------------------------------
-
-          s = re.sub(
-              r'jvmTarget\s*=\s*["\']1\.8["\']',
-              'jvmTarget = "17"',
-              s
-          )
-
-          s = re.sub(
-              r'jvmTarget\s*=\s*["\']8["\']',
-              'jvmTarget = "17"',
-              s
-          )
-
-          # --------------------------------------------------
-          # Ensure compileOptions
+          # Add Android compileOptions if missing.
           # --------------------------------------------------
 
           if "compileOptions" not in s:
 
-              android_match = re.search(
-                  r'(?m)^android\s*\{',
-                  s
-              )
+              marker = 'android {'
 
-              if android_match:
+              if marker not in s:
+                  raise SystemExit(
+                      "ERROR: android block not found."
+                  )
 
-                  insert = """
+              replacement = '''android {
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
+          '''
 
-          """
-
-                  pos = android_match.end()
-
-                  s = (
-                      s[:pos] +
-                      "\n" +
-                      insert +
-                      s[pos:]
-                  )
+              s = s.replace(
+                  marker,
+                  replacement,
+                  1
+              )
 
           # --------------------------------------------------
-          # Ensure Kotlin target
+          # Add Kotlin JVM 17 configuration.
           # --------------------------------------------------
 
-          if "jvmTarget" not in s:
+          if "JvmTarget.JVM_17" not in s:
 
-              s += """
+              s += '''
 
           tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
               compilerOptions {
@@ -507,140 +348,117 @@ jobs:
                   )
               }
           }
-          """
+          '''
 
           p.write_text(s)
 
-          print("build.gradle.kts patched successfully.")
+          print("Java 17 + Kotlin JVM 17 configuration added.")
+
           PY
 
-          else
+          echo ""
+          echo "================ FINAL APP BUILD ================"
 
-            if [ ! -f "app/build.gradle" ]; then
-              echo "ERROR: app/build.gradle(.kts) नहीं मिला."
-              exit 1
-            fi
-
-            python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path("app/build.gradle")
-          s = p.read_text()
-
-          print("Patching:", p)
-
-          # --------------------------------------------------
-          # Java 8 -> Java 17
-          # --------------------------------------------------
-
-          s = s.replace(
-              "JavaVersion.VERSION_1_8",
-              "JavaVersion.VERSION_17"
-          )
-
-          s = s.replace(
-              "JavaVersion.VERSION_8",
-              "JavaVersion.VERSION_17"
-          )
-
-          # --------------------------------------------------
-          # Kotlin 1.8 / 8 -> 17
-          # --------------------------------------------------
-
-          s = re.sub(
-              r'jvmTarget\s*=\s*["\']1\.8["\']',
-              'jvmTarget = "17"',
-              s
-          )
-
-          s = re.sub(
-              r'jvmTarget\s*=\s*["\']8["\']',
-              'jvmTarget = "17"',
-              s
-          )
-
-          # --------------------------------------------------
-          # Ensure compileOptions
-          # --------------------------------------------------
-
-          if "compileOptions" not in s:
-
-              android_match = re.search(
-                  r'(?m)^android\s*\{',
-                  s
-              )
-
-              if android_match:
-
-                  insert = """
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-
-          """
-
-                  pos = android_match.end()
-
-                  s = (
-                      s[:pos] +
-                      "\n" +
-                      insert +
-                      s[pos:]
-                  )
-
-          # --------------------------------------------------
-          # Ensure Kotlin target
-          # --------------------------------------------------
-
-          if "jvmTarget" not in s:
-
-              s += """
-
-          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-              kotlinOptions.jvmTarget = "17"
-          }
-          """
-
-          p.write_text(s)
-
-          print("build.gradle patched successfully.")
-          PY
-
-          fi
+          cat app/build.gradle.kts
 
           echo ""
-          echo "=========================================="
-          echo "FINAL JVM SETTINGS"
-          echo "=========================================="
-
-          grep -nEi \
-            "compileOptions|sourceCompatibility|targetCompatibility|jvmTarget|VERSION_1_8|VERSION_8|VERSION_17|options.release" \
-            app/build.gradle* \
-            || true
-
-          echo ""
-          echo "Checking for forbidden Java 1.8 / --release settings..."
+          echo "Checking forbidden old JVM settings..."
 
           if grep -RniE \
-            "VERSION_1_8|VERSION_8|jvmTarget.*1\.8|jvmTarget.*['\"]8['\"]|options\.release" \
+            'VERSION_1_8|VERSION_8|jvmTarget.*1\.8|jvmTarget.*"8"|options\.release' \
             app \
-            --include="*.gradle" \
-            --include="*.gradle.kts"; then
+            --include='*.gradle' \
+            --include='*.gradle.kts'; then
 
             echo ""
-            echo "ERROR: Old JVM setting found."
+            echo "ERROR: Old JVM configuration found."
             exit 1
-
           fi
 
           echo ""
-          echo "JVM TARGET FIX: PASS"
+          echo "JVM configuration: PASS"
 
 
       # ============================================================
-      # BUILD RELEASE APK
+      # 10. SETUP GRADLE 8.11.1
+      # ============================================================
+
+      - name: Setup Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+
+      - name: Verify Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle --version
+
+          VERSION="$(
+            gradle --version |
+            grep '^Gradle ' |
+            awk '{print $2}'
+          )"
+
+          echo "Detected Gradle: $VERSION"
+
+          test "$VERSION" = "8.11.1"
+
+          echo "Gradle verification: PASS"
+
+
+      # ============================================================
+      # 11. VERIFY FINAL PROJECT BEFORE BUILD
+      # ============================================================
+
+      - name: Final pre-build audit
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "================ PRE-BUILD AUDIT ================"
+
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f gradle.properties
+
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          echo ""
+          echo "Application ID:"
+          grep -n "applicationId" app/build.gradle.kts
+
+          echo ""
+          echo "Namespace:"
+          grep -n "namespace" app/build.gradle.kts
+
+          echo ""
+          echo "Compile SDK:"
+          grep -n "compileSdk" app/build.gradle.kts
+
+          echo ""
+          echo "Target SDK:"
+          grep -n "targetSdk" app/build.gradle.kts
+
+          echo ""
+          echo "Kotlin JVM:"
+          grep -n "JVM_17" app/build.gradle.kts
+
+          echo ""
+          echo "Java compatibility:"
+          grep -n "VERSION_17" app/build.gradle.kts
+
+          echo ""
+          echo "PRE-BUILD AUDIT: PASS"
+
+
+      # ============================================================
+      # 12. BUILD RELEASE APK
       # ============================================================
 
       - name: Build Release APK
@@ -650,7 +468,7 @@ jobs:
           set -euo pipefail
 
           echo "=========================================="
-          echo "MAJDOOR HISAAB RELEASE APK BUILD"
+          echo "MAJDOOR HISAAB RELEASE APK"
           echo "=========================================="
 
           gradle \
@@ -660,13 +478,11 @@ jobs:
             --stacktrace
 
           echo ""
-          echo "=========================================="
-          echo "BUILD FINISHED"
-          echo "=========================================="
+          echo "BUILD COMPLETED."
 
 
       # ============================================================
-      # FIND RELEASE APK
+      # 13. FIND APK
       # ============================================================
 
       - name: Find Release APK
@@ -678,19 +494,20 @@ jobs:
             find "$PROJECT_DIR/app/build/outputs/apk" \
               -type f \
               -name "*.apk" \
-              | grep -Ei "release" \
-              | head -n 1 || true
+              -path "*release*" \
+              -print -quit
           )"
 
           if [ -z "$APK" ]; then
 
-            echo "ERROR: Release APK नहीं मिली."
+            echo "ERROR: Release APK not found."
 
             echo ""
-            echo "Available output files:"
+            echo "Available APK files:"
 
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
+              -name "*.apk" \
               -print || true
 
             exit 1
@@ -704,17 +521,15 @@ jobs:
             "$APK" \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
 
-          echo ""
-          echo "Final APK:"
           ls -lh \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
 
 
       # ============================================================
-      # VERIFY APK
+      # 14. VERIFY APK
       # ============================================================
 
-      - name: Verify APK
+      - name: Verify Release APK
         shell: bash
         run: |
           set -euo pipefail
@@ -723,12 +538,10 @@ jobs:
 
           test -f "$APK"
 
-          case "$APK" in
-            *debug*)
-              echo "ERROR: Debug APK detected."
-              exit 1
-              ;;
-          esac
+          if [[ "$APK" == *debug* ]]; then
+            echo "ERROR: Debug APK detected."
+            exit 1
+          fi
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
@@ -736,14 +549,14 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
 
           echo ""
-          echo "APK package:"
+          echo "================ APK PACKAGE ================"
 
-          "$AAPT" dump badging "$APK" \
-            | grep "^package:" \
-            | head -1
+          "$AAPT" dump badging "$APK" |
+            grep '^package:' |
+            head -1
 
           echo ""
-          echo "APK signature verification:"
+          echo "================ APK SIGNATURE ================"
 
           "$APKSIGNER" verify \
             --verbose \
@@ -754,10 +567,10 @@ jobs:
 
 
       # ============================================================
-      # SHA256
+      # 15. SHA256
       # ============================================================
 
-      - name: Generate APK SHA256
+      - name: Generate SHA256
         shell: bash
         run: |
           set -euo pipefail
@@ -773,7 +586,7 @@ jobs:
 
 
       # ============================================================
-      # UPLOAD FINAL APK
+      # 16. UPLOAD ONLY FINAL RELEASE APK
       # ============================================================
 
       - name: Upload Final Release APK
