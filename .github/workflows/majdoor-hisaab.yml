@@ -1,0 +1,107 @@
+name: Majdoor Hisaab - Release APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find ZIP
+        shell: bash
+        run: |
+          set -e
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "Majdoor_Hisaab_v1_1_source.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Majdoor Hisaab ZIP नहीं मिली"
+            exit 1
+          fi
+
+          echo "ZIP मिली: $ZIP_FILE"
+          mkdir -p build-source
+          unzip -q "$ZIP_FILE" -d build-source
+
+      - name: Find Android Project
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT_DIR=$(find "$GITHUB_WORKSPACE/build-source" \
+            -type f -name "settings.gradle.kts" \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            PROJECT_DIR=$(find "$GITHUB_WORKSPACE/build-source" \
+              -type f -name "settings.gradle" \
+              -print -quit | xargs -r dirname)
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Android project नहीं मिला"
+            find "$GITHUB_WORKSPACE/build-source" -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project मिला: $PROJECT_DIR"
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Release APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleRelease --no-daemon
+          else
+            gradle assembleRelease --no-daemon
+          fi
+
+      - name: Find Release APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f -name "*.apk" \
+            | grep -i release \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "Release APK नहीं मिली"
+            find "$PROJECT_DIR/app/build/outputs" -type f || true
+            exit 1
+          fi
+
+          cp "$APK" "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Majdoor-Hisaab-Release-APK
+          path: Majdoor-Hisaab-Release.apk
+          if-no-files-found: error
