@@ -1,160 +1,77 @@
-name: Majdoor Hisaab - Release APK
+name: Majdoor Hisaab - Final Release APK
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  ANDROID_API: "35"
+  BUILD_TOOLS: "35.0.0"
+  JAVA_VERSION: "17"
+  GRADLE_VERSION: "8.11.1"
+
+  # ============================================================
+  # MAJDOOR HISAAB FINAL SOURCE ZIP
+  # ============================================================
+  SOURCE_ZIP: "Majdoor_Hisaab_v1_1_source.zip"
+
 jobs:
-  build:
-    name: Build Release APK
-    runs-on: ubuntu-latest
+  build-release-apk:
+    name: Build Final Release APK
+    runs-on: ubuntu-24.04
 
     steps:
 
-      # ==================================================
-      # 1. CHECKOUT
-      # ==================================================
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # ==================================================
-      # 2. FIND ZIP
-      # ==================================================
-      - name: Find Majdoor Hisaab ZIP
-        shell: bash
-        run: |
-          set -e
+      # ============================================================
+      # JAVA 17
+      # ============================================================
 
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            -name "Majdoor_Hisaab_v1_1_source.zip" \
-            -print -quit)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Majdoor_Hisaab_v1_1_source.zip नहीं मिली।"
-            find "$GITHUB_WORKSPACE" \
-              -maxdepth 3 \
-              -type f | sort
-            exit 1
-          fi
-
-          echo "ZIP मिली:"
-          echo "$ZIP_FILE"
-
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
-
-      # ==================================================
-      # 3. EXTRACT ZIP
-      # ==================================================
-      - name: Extract Source ZIP
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf "$GITHUB_WORKSPACE/build-source"
-
-          mkdir -p "$GITHUB_WORKSPACE/build-source"
-
-          unzip -q "$ZIP_FILE" \
-            -d "$GITHUB_WORKSPACE/build-source"
-
-          echo "ZIP extract OK"
-
-
-      # ==================================================
-      # 4. LOCATE ANDROID PROJECT
-      # ==================================================
-      - name: Locate Android Project
-        shell: bash
-        run: |
-          set -e
-
-          PROJECT_DIR=""
-
-          PROJECT_DIR=$(find "$GITHUB_WORKSPACE/build-source" \
-            -type f \
-            -name "settings.gradle.kts" \
-            -print -quit \
-            | xargs -r dirname)
-
-          if [ -z "$PROJECT_DIR" ]; then
-            PROJECT_DIR=$(find "$GITHUB_WORKSPACE/build-source" \
-              -type f \
-              -name "settings.gradle" \
-              -print -quit \
-              | xargs -r dirname)
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project नहीं मिला।"
-            find "$GITHUB_WORKSPACE/build-source" \
-              -type f \
-              \( \
-                -name "settings.gradle" \
-                -o \
-                -name "settings.gradle.kts" \
-              \) \
-              -print
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Android project:"
-          echo "$PROJECT_DIR"
-
-
-      # ==================================================
-      # 5. VERIFY PROJECT
-      # ==================================================
-      - name: Verify Android Project
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          if [ ! -d "app" ]; then
-            echo "ERROR: app directory नहीं मिला"
-            exit 1
-          fi
-
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERROR: app Gradle file नहीं मिली"
-            exit 1
-          fi
-
-          echo "Android project verification OK"
-
-
-      # ==================================================
-      # 6. JAVA 17
-      # ==================================================
-      - name: Setup JDK 17
-        uses: actions/setup-java@v6
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
 
-      # ==================================================
-      # 7. ANDROID SDK
-      # ==================================================
+      - name: Verify Java
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Java:"
+          java -version
+
+          echo ""
+          echo "Javac:"
+          javac -version
+
+
+      # ============================================================
+      # ANDROID SDK
+      # ============================================================
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools"
 
 
-      # ==================================================
-      # 8. INSTALL SDK
-      # ==================================================
-      - name: Install Android SDK Packages
+      - name: Install Android SDK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
@@ -163,127 +80,271 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK ready"
+          echo ""
+          echo "Android SDK installed successfully."
 
 
-      # ==================================================
-      # 9. GRADLE
-      # ==================================================
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+
+          command -v adb
+          command -v sdkmanager
+
+          test -x \
+            "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+
+          test -x \
+            "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" version
+
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" version
+
+          adb version
+          sdkmanager --version
+
+          echo ""
+          echo "Android SDK verification: PASS"
+
+
+      # ============================================================
+      # LOCATE SOURCE ZIP
+      # ============================================================
+
+      - name: Locate Majdoor Hisaab source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Expected source ZIP:"
+          echo "$SOURCE_ZIP"
+
+          if [ ! -f "$SOURCE_ZIP" ]; then
+
+            FOUND_ZIP="$(
+              find . \
+                -type f \
+                -name "$SOURCE_ZIP" \
+                -print -quit || true
+            )"
+
+            if [ -z "$FOUND_ZIP" ]; then
+              echo ""
+              echo "ERROR: Majdoor Hisaab source ZIP नहीं मिली."
+
+              echo ""
+              echo "Available ZIP files:"
+              find . \
+                -type f \
+                -iname "*.zip" \
+                -print || true
+
+              exit 1
+            fi
+
+            cp "$FOUND_ZIP" "./$SOURCE_ZIP"
+          fi
+
+          test -f "$SOURCE_ZIP"
+
+          echo ""
+          echo "SOURCE ZIP FOUND:"
+          ls -lh "$SOURCE_ZIP"
+
+
+      # ============================================================
+      # EXTRACT SOURCE
+      # ============================================================
+
+      - name: Extract Majdoor Hisaab source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf build-source
+
+          mkdir -p build-source
+
+          unzip -q \
+            "$SOURCE_ZIP" \
+            -d build-source
+
+          echo "Source ZIP extracted."
+
+          echo ""
+          echo "Extracted structure:"
+          find build-source \
+            -maxdepth 6 \
+            -type f | sort | head -300
+
+
+      # ============================================================
+      # LOCATE ANDROID PROJECT
+      # ============================================================
+
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT_DIR=""
+
+          PROJECT_DIR="$(
+            find build-source \
+              -type f \
+              -name "settings.gradle.kts" \
+              -print -quit \
+              | xargs -r dirname
+          )"
+
+          if [ -z "$PROJECT_DIR" ]; then
+
+            PROJECT_DIR="$(
+              find build-source \
+                -type f \
+                -name "settings.gradle" \
+                -print -quit \
+                | xargs -r dirname
+            )"
+
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+
+            echo "ERROR: Android Gradle project नहीं मिला."
+
+            echo ""
+            echo "Gradle files:"
+            find build-source \
+              -type f \
+              \( \
+                -name "settings.gradle" \
+                -o \
+                -name "settings.gradle.kts" \
+                -o \
+                -name "build.gradle" \
+                -o \
+                -name "build.gradle.kts" \
+              \) \
+              -print
+
+            exit 1
+          fi
+
+          echo ""
+          echo "Android project:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+
+      # ============================================================
+      # VERIFY PROJECT
+      # ============================================================
+
+      - name: Verify Android project
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Project:"
+          pwd
+
+          if [ ! -f "settings.gradle" ] && \
+             [ ! -f "settings.gradle.kts" ]; then
+
+            echo "ERROR: settings.gradle(.kts) नहीं मिला."
+            exit 1
+
+          fi
+
+          if [ ! -d "app" ]; then
+
+            echo "ERROR: app directory नहीं मिला."
+            exit 1
+
+          fi
+
+          if [ ! -f "app/build.gradle" ] && \
+             [ ! -f "app/build.gradle.kts" ]; then
+
+            echo "ERROR: app/build.gradle(.kts) नहीं मिला."
+            exit 1
+
+          fi
+
+          echo ""
+          echo "Android project verification: PASS"
+
+
+      # ============================================================
+      # GRADLE
+      # ============================================================
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
 
-      # ==================================================
-      # 10. PREPARE GRADLE
-      # ==================================================
+      # ============================================================
+      # PREPARE GRADLE
+      # ============================================================
+
       - name: Prepare Gradle
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           if [ -f "./gradlew" ]; then
+
             chmod +x ./gradlew
-            echo "Gradle wrapper मिला"
+
+            echo "Gradle wrapper found."
+
             ./gradlew --version
+
           else
-            echo "Gradle wrapper नहीं मिला"
+
+            echo "Gradle wrapper not found."
+
+            echo "System Gradle version:"
             gradle --version
+
           fi
 
 
-      # ==================================================
-      # 11. FIX MAINACTIVITY
-      # ==================================================
-      - name: Fix MainActivity onCreate
+      # ============================================================
+      # FIX JAVA / KOTLIN JVM TARGET
+      #
+      # IMPORTANT:
+      # DO NOT use options.release.set(17)
+      # Android Gradle Plugin does not allow that.
+      # ============================================================
+
+      - name: Fix Java and Kotlin JVM targets
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          MAIN_ACTIVITY=$(find . \
-            -type f \
-            -name "MainActivity.kt" \
-            -print -quit)
+          echo "Applying Android-safe JVM 17 configuration..."
 
-          if [ -z "$MAIN_ACTIVITY" ]; then
-            echo "ERROR: MainActivity.kt नहीं मिली"
-            exit 1
-          fi
+          cat > "$GITHUB_WORKSPACE/majdoor-jvm17.gradle" <<'GRADLE'
 
-          echo "MainActivity:"
-          echo "$MAIN_ACTIVITY"
+          gradle.afterProject { project ->
 
-          python3 - "$MAIN_ACTIVITY" <<'PY'
-          import sys
-          import re
-          from pathlib import Path
+              project.tasks.withType(JavaCompile).configureEach {
 
-          path = Path(sys.argv[1])
-          text = path.read_text()
-
-          pattern = r'(?m)^(\s*)(?:(public|protected)\s+)?fun\s+onCreate\s*\('
-
-          def fix(match):
-              indent = match.group(1)
-              visibility = match.group(2)
-
-              if visibility:
-                  return (
-                      indent +
-                      visibility +
-                      " override fun onCreate("
-                  )
-
-              return indent + "override fun onCreate("
-
-          if re.search(
-              r'(?m)^\s*(?:public\s+|protected\s+)?override\s+fun\s+onCreate\s*\(',
-              text
-          ):
-              print("onCreate already has override.")
-          else:
-              new_text, count = re.subn(
-                  pattern,
-                  fix,
-                  text,
-                  count=1
-              )
-
-              if count == 0:
-                  print("ERROR: onCreate() नहीं मिला")
-                  sys.exit(1)
-
-              path.write_text(new_text)
-              print("onCreate override added.")
-          PY
-
-          echo ""
-          grep -n -A4 -B2 "onCreate" "$MAIN_ACTIVITY"
-
-
-      # ==================================================
-      # 12. FORCE JVM 17 IN GRADLE TASKS
-      # ==================================================
-      - name: Force Java Kotlin JVM 17
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "Creating Gradle JVM 17 enforcement..."
-
-          cat > "$GITHUB_WORKSPACE/force-jvm17.gradle" <<'GRADLE'
-          allprojects {
-
-              tasks.withType(JavaCompile).configureEach {
                   sourceCompatibility = "17"
                   targetCompatibility = "17"
-
-                  options.release.set(17)
               }
 
-              tasks.configureEach { task ->
+              project.tasks.configureEach { task ->
 
                   if (task.class.name.contains("KotlinCompile")) {
 
@@ -301,41 +362,152 @@ jobs:
                   }
               }
           }
+
           GRADLE
 
           echo ""
-          echo "Gradle JVM enforcement file created:"
-          cat "$GITHUB_WORKSPACE/force-jvm17.gradle"
-
-
-      # ==================================================
-      # 13. FINAL JVM CHECK
-      # ==================================================
-      - name: Check Java Version
-        shell: bash
-        run: |
-          set -e
-
-          echo "JAVA_HOME=$JAVA_HOME"
-
-          java -version
+          echo "JVM configuration:"
+          cat "$GITHUB_WORKSPACE/majdoor-jvm17.gradle"
 
           echo ""
-          javac -version
+          echo "IMPORTANT:"
+          echo "JavaCompile = 17"
+          echo "KotlinCompile = 17"
+          echo "Java --release option is NOT being used."
 
 
-      # ==================================================
-      # 14. BUILD RELEASE APK
-      # ==================================================
+      # ============================================================
+      # FIX MAIN ACTIVITY
+      # ============================================================
+
+      - name: Fix MainActivity onCreate
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN_ACTIVITY="$(
+            find . \
+              -type f \
+              -name "MainActivity.kt" \
+              -print -quit || true
+          )"
+
+          if [ -z "$MAIN_ACTIVITY" ]; then
+
+            echo "MainActivity.kt not found."
+
+          else
+
+            echo "MainActivity:"
+            echo "$MAIN_ACTIVITY"
+
+            python3 - "$MAIN_ACTIVITY" <<'PY'
+          import sys
+          import re
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+
+          text = path.read_text()
+
+          # Already correct
+          if re.search(
+              r'\boverride\s+fun\s+onCreate\s*\(',
+              text
+          ):
+              print("onCreate already has override.")
+
+          else:
+
+              pattern = r'(?m)^(\s*)(?:(public|protected)\s+)?fun\s+onCreate\s*\('
+
+              def replace(match):
+
+                  indent = match.group(1)
+                  visibility = match.group(2)
+
+                  if visibility:
+                      return (
+                          indent +
+                          visibility +
+                          " override fun onCreate("
+                      )
+
+                  return (
+                      indent +
+                      "override fun onCreate("
+                  )
+
+              new_text, count = re.subn(
+                  pattern,
+                  replace,
+                  text,
+                  count=1
+              )
+
+              if count == 0:
+
+                  print(
+                      "WARNING: onCreate() not found."
+                  )
+
+              else:
+
+                  path.write_text(new_text)
+
+                  print(
+                      "onCreate override added."
+                  )
+          PY
+
+            echo ""
+            echo "onCreate check:"
+            grep -n \
+              -A4 \
+              -B2 \
+              "onCreate" \
+              "$MAIN_ACTIVITY" || true
+
+          fi
+
+
+      # ============================================================
+      # FINAL JVM BUILD CONFIGURATION
+      # ============================================================
+
+      - name: Validate JVM build configuration
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking Gradle files..."
+
+          grep -RniE \
+            "VERSION_1_8|jvmTarget.*1\.8|jvmTarget.*['\"]8['\"]|options\.release" \
+            app \
+            --include="*.gradle" \
+            --include="*.gradle.kts" \
+            || true
+
+          echo ""
+          echo "Java 17 will be enforced by Gradle init script."
+
+
+      # ============================================================
+      # BUILD RELEASE APK
+      # ============================================================
+
       - name: Build Release APK
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "======================================"
-          echo "RELEASE APK BUILD START"
-          echo "======================================"
+          echo "=========================================="
+          echo "MAJDOOR HISAAB RELEASE APK BUILD"
+          echo "=========================================="
 
           if [ -f "./gradlew" ]; then
 
@@ -344,7 +516,7 @@ jobs:
               assembleRelease \
               --no-daemon \
               --stacktrace \
-              -I "$GITHUB_WORKSPACE/force-jvm17.gradle"
+              -I "$GITHUB_WORKSPACE/majdoor-jvm17.gradle"
 
           else
 
@@ -353,37 +525,40 @@ jobs:
               assembleRelease \
               --no-daemon \
               --stacktrace \
-              -I "$GITHUB_WORKSPACE/force-jvm17.gradle"
+              -I "$GITHUB_WORKSPACE/majdoor-jvm17.gradle"
 
           fi
 
-          echo "======================================"
-          echo "RELEASE APK BUILD FINISHED"
-          echo "======================================"
+          echo ""
+          echo "=========================================="
+          echo "BUILD FINISHED"
+          echo "=========================================="
 
 
-      # ==================================================
-      # 15. FIND RELEASE APK
-      # ==================================================
+      # ============================================================
+      # FIND FINAL APK
+      # ============================================================
+
       - name: Find Release APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "Release APK खोज रहे हैं..."
-
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -name "*.apk" \
-            | grep -Ei "release" \
-            | head -n 1)
+          APK="$(
+            find "$PROJECT_DIR/app/build/outputs/apk" \
+              -type f \
+              -name "*.apk" \
+              | grep -Ei "release" \
+              | head -n 1 || true
+          )"
 
           if [ -z "$APK" ]; then
 
-            echo "ERROR: Release APK नहीं मिली"
+            echo "ERROR: Release APK नहीं मिली."
 
             echo ""
-            echo "Available output:"
+            echo "Available output files:"
+
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
               -print || true
@@ -395,20 +570,82 @@ jobs:
           echo "Release APK:"
           echo "$APK"
 
-          cp "$APK" \
+          cp \
+            "$APK" \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
 
+          echo ""
+          echo "Final APK:"
           ls -lh \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
 
 
-      # ==================================================
-      # 16. UPLOAD FINAL APK
-      # ==================================================
-      - name: Upload Release APK
+      # ============================================================
+      # VERIFY APK
+      # ============================================================
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
+          test -f "$APK"
+
+          if [[ "$APK" == *debug* ]]; then
+            echo "ERROR: Debug APK detected."
+            exit 1
+          fi
+
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+
+          AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+
+          echo "APK package:"
+          "$AAPT" dump badging "$APK" \
+            | grep "^package:" \
+            | head -1
+
+          echo ""
+          echo "APK signature verification:"
+
+          "$APKSIGNER" verify \
+            --verbose \
+            "$APK"
+
+          echo ""
+          echo "APK verification: PASS"
+
+
+      # ============================================================
+      # SHA256
+      # ============================================================
+
+      - name: Generate APK SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sha256sum \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk" \
+            > "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
+
+          cat \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
+
+
+      # ============================================================
+      # UPLOAD FINAL APK
+      # ============================================================
+
+      - name: Upload Final Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-Release-APK
-          path: Majdoor-Hisaab-Release.apk
+          name: Majdoor-Hisaab-Final-Release-APK
+          path: |
+            Majdoor-Hisaab-Release.apk
+            Majdoor-Hisaab-Release.apk.sha256
           if-no-files-found: error
           retention-days: 30
