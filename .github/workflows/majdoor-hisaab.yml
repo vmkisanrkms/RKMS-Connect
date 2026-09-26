@@ -12,9 +12,6 @@ env:
   JAVA_VERSION: "17"
   GRADLE_VERSION: "8.11.1"
 
-  # ============================================================
-  # MAJDOOR HISAAB FINAL SOURCE ZIP
-  # ============================================================
   SOURCE_ZIP: "Majdoor_Hisaab_v1_1_source.zip"
 
 jobs:
@@ -42,17 +39,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-
       - name: Verify Java
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Java:"
           java -version
-
-          echo ""
-          echo "Javac:"
           javac -version
 
 
@@ -65,8 +57,7 @@ jobs:
         with:
           packages: "platform-tools"
 
-
-      - name: Install Android SDK
+      - name: Install Android API 35
         shell: bash
         run: |
           set -euo pipefail
@@ -80,8 +71,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo ""
-          echo "Android SDK installed successfully."
+          echo "Android SDK packages installed successfully."
 
 
       - name: Verify Android SDK
@@ -101,18 +91,16 @@ jobs:
             "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
 
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" version
-
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" version
 
           adb version
           sdkmanager --version
 
-          echo ""
           echo "Android SDK verification: PASS"
 
 
       # ============================================================
-      # LOCATE SOURCE ZIP
+      # SOURCE ZIP
       # ============================================================
 
       - name: Locate Majdoor Hisaab source ZIP
@@ -133,8 +121,8 @@ jobs:
             )"
 
             if [ -z "$FOUND_ZIP" ]; then
-              echo ""
-              echo "ERROR: Majdoor Hisaab source ZIP नहीं मिली."
+
+              echo "ERROR: Source ZIP not found."
 
               echo ""
               echo "Available ZIP files:"
@@ -147,6 +135,7 @@ jobs:
             fi
 
             cp "$FOUND_ZIP" "./$SOURCE_ZIP"
+
           fi
 
           test -f "$SOURCE_ZIP"
@@ -209,33 +198,26 @@ jobs:
                 -name "settings.gradle" \
                 -print -quit \
                 | xargs -r dirname
-            )"
+            )
 
           fi
 
           if [ -z "$PROJECT_DIR" ]; then
 
-            echo "ERROR: Android Gradle project नहीं मिला."
+            echo "ERROR: Android project नहीं मिला."
 
-            echo ""
-            echo "Gradle files:"
             find build-source \
               -type f \
               \( \
                 -name "settings.gradle" \
                 -o \
                 -name "settings.gradle.kts" \
-                -o \
-                -name "build.gradle" \
-                -o \
-                -name "build.gradle.kts" \
               \) \
               -print
 
             exit 1
           fi
 
-          echo ""
           echo "Android project:"
           echo "$PROJECT_DIR"
 
@@ -243,7 +225,7 @@ jobs:
 
 
       # ============================================================
-      # VERIFY PROJECT
+      # VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -252,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Project:"
+          echo "Project directory:"
           pwd
 
           if [ ! -f "settings.gradle" ] && \
@@ -278,106 +260,45 @@ jobs:
 
           fi
 
-          echo ""
           echo "Android project verification: PASS"
 
 
       # ============================================================
-      # GRADLE
+      # GRADLE 8.11.1
       # ============================================================
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
 
 
       # ============================================================
-      # PREPARE GRADLE
+      # VERIFY GRADLE
       # ============================================================
 
-      - name: Prepare Gradle
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Verify Gradle
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ -f "./gradlew" ]; then
+          gradle --version
 
-            chmod +x ./gradlew
+          GRADLE_VERSION_FOUND="$(
+            gradle --version \
+              | grep '^Gradle ' \
+              | awk '{print $2}'
+          )"
 
-            echo "Gradle wrapper found."
+          echo "Gradle version: $GRADLE_VERSION_FOUND"
 
-            ./gradlew --version
+          test "$GRADLE_VERSION_FOUND" = "8.11.1"
 
-          else
-
-            echo "Gradle wrapper not found."
-
-            echo "System Gradle version:"
-            gradle --version
-
-          fi
+          echo "Gradle 8.11.1 verification: PASS"
 
 
       # ============================================================
-      # FIX JAVA / KOTLIN JVM TARGET
-      #
-      # IMPORTANT:
-      # DO NOT use options.release.set(17)
-      # Android Gradle Plugin does not allow that.
-      # ============================================================
-
-      - name: Fix Java and Kotlin JVM targets
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Applying Android-safe JVM 17 configuration..."
-
-          cat > "$GITHUB_WORKSPACE/majdoor-jvm17.gradle" <<'GRADLE'
-
-          gradle.afterProject { project ->
-
-              project.tasks.withType(JavaCompile).configureEach {
-
-                  sourceCompatibility = "17"
-                  targetCompatibility = "17"
-              }
-
-              project.tasks.configureEach { task ->
-
-                  if (task.class.name.contains("KotlinCompile")) {
-
-                      try {
-                          task.kotlinOptions.jvmTarget = "17"
-                      } catch (Exception ignored) {
-                      }
-
-                      try {
-                          task.compilerOptions.jvmTarget.set(
-                              org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
-                          )
-                      } catch (Exception ignored) {
-                      }
-                  }
-              }
-          }
-
-          GRADLE
-
-          echo ""
-          echo "JVM configuration:"
-          cat "$GITHUB_WORKSPACE/majdoor-jvm17.gradle"
-
-          echo ""
-          echo "IMPORTANT:"
-          echo "JavaCompile = 17"
-          echo "KotlinCompile = 17"
-          echo "Java --release option is NOT being used."
-
-
-      # ============================================================
-      # FIX MAIN ACTIVITY
+      # FIX MAINACTIVITY
       # ============================================================
 
       - name: Fix MainActivity onCreate
@@ -395,7 +316,7 @@ jobs:
 
           if [ -z "$MAIN_ACTIVITY" ]; then
 
-            echo "MainActivity.kt not found."
+            echo "MainActivity.kt नहीं मिली."
 
           else
 
@@ -408,7 +329,6 @@ jobs:
           from pathlib import Path
 
           path = Path(sys.argv[1])
-
           text = path.read_text()
 
           # Already correct
@@ -420,7 +340,11 @@ jobs:
 
           else:
 
-              pattern = r'(?m)^(\s*)(?:(public|protected)\s+)?fun\s+onCreate\s*\('
+              pattern = (
+                  r'(?m)^(\s*)'
+                  r'(?:(public|protected)\s+)?'
+                  r'fun\s+onCreate\s*\('
+              )
 
               def replace(match):
 
@@ -449,7 +373,7 @@ jobs:
               if count == 0:
 
                   print(
-                      "WARNING: onCreate() not found."
+                      "WARNING: onCreate() नहीं मिला."
                   )
 
               else:
@@ -473,26 +397,246 @@ jobs:
 
 
       # ============================================================
-      # FINAL JVM BUILD CONFIGURATION
+      # FINAL JAVA/KOTLIN JVM FIX
+      #
+      # IMPORTANT:
+      # options.release.set(17) नहीं लगाना है।
+      # Android Gradle Plugin के साथ यह गलत है।
+      #
+      # JavaCompile:
+      # sourceCompatibility = 17
+      # targetCompatibility = 17
+      #
+      # Kotlin:
+      # jvmTarget = 17
       # ============================================================
 
-      - name: Validate JVM build configuration
+      - name: Fix Android Java and Kotlin JVM targets
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Checking Gradle files..."
+          echo "=========================================="
+          echo "FIXING ANDROID JVM TARGETS"
+          echo "=========================================="
 
-          grep -RniE \
-            "VERSION_1_8|jvmTarget.*1\.8|jvmTarget.*['\"]8['\"]|options\.release" \
-            app \
-            --include="*.gradle" \
-            --include="*.gradle.kts" \
+          if [ -f "app/build.gradle.kts" ]; then
+
+            python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+
+          print("Patching:", p)
+
+          # --------------------------------------------------
+          # Java 8 -> Java 17
+          # --------------------------------------------------
+
+          s = s.replace(
+              "JavaVersion.VERSION_1_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          s = s.replace(
+              "JavaVersion.VERSION_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          # --------------------------------------------------
+          # Kotlin 1.8 / 8 -> 17
+          # --------------------------------------------------
+
+          s = re.sub(
+              r'jvmTarget\s*=\s*["\']1\.8["\']',
+              'jvmTarget = "17"',
+              s
+          )
+
+          s = re.sub(
+              r'jvmTarget\s*=\s*["\']8["\']',
+              'jvmTarget = "17"',
+              s
+          )
+
+          # --------------------------------------------------
+          # Ensure compileOptions
+          # --------------------------------------------------
+
+          if "compileOptions" not in s:
+
+              android_match = re.search(
+                  r'(?m)^android\s*\{',
+                  s
+              )
+
+              if android_match:
+
+                  insert = """
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+          """
+
+                  pos = android_match.end()
+
+                  s = (
+                      s[:pos] +
+                      "\n" +
+                      insert +
+                      s[pos:]
+                  )
+
+          # --------------------------------------------------
+          # Ensure Kotlin target
+          # --------------------------------------------------
+
+          if "jvmTarget" not in s:
+
+              s += """
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              compilerOptions {
+                  jvmTarget.set(
+                      org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+                  )
+              }
+          }
+          """
+
+          p.write_text(s)
+
+          print("build.gradle.kts patched successfully.")
+          PY
+
+          else
+
+            if [ ! -f "app/build.gradle" ]; then
+              echo "ERROR: app/build.gradle(.kts) नहीं मिला."
+              exit 1
+            fi
+
+            python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("app/build.gradle")
+          s = p.read_text()
+
+          print("Patching:", p)
+
+          # --------------------------------------------------
+          # Java 8 -> Java 17
+          # --------------------------------------------------
+
+          s = s.replace(
+              "JavaVersion.VERSION_1_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          s = s.replace(
+              "JavaVersion.VERSION_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          # --------------------------------------------------
+          # Kotlin 1.8 / 8 -> 17
+          # --------------------------------------------------
+
+          s = re.sub(
+              r'jvmTarget\s*=\s*["\']1\.8["\']',
+              'jvmTarget = "17"',
+              s
+          )
+
+          s = re.sub(
+              r'jvmTarget\s*=\s*["\']8["\']',
+              'jvmTarget = "17"',
+              s
+          )
+
+          # --------------------------------------------------
+          # Ensure compileOptions
+          # --------------------------------------------------
+
+          if "compileOptions" not in s:
+
+              android_match = re.search(
+                  r'(?m)^android\s*\{',
+                  s
+              )
+
+              if android_match:
+
+                  insert = """
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+          """
+
+                  pos = android_match.end()
+
+                  s = (
+                      s[:pos] +
+                      "\n" +
+                      insert +
+                      s[pos:]
+                  )
+
+          # --------------------------------------------------
+          # Ensure Kotlin target
+          # --------------------------------------------------
+
+          if "jvmTarget" not in s:
+
+              s += """
+
+          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+              kotlinOptions.jvmTarget = "17"
+          }
+          """
+
+          p.write_text(s)
+
+          print("build.gradle patched successfully.")
+          PY
+
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "FINAL JVM SETTINGS"
+          echo "=========================================="
+
+          grep -nEi \
+            "compileOptions|sourceCompatibility|targetCompatibility|jvmTarget|VERSION_1_8|VERSION_8|VERSION_17|options.release" \
+            app/build.gradle* \
             || true
 
           echo ""
-          echo "Java 17 will be enforced by Gradle init script."
+          echo "Checking for forbidden Java 1.8 / --release settings..."
+
+          if grep -RniE \
+            "VERSION_1_8|VERSION_8|jvmTarget.*1\.8|jvmTarget.*['\"]8['\"]|options\.release" \
+            app \
+            --include="*.gradle" \
+            --include="*.gradle.kts"; then
+
+            echo ""
+            echo "ERROR: Old JVM setting found."
+            exit 1
+
+          fi
+
+          echo ""
+          echo "JVM TARGET FIX: PASS"
 
 
       # ============================================================
@@ -509,25 +653,11 @@ jobs:
           echo "MAJDOOR HISAAB RELEASE APK BUILD"
           echo "=========================================="
 
-          if [ -f "./gradlew" ]; then
-
-            ./gradlew \
-              clean \
-              assembleRelease \
-              --no-daemon \
-              --stacktrace \
-              -I "$GITHUB_WORKSPACE/majdoor-jvm17.gradle"
-
-          else
-
-            gradle \
-              clean \
-              assembleRelease \
-              --no-daemon \
-              --stacktrace \
-              -I "$GITHUB_WORKSPACE/majdoor-jvm17.gradle"
-
-          fi
+          gradle \
+            clean \
+            assembleRelease \
+            --no-daemon \
+            --stacktrace
 
           echo ""
           echo "=========================================="
@@ -536,7 +666,7 @@ jobs:
 
 
       # ============================================================
-      # FIND FINAL APK
+      # FIND RELEASE APK
       # ============================================================
 
       - name: Find Release APK
@@ -593,17 +723,21 @@ jobs:
 
           test -f "$APK"
 
-          if [[ "$APK" == *debug* ]]; then
-            echo "ERROR: Debug APK detected."
-            exit 1
-          fi
+          case "$APK" in
+            *debug*)
+              echo "ERROR: Debug APK detected."
+              exit 1
+              ;;
+          esac
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
           AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
 
+          echo ""
           echo "APK package:"
+
           "$AAPT" dump badging "$APK" \
             | grep "^package:" \
             | head -1
@@ -630,8 +764,10 @@ jobs:
 
           sha256sum \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk" \
-            > "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
+            > \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
 
+          echo ""
           cat \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
 
