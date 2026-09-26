@@ -484,23 +484,105 @@ jobs:
 
           cp \
             "$APK" \
-            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk"
 
           ls -lh \
-            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk"
 
 
       # ============================================================
-      # 14. VERIFY APK
-      #
-      # ONLY THIS SECTION IS CHANGED.
-      #
-      # Previous build:
-      # APK BUILD = SUCCESS
-      # APK PACKAGE = SUCCESS
-      # apksigner = FAILED
-      #
-      # Therefore signature verification is NOT made a hard failure.
+      # 14. PREPARE RELEASE SIGNING
+      # ============================================================
+
+      - name: Prepare release signing
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -n "$RELEASE_KEYSTORE_BASE64"
+          test -n "$RELEASE_KEYSTORE_PASSWORD"
+          test -n "$RELEASE_KEY_ALIAS"
+          test -n "$RELEASE_KEY_PASSWORD"
+
+          KEYSTORE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
+
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" |
+            base64 --decode > "$KEYSTORE"
+
+          test -s "$KEYSTORE"
+
+          echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+
+          echo "Release keystore prepared."
+
+
+      # ============================================================
+      # 15. ZIPALIGN
+      # ============================================================
+
+      - name: Zipalign Release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
+
+          test -x "$ZIPALIGN"
+
+          "$ZIPALIGN" \
+            -f \
+            -p \
+            4 \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk" \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Aligned.apk"
+
+          echo "Zipalign: PASS"
+
+
+      # ============================================================
+      # 16. SIGN RELEASE APK
+      # ============================================================
+
+      - name: Sign Release APK
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+
+          test -x "$APKSIGNER"
+          test -f "$KEYSTORE"
+
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias "$RELEASE_KEY_ALIAS" \
+            --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$RELEASE_KEY_PASSWORD" \
+            --out "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk" \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Aligned.apk"
+
+          test -f "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
+          ls -lh "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+
+          echo "APK signing: PASS"
+
+
+      # ============================================================
+      # 17. VERIFY FINAL SIGNED APK
       # ============================================================
 
       - name: Verify Release APK
@@ -520,6 +602,7 @@ jobs:
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
           AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
 
           echo ""
           echo "================ APK PACKAGE ================"
@@ -532,49 +615,42 @@ jobs:
 
           echo "$PACKAGE_LINE"
 
-          echo ""
-          echo "Checking application ID..."
-
           echo "$PACKAGE_LINE" |
             grep "name='com.majdoor.hisaab'"
-
-          echo "Application ID: PASS"
-
-          echo ""
-          echo "Checking version code..."
 
           echo "$PACKAGE_LINE" |
             grep "versionCode='2'"
 
-          echo "Version code: PASS"
-
-          echo ""
-          echo "Checking version name..."
-
           echo "$PACKAGE_LINE" |
             grep "versionName='1.1'"
 
-          echo "Version name: PASS"
+          echo ""
+          echo "================ APK SIGNATURE ================"
+
+          "$APKSIGNER" verify \
+            --verbose \
+            "$APK"
 
           echo ""
-          echo "================ APK FILE ================"
+          echo "================ APK ALIGNMENT ================"
 
-          ls -lh "$APK"
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
+
+          "$ZIPALIGN" \
+            -c \
+            -P 4 \
+            4 \
+            "$APK"
 
           echo ""
           echo "APK package verification: PASS"
-
-          echo ""
-          echo "NOTE:"
-          echo "This release build does not contain a v1 META-INF signature."
-          echo "apksigner verification is therefore not used as a build blocker."
-
-          echo ""
-          echo "APK verification: PASS"
+          echo "APK signature verification: PASS"
+          echo "APK alignment verification: PASS"
+          echo "FINAL APK VERIFICATION: PASS"
 
 
       # ============================================================
-      # 15. SHA256
+      # 18. SHA256
       # ============================================================
 
       - name: Generate SHA256
@@ -593,7 +669,7 @@ jobs:
 
 
       # ============================================================
-      # 16. UPLOAD ONLY FINAL RELEASE APK
+      # 19. UPLOAD ONLY FINAL RELEASE APK
       # ============================================================
 
       - name: Upload Final Release APK
