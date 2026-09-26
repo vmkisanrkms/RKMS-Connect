@@ -676,10 +676,10 @@ jobs:
             grep "name='com.majdoor.hisaab'"
 
           echo "$PACKAGE_LINE" |
-            grep "versionCode='3'"
+            grep "versionCode='5'"
 
           echo "$PACKAGE_LINE" |
-            grep "versionName='2.0'"
+            grep "versionName='2.2'"
 
           echo ""
           echo "================ APK SIGNATURE ================"
