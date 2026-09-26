@@ -491,34 +491,45 @@ jobs:
 
 
       # ============================================================
-      # 14. PREPARE RELEASE SIGNING
+      # 14. CREATE TEMPORARY RELEASE KEY
+      #
+      # STEPS 1-13 ABOVE ARE UNCHANGED.
+      #
+      # No GitHub Secrets required.
       # ============================================================
 
       - name: Prepare release signing
         shell: bash
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
-          test -n "$RELEASE_KEYSTORE_BASE64"
-          test -n "$RELEASE_KEYSTORE_PASSWORD"
-          test -n "$RELEASE_KEY_ALIAS"
-          test -n "$RELEASE_KEY_PASSWORD"
-
           KEYSTORE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
 
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" |
-            base64 --decode > "$KEYSTORE"
+          KEYSTORE_PASSWORD="MajdoorHisaabRelease2026!"
+          KEY_ALIAS="majdoor-hisaab"
+          KEY_PASSWORD="MajdoorHisaabRelease2026!"
+
+          keytool \
+            -genkeypair \
+            -v \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Majdoor Hisaab, OU=RKMS, O=Rastriya Kisan Majdur Sangathan, L=India, ST=Uttar Pradesh, C=IN"
 
           test -s "$KEYSTORE"
 
           echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-          echo "Release keystore prepared."
+          echo "Release keystore created successfully."
 
 
       # ============================================================
@@ -552,10 +563,6 @@ jobs:
 
       - name: Sign Release APK
         shell: bash
-        env:
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -568,9 +575,9 @@ jobs:
 
           "$APKSIGNER" sign \
             --ks "$KEYSTORE" \
-            --ks-key-alias "$RELEASE_KEY_ALIAS" \
-            --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
-            --key-pass "pass:$RELEASE_KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
             --out "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk" \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Aligned.apk"
 
