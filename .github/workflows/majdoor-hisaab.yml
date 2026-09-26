@@ -222,7 +222,7 @@ jobs:
 
 
       # ============================================================
-      # 8. FIX MainActivity
+      # 8. FIX MainActivity onCreate
       # ============================================================
 
       - name: Fix MainActivity
@@ -265,7 +265,61 @@ jobs:
 
 
       # ============================================================
-      # 9. FIX JAVA + KOTLIN JVM TARGETS
+      # 9. FIX ONLY inTransaction SYNTAX ERROR
+      # ============================================================
+
+      - name: Fix inTransaction syntax
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          test -f "$FILE"
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("app/src/main/java/com/majdoor/hisaab/MainActivity.kt")
+          s = p.read_text()
+
+          # Fix only usages of SQLiteDatabase.inTransaction
+          # that are incorrectly written as a property.
+          #
+          # Wrong:
+          #     db.inTransaction
+          #
+          # Correct:
+          #     db.inTransaction()
+
+          pattern = r'\.inTransaction\b(?!\s*\()'
+
+          s2, count = re.subn(
+              pattern,
+              '.inTransaction()',
+              s
+          )
+
+          if count:
+              p.write_text(s2)
+              print(f"Fixed {count} incorrect inTransaction usage(s).")
+          else:
+              print("No incorrect inTransaction usage found.")
+
+          PY
+
+          echo ""
+          echo "Checking remaining inTransaction usages:"
+          grep -n "inTransaction" "$FILE" || true
+
+          echo ""
+          echo "inTransaction syntax check: PASS"
+
+
+      # ============================================================
+      # 10. FIX JAVA + KOTLIN JVM TARGETS
       # ============================================================
 
       - name: Configure Java 17 and Kotlin 17
@@ -345,7 +399,7 @@ jobs:
 
 
       # ============================================================
-      # 10. SETUP GRADLE 8.11.1
+      # 11. SETUP GRADLE 8.11.1
       # ============================================================
 
       - name: Setup Gradle 8.11.1
@@ -375,7 +429,7 @@ jobs:
 
 
       # ============================================================
-      # 11. VERIFY FINAL PROJECT BEFORE BUILD
+      # 12. VERIFY FINAL PROJECT BEFORE BUILD
       # ============================================================
 
       - name: Final pre-build audit
@@ -423,7 +477,7 @@ jobs:
 
 
       # ============================================================
-      # 12. BUILD RELEASE APK
+      # 13. BUILD RELEASE APK
       # ============================================================
 
       - name: Build Release APK
@@ -447,7 +501,7 @@ jobs:
 
 
       # ============================================================
-      # 13. FIND APK
+      # 14. FIND APK
       # ============================================================
 
       - name: Find Release APK
@@ -491,11 +545,7 @@ jobs:
 
 
       # ============================================================
-      # 14. CREATE TEMPORARY RELEASE KEY
-      #
-      # STEPS 1-13 ABOVE ARE UNCHANGED.
-      #
-      # No GitHub Secrets required.
+      # 15. CREATE TEMPORARY RELEASE KEY
       # ============================================================
 
       - name: Prepare release signing
@@ -533,7 +583,7 @@ jobs:
 
 
       # ============================================================
-      # 15. ZIPALIGN
+      # 16. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -558,7 +608,7 @@ jobs:
 
 
       # ============================================================
-      # 16. SIGN RELEASE APK
+      # 17. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -589,7 +639,7 @@ jobs:
 
 
       # ============================================================
-      # 17. VERIFY FINAL SIGNED APK
+      # 18. VERIFY FINAL SIGNED APK
       # ============================================================
 
       - name: Verify Release APK
@@ -626,10 +676,10 @@ jobs:
             grep "name='com.majdoor.hisaab'"
 
           echo "$PACKAGE_LINE" |
-            grep "versionCode='2'"
+            grep "versionCode='3'"
 
           echo "$PACKAGE_LINE" |
-            grep "versionName='1.1'"
+            grep "versionName='2.0'"
 
           echo ""
           echo "================ APK SIGNATURE ================"
@@ -657,7 +707,7 @@ jobs:
 
 
       # ============================================================
-      # 18. SHA256
+      # 19. SHA256
       # ============================================================
 
       - name: Generate SHA256
@@ -676,7 +726,7 @@ jobs:
 
 
       # ============================================================
-      # 19. UPLOAD ONLY FINAL RELEASE APK
+      # 20. UPLOAD ONLY FINAL RELEASE APK
       # ============================================================
 
       - name: Upload Final Release APK
