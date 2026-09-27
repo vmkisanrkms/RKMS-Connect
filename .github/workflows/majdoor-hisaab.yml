@@ -316,17 +316,25 @@ jobs:
           echo "Logo file: PASS"
 
       # =========================================================
-      # 12. EXACT SOURCE FIX FROM AUDIT
+      # 12. APPLY EXACT AUDITED KOTLIN FIXES
       #
-      # The audited ZIP has ONE known Kotlin syntax problem
-      # at attendanceChoice().
+      # FIX 1:
+      # attendanceChoice() malformed if expression.
       #
-      # No speculative changes are made.
-      # No date declaration repair is made because the
-      # audited ZIP already has the correct date code.
+      # FIX 2:
+      # paymentDialog() line 626 self-reference:
+      #
+      # val date=outline(... date.text ...)
+      #
+      # becomes:
+      #
+      # var date: TextView?=null
+      # date=outline(... date?.text ...)
+      #
+      # No other source changes are made.
       # =========================================================
 
-      - name: Apply audited Kotlin source correction
+      - name: Apply exact audited Kotlin fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -342,49 +350,154 @@ jobs:
           path = Path(sys.argv[1])
           text = path.read_text(encoding="utf-8")
 
-          old = (
+          changes = []
+
+          # =====================================================
+          # FIX 1 - attendanceChoice()
+          # =====================================================
+
+          old_attendance = (
               'background=bg(if(selected)soft,11,'
               'if(selected)1 else 1,color)'
           )
 
-          new = (
+          new_attendance = (
               'background=bg(if(selected) soft else C.WHITE,'
               '11,1,color)'
           )
 
-          count = text.count(old)
+          count = text.count(old_attendance)
 
-          if count == 0:
-              print("Known malformed expression not present.")
-              print("No source change required.")
-          elif count == 1:
-              text = text.replace(old, new)
-              path.write_text(text, encoding="utf-8")
-              print("Known line-400 Kotlin syntax correction applied.")
+          if count == 1:
+              text = text.replace(
+                  old_attendance,
+                  new_attendance
+              )
+              changes.append("attendanceChoice")
+          elif count == 0:
+              if (
+                  'background=bg(if(selected) soft else C.WHITE,'
+                  '11,1,color)'
+              ) in text:
+                  changes.append("attendanceChoice-already-fixed")
+              else:
+                  print(
+                      "ERROR: attendanceChoice expected expression "
+                      "was not found."
+                  )
+                  sys.exit(1)
           else:
               print(
-                  f"ERROR: Expected 0 or 1 occurrences, found {count}."
+                  "ERROR: attendanceChoice malformed expression "
+                  f"appeared {count} times."
               )
               sys.exit(1)
+
+          # =====================================================
+          # FIX 2 - paymentDialog() exact date self-reference
+          # =====================================================
+
+          old_date = (
+              'var payDate=oldDate;'
+              'val date=outline("📅 ${displayDf.format(parseDate(payDate))}")'
+              '{pickDate(payDate){payDate=it;'
+              'date.text="📅 ${displayDf.format(parseDate(payDate))}"}};'
+          )
+
+          new_date = (
+              'var payDate=oldDate;'
+              'var date: TextView?=null;'
+              'date=outline("📅 ${displayDf.format(parseDate(payDate))}")'
+              '{pickDate(payDate){payDate=it;'
+              'date?.text="📅 ${displayDf.format(parseDate(payDate))}"}};'
+          )
+
+          count = text.count(old_date)
+
+          if count == 1:
+              text = text.replace(
+                  old_date,
+                  new_date
+              )
+              changes.append("paymentDialog-date")
+          elif count == 0:
+              if (
+                  'var date: TextView?=null;'
+                  'date=outline("📅 ${displayDf.format(parseDate(payDate))}")'
+              ) in text:
+                  changes.append("paymentDialog-date-already-fixed")
+              else:
+                  print(
+                      "ERROR: paymentDialog date expression "
+                      "was not found."
+                  )
+                  sys.exit(1)
+          else:
+              print(
+                  "ERROR: paymentDialog date expression "
+                  f"appeared {count} times."
+              )
+              sys.exit(1)
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print("Exact Kotlin fixes applied:")
+          for item in changes:
+              print(" -", item)
+
           PY
 
           echo
-          echo "Checking corrected attendanceChoice..."
+          echo "===== VERIFY ATTENDANCE FUNCTION ====="
+
           grep -n \
             'private fun attendanceChoice' \
             "$MAIN"
 
-          # The malformed expression must NOT remain.
+          echo
+          echo "===== VERIFY PAYMENT DATE CODE ====="
+
+          grep -n \
+            'var date: TextView?=null' \
+            "$MAIN"
+
+          grep -n \
+            'date?.text=' \
+            "$MAIN"
+
+          # Old attendance error must not remain.
           if grep -nF \
             'background=bg(if(selected)soft,11,if(selected)1 else 1,color)' \
             "$MAIN"; then
 
-            echo "ERROR: Known malformed Kotlin expression remains."
+            echo "ERROR: Old attendance expression remains."
+            exit 1
+          fi
+
+          # Old payment self-reference must not remain.
+          if grep -nF \
+            'val date=outline("📅 ${displayDf.format(parseDate(payDate))}")' \
+            "$MAIN"; then
+
+            echo "ERROR: Old payment date self-reference remains."
+            exit 1
+          fi
+
+          # Old direct date.text self-reference must not remain
+          # inside the payment dialog source.
+          if grep -nF \
+            'date.text="📅 ${displayDf.format(parseDate(payDate))}"' \
+            "$MAIN"; then
+
+            echo "ERROR: Old date.text reference remains."
             exit 1
           fi
 
           echo
-          echo "Audited Kotlin correction: PASS"
+          echo "Exact audited Kotlin fixes: PASS"
 
       # =========================================================
       # 13. VERIFY DATABASE SOURCE
@@ -444,7 +557,7 @@ jobs:
           echo "SQLite schema audit: PASS"
 
       # =========================================================
-      # 14. VERIFY CORE APP FEATURES EXIST
+      # 14. VERIFY CORE APP FEATURES
       # =========================================================
 
       - name: Audit application features
@@ -494,7 +607,7 @@ jobs:
           echo "Core feature audit: PASS"
 
       # =========================================================
-      # 15. VERIFY JVM SETTINGS
+      # 15. VERIFY JVM 17
       # =========================================================
 
       - name: Verify JVM configuration
@@ -539,7 +652,7 @@ jobs:
           gradle --version
 
       # =========================================================
-      # 17. BUILD RELEASE
+      # 17. BUILD RELEASE APK
       # =========================================================
 
       - name: Build Release APK
@@ -555,12 +668,6 @@ jobs:
 
       # =========================================================
       # 18. DETECT ACTUAL APK
-      #
-      # IMPORTANT:
-      # This ZIP produces:
-      # app-release-unsigned.apk
-      #
-      # We do NOT assume app-release.apk.
       # =========================================================
 
       - name: Detect built Release APK
@@ -584,7 +691,10 @@ jobs:
             echo "ERROR: Expected unsigned Release APK not found."
             echo
             echo "Release directory:"
-            find "$APK_DIR" -maxdepth 1 -type f -print 2>/dev/null || true
+            find "$APK_DIR" \
+              -maxdepth 1 \
+              -type f \
+              -print 2>/dev/null || true
             exit 1
           fi
 
@@ -633,7 +743,7 @@ jobs:
           echo "Signing secrets: PASS"
 
       # =========================================================
-      # 20. RESTORE PERMANENT KEYSTORE
+      # 20. RESTORE PERMANENT RELEASE KEYSTORE
       # =========================================================
 
       - name: Restore permanent release keystore
@@ -711,7 +821,7 @@ jobs:
           echo "APK signing: PASS"
 
       # =========================================================
-      # 23. VERIFY FINAL APK
+      # 23. VERIFY FINAL RELEASE APK
       # =========================================================
 
       - name: Verify Final Release APK
@@ -753,7 +863,10 @@ jobs:
           DEBUG_APK="$PROJECT_DIR/app/build/outputs/apk/debug"
 
           if [ -d "$DEBUG_APK" ]; then
-            DEBUG_FILES=$(find "$DEBUG_APK" -type f -name "*.apk" -print || true)
+            DEBUG_FILES=$(find "$DEBUG_APK" \
+              -type f \
+              -name "*.apk" \
+              -print || true)
 
             if [ -n "$DEBUG_FILES" ]; then
               echo "ERROR: Debug APK detected:"
@@ -804,9 +917,11 @@ jobs:
             | grep -q .; then
 
             echo "ERROR: Intermediate APK remains."
+
             find "$PROJECT_DIR/app/build/outputs/apk/release" \
               -type f \
               -print
+
             exit 1
           fi
 
@@ -832,6 +947,7 @@ jobs:
 
           echo
           echo "FINAL SHA256:"
+
           cat \
             "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
 
