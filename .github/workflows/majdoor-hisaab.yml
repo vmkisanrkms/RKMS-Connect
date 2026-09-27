@@ -17,36 +17,32 @@ jobs:
 
     steps:
 
-      # ============================================================
+      # ==========================================================
       # 1. CHECKOUT
-      # ============================================================
+      # ==========================================================
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
-      # ============================================================
+      # ==========================================================
       # 2. JAVA 17
-      # IMPORTANT:
-      # No Gradle cache here. This avoids the previous failure where
-      # setup-java tried to find Gradle files before the project root
-      # had been identified.
-      # ============================================================
+      # ==========================================================
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      # ============================================================
+      # ==========================================================
       # 3. ANDROID SDK
-      # ============================================================
+      # ==========================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # ============================================================
-      # 4. INSTALL REQUIRED SDK
-      # ============================================================
+      # ==========================================================
+      # 4. ANDROID SDK 35
+      # ==========================================================
       - name: Install Android SDK 35
         shell: bash
         run: |
@@ -59,76 +55,109 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK 35 installed."
+          echo "Android SDK 35: PASS"
 
-      # ============================================================
-      # 5. FIND ACTUAL ANDROID PROJECT ROOT
-      # ============================================================
-      - name: Locate Android project
+      # ==========================================================
+      # 5. FIND V27 ZIP
+      # ==========================================================
+      - name: Find V27 V5 ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Repository:"
-          pwd
+          ZIP_FILE=""
 
-          echo
-          echo "Top-level files:"
-          find . -maxdepth 2 -type f | sort | head -200
-
-          echo
-          echo "Searching for Android project..."
-
-          ROOT=""
-
-          while IFS= read -r settings; do
-            CANDIDATE="$(dirname "$settings")"
-
-            if [ -f "$CANDIDATE/gradlew" ] && \
-               [ -f "$CANDIDATE/app/build.gradle.kts" ] && \
-               [ -f "$CANDIDATE/settings.gradle.kts" ]; then
-              ROOT="$CANDIDATE"
-              break
-            fi
-          done < <(
-            find . \
+          if [ -f "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip" ]; then
+            ZIP_FILE="$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip"
+          else
+            ZIP_FILE="$(find "$GITHUB_WORKSPACE" \
+              -maxdepth 3 \
               -type f \
-              -name "settings.gradle.kts" \
-              -not -path "*/.git/*" \
-              | sort
-          )
+              -name "Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip" \
+              -print -quit)"
+          fi
 
-          if [ -z "$ROOT" ]; then
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: V27 V5 ZIP not found."
             echo
-            echo "ERROR: V27 Android project was not found."
-            echo
-            echo "Required files:"
-            echo "  settings.gradle.kts"
-            echo "  build.gradle.kts"
-            echo "  gradlew"
-            echo "  app/build.gradle.kts"
-            echo
-            echo "Make sure the V27 V5 source is uploaded to this repository."
+            echo "Files available in repository:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort
             exit 1
           fi
 
-          ROOT="$(realpath "$ROOT")"
+          echo "V27 ZIP:"
+          echo "$ZIP_FILE"
 
-          echo "ANDROID_PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "V27_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      # ==========================================================
+      # 6. EXTRACT V27 ZIP
+      # ==========================================================
+      - name: Extract V27 V5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf "$GITHUB_WORKSPACE/v27-source"
+
+          mkdir -p "$GITHUB_WORKSPACE/v27-source"
+
+          unzip -q \
+            "$V27_ZIP" \
+            -d "$GITHUB_WORKSPACE/v27-source"
+
+          echo "Extracted V27 source:"
+          find "$GITHUB_WORKSPACE/v27-source" \
+            -maxdepth 3 \
+            -type f \
+            | sort \
+            | head -200
+
+      # ==========================================================
+      # 7. SET ACTUAL PROJECT ROOT
+      # ==========================================================
+      - name: Set V27 project root
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT_ROOT="$GITHUB_WORKSPACE/v27-source/src"
+
+          if [ ! -f "$PROJECT_ROOT/settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle.kts not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_ROOT/build.gradle.kts" ]; then
+            echo "ERROR: build.gradle.kts not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_ROOT/gradlew" ]; then
+            echo "ERROR: gradlew not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_ROOT/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle.kts not found."
+            exit 1
+          fi
+
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
           echo
-          echo "Android project root:"
-          echo "$ROOT"
+          echo "V27 PROJECT ROOT:"
+          echo "$PROJECT_ROOT"
 
-      # ============================================================
-      # 6. VERIFY PROJECT STRUCTURE
-      # ============================================================
+      # ==========================================================
+      # 8. VERIFY PROJECT
+      # ==========================================================
       - name: Verify V27 project structure
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
           test -f settings.gradle.kts
           test -f build.gradle.kts
@@ -136,6 +165,8 @@ jobs:
 
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
+
+          test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
 
           test -f gradlew
           test -f gradle/wrapper/gradle-wrapper.jar
@@ -145,20 +176,17 @@ jobs:
 
           echo "V27 project structure: PASS"
 
-      # ============================================================
-      # 7. VERIFY EXACT V27 V5 CONFIGURATION
-      # ============================================================
+      # ==========================================================
+      # 9. VERIFY EXACT V27 CONFIG
+      # ==========================================================
       - name: Verify V27 v2.10 configuration
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
           APP="app/build.gradle.kts"
-
-          echo "Checking:"
-          echo "$APP"
 
           grep -Fq \
             'namespace = "com.majdoor.hisaab"' \
@@ -196,28 +224,39 @@ jobs:
             'jvmTarget = "17"' \
             "$APP"
 
-          echo
-          echo "V27 configuration:"
-          echo "Package      : com.majdoor.hisaab"
-          echo "Version      : 2.10"
-          echo "VersionCode  : 30"
-          echo "compileSdk   : 35"
-          echo "targetSdk    : 35"
-          echo "minSdk       : 26"
-          echo "Java         : 17"
+          grep -Fq \
+            'id("com.android.application") version "8.9.1"' \
+            build.gradle.kts
+
+          grep -Fq \
+            'id("org.jetbrains.kotlin.android") version "2.1.20"' \
+            build.gradle.kts
 
           echo
+          echo "=========================================="
+          echo "V27 CONFIGURATION"
+          echo "=========================================="
+          echo "Package     : com.majdoor.hisaab"
+          echo "Version     : 2.10"
+          echo "VersionCode : 30"
+          echo "compileSdk  : 35"
+          echo "targetSdk   : 35"
+          echo "minSdk      : 26"
+          echo "Java        : 17"
+          echo "AGP         : 8.9.1"
+          echo "Kotlin      : 2.1.20"
+          echo "=========================================="
           echo "V27 configuration: PASS"
 
-      # ============================================================
-      # 8. VERIFY GRADLE VERSION
-      # ============================================================
+      # ==========================================================
+      # 10. VERIFY GRADLE
+      # ==========================================================
       - name: Verify Gradle 8.11.1
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
           chmod +x gradlew
 
@@ -227,19 +266,20 @@ jobs:
 
           ./gradlew --version
 
-          ./gradlew --version | grep -Fq "Gradle 8.11.1"
+          ./gradlew --version | grep -Fq \
+            "Gradle 8.11.1"
 
           echo "Gradle 8.11.1: PASS"
 
-      # ============================================================
-      # 9. VERIFY ANDROID MANIFEST
-      # ============================================================
+      # ==========================================================
+      # 11. VERIFY MANIFEST
+      # ==========================================================
       - name: Verify Android Manifest
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
           MANIFEST="app/src/main/AndroidManifest.xml"
 
@@ -251,15 +291,64 @@ jobs:
 
           echo "Android Manifest: PASS"
 
-      # ============================================================
-      # 10. CLEAN
-      # ============================================================
+      # ==========================================================
+      # 12. VERIFY RELEASE SECRETS
+      # ==========================================================
+      - name: Verify release signing secrets
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -n "$RELEASE_KEYSTORE_BASE64"
+          test -n "$RELEASE_KEYSTORE_PASSWORD"
+          test -n "$RELEASE_KEY_ALIAS"
+          test -n "$RELEASE_KEY_PASSWORD"
+
+          echo "Release signing secrets: PRESENT"
+
+      # ==========================================================
+      # 13. RESTORE RELEASE KEYSTORE
+      # ==========================================================
+      - name: Restore permanent release keystore
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode > release.keystore
+
+          test -s release.keystore
+
+          {
+            echo "releaseStoreFile=$PROJECT_ROOT/release.keystore"
+            echo "releaseStorePassword=$RELEASE_KEYSTORE_PASSWORD"
+            echo "releaseKeyAlias=$RELEASE_KEY_ALIAS"
+            echo "releaseKeyPassword=$RELEASE_KEY_PASSWORD"
+          } >> gradle.properties
+
+          echo "Release keystore restored"
+
+      # ==========================================================
+      # 14. CLEAN
+      # ==========================================================
       - name: Clean previous outputs
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
           ./gradlew clean --no-daemon
 
@@ -268,80 +357,60 @@ jobs:
 
           echo "Clean: PASS"
 
-      # ============================================================
-      # 11. BUILD RELEASE APK ONLY
-      # ============================================================
-      - name: Build Release APK
+      # ==========================================================
+      # 15. BUILD RELEASE APK ONLY
+      # ==========================================================
+      - name: Build V27 Release APK only
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
           ./gradlew \
             :app:assembleRelease \
             --no-daemon \
             --stacktrace
 
-      # ============================================================
-      # 12. FIND RELEASE APK
-      # ============================================================
-      - name: Locate Release APK
+      # ==========================================================
+      # 16. VERIFY APK
+      # ==========================================================
+      - name: Verify Release APK
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
-          APK="$(find app/build/outputs/apk/release \
-            -maxdepth 1 \
-            -type f \
-            -name "*.apk" \
-            | head -1)"
+          APK="app/build/outputs/apk/release/app-release.apk"
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: Release APK not found."
-            exit 1
-          fi
+          test -f "$APK"
+          test -s "$APK"
 
-          APK="$(realpath "$APK")"
-
-          echo "RELEASE_APK=$APK" >> "$GITHUB_ENV"
+          unzip -t "$APK" >/dev/null
 
           echo
-          echo "Release APK:"
-          echo "$APK"
-
+          echo "RELEASE APK:"
           ls -lh "$APK"
 
-      # ============================================================
-      # 13. VERIFY APK INTEGRITY
-      # ============================================================
-      - name: Verify APK integrity
-        shell: bash
-        run: |
-          set -euo pipefail
+          echo "APK integrity: PASS"
 
-          test -f "$RELEASE_APK"
-          test -s "$RELEASE_APK"
-
-          unzip -t "$RELEASE_APK" >/dev/null
-
-          echo "APK ZIP integrity: PASS"
-
-      # ============================================================
-      # 14. VERIFY NO DEBUG APK
-      # ============================================================
+      # ==========================================================
+      # 17. NO DEBUG APK
+      # ==========================================================
       - name: Verify no Debug APK
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
-          DEBUG_APKS="$(find app/build/outputs/apk \
-            -type f \
-            -iname "*debug*.apk" || true)"
+          DEBUG_APKS="$(
+            find app/build/outputs/apk \
+              -type f \
+              -iname "*debug*.apk" \
+              || true
+          )"
 
           if [ -n "$DEBUG_APKS" ]; then
             echo "ERROR: Debug APK found:"
@@ -351,19 +420,22 @@ jobs:
 
           echo "Debug APK: NOT FOUND"
 
-      # ============================================================
-      # 15. VERIFY NO AAB
-      # ============================================================
+      # ==========================================================
+      # 18. NO AAB
+      # ==========================================================
       - name: Verify no AAB
         shell: bash
         run: |
           set -euo pipefail
 
-          cd "$ANDROID_PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
 
-          AABS="$(find app/build/outputs \
-            -type f \
-            \( -name "*.aab" -o -name "*.aab.zip" \) || true)"
+          AABS="$(
+            find app/build/outputs \
+              -type f \
+              \( -name "*.aab" -o -name "*.aab.zip" \) \
+              || true
+          )"
 
           if [ -n "$AABS" ]; then
             echo "ERROR: AAB found:"
@@ -373,19 +445,23 @@ jobs:
 
           echo "AAB: NOT FOUND"
 
-      # ============================================================
-      # 16. VERIFY PACKAGE / VERSION / VERSION CODE
-      # ============================================================
+      # ==========================================================
+      # 19. VERIFY PACKAGE + VERSION
+      # ==========================================================
       - name: Verify APK package and version
         shell: bash
         run: |
           set -euo pipefail
 
+          cd "$PROJECT_ROOT"
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
 
           test -x "$AAPT"
 
-          BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
+          BADGING="$("$AAPT" dump badging "$APK")"
 
           echo "$BADGING"
 
@@ -399,15 +475,22 @@ jobs:
             "versionName='2.10'"
 
           echo
-          echo "APK package/version: PASS"
+          echo "Package      : com.majdoor.hisaab"
+          echo "Version      : 2.10"
+          echo "VersionCode  : 30"
+          echo "Package/version: PASS"
 
-      # ============================================================
-      # 17. VERIFY APK SIGNATURE
-      # ============================================================
+      # ==========================================================
+      # 20. VERIFY RELEASE SIGNATURE
+      # ==========================================================
       - name: Verify APK signature
         shell: bash
         run: |
           set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          APK="app/build/outputs/apk/release/app-release.apk"
 
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
 
@@ -415,44 +498,51 @@ jobs:
 
           "$APKSIGNER" verify \
             --verbose \
-            "$RELEASE_APK"
+            "$APK"
 
           echo
           echo "APK signature: PASS"
 
-      # ============================================================
-      # 18. SHA-256
-      # ============================================================
-      - name: Generate SHA-256
+      # ==========================================================
+      # 21. SHA-256
+      # ==========================================================
+      - name: Generate APK SHA-256
         shell: bash
         run: |
           set -euo pipefail
 
-          sha256sum "$RELEASE_APK" \
+          cd "$PROJECT_ROOT"
+
+          sha256sum \
+            app/build/outputs/apk/release/app-release.apk \
             | tee "$GITHUB_WORKSPACE/release-apk-sha256.txt"
 
-      # ============================================================
-      # 19. COPY FINAL APK TO SIMPLE OUTPUT NAME
-      # ============================================================
+      # ==========================================================
+      # 22. PREPARE FINAL FILE
+      # ==========================================================
       - name: Prepare final APK
         shell: bash
         run: |
           set -euo pipefail
 
+          cd "$PROJECT_ROOT"
+
           mkdir -p "$GITHUB_WORKSPACE/final"
 
-          cp "$RELEASE_APK" \
+          cp \
+            app/build/outputs/apk/release/app-release.apk \
             "$GITHUB_WORKSPACE/final/Majdoor-Hisaab-PRO-V27-v2.10-FINAL.apk"
 
-          cp "$GITHUB_WORKSPACE/release-apk-sha256.txt" \
+          cp \
+            "$GITHUB_WORKSPACE/release-apk-sha256.txt" \
             "$GITHUB_WORKSPACE/final/"
 
           ls -lh "$GITHUB_WORKSPACE/final/"
 
-      # ============================================================
-      # 20. UPLOAD FINAL RELEASE APK
-      # ============================================================
-      - name: Upload FINAL V27 Release APK
+      # ==========================================================
+      # 23. UPLOAD FINAL APK
+      # ==========================================================
+      - name: Upload V27 v2.10 FINAL Release APK
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V27-v2.10-FINAL-Release-APK
@@ -460,10 +550,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ============================================================
-      # 21. UPLOAD SHA-256
-      # ============================================================
-      - name: Upload SHA-256
+      # ==========================================================
+      # 24. UPLOAD SHA-256
+      # ==========================================================
+      - name: Upload V27 SHA-256
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V27-v2.10-SHA256
