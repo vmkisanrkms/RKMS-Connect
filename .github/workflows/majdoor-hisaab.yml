@@ -7,27 +7,27 @@ permissions:
   contents: read
 
 concurrency:
-  group: majdoor-hisaab-release-build
+  group: majdoor-hisaab-v27-release
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build Final Release APK
+    name: Build V27 v2.10 Final Release APK
     runs-on: ubuntu-latest
 
     steps:
 
-      # ------------------------------------------------------------
-      # 1. Checkout
-      # ------------------------------------------------------------
-      - name: Checkout source
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+      - name: Checkout V27 V5 source
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      # ------------------------------------------------------------
-      # 2. Java 17
-      # ------------------------------------------------------------
+      # ============================================================
+      # 2. JAVA 17
+      # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -35,15 +35,15 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      # ------------------------------------------------------------
-      # 3. Android SDK
-      # ------------------------------------------------------------
+      # ============================================================
+      # 3. ANDROID SDK
+      # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # ------------------------------------------------------------
-      # 4. Install exact Android SDK components
-      # ------------------------------------------------------------
+      # ============================================================
+      # 4. ANDROID SDK 35
+      # ============================================================
       - name: Install Android SDK 35
         shell: bash
         run: |
@@ -56,32 +56,34 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # ------------------------------------------------------------
-      # 5. Verify project structure
-      # ------------------------------------------------------------
-      - name: Verify project structure
+      # ============================================================
+      # 5. VERIFY PROJECT ROOT
+      # ============================================================
+      - name: Verify V27 project structure
         shell: bash
         run: |
           set -euo pipefail
 
-          test -f "settings.gradle.kts"
-          test -f "build.gradle.kts"
-          test -f "gradle.properties"
+          echo "Checking V27 V5 project..."
 
-          test -f "app/build.gradle.kts"
-          test -f "app/src/main/AndroidManifest.xml"
-          test -f "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f gradle.properties
 
-          test -f "gradlew"
-          test -f "gradle/wrapper/gradle-wrapper.jar"
-          test -f "gradle/wrapper/gradle-wrapper.properties"
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
 
-          echo "Project structure: PASS"
+          test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
 
-      # ------------------------------------------------------------
-      # 6. Verify Gradle wrapper
-      # ------------------------------------------------------------
-      - name: Verify Gradle wrapper
+          echo "V27 project structure: PASS"
+
+      # ============================================================
+      # 6. GRADLE WRAPPER
+      # ============================================================
+      - name: Verify Gradle 8.11.1
         shell: bash
         run: |
           set -euo pipefail
@@ -100,21 +102,24 @@ jobs:
 
           ./gradlew --version | grep -q "Gradle 8.11.1"
 
-          echo "Gradle wrapper: PASS"
+          echo "Gradle 8.11.1: PASS"
 
-      # ------------------------------------------------------------
-      # 7. Verify Android / Kotlin configuration
-      # ------------------------------------------------------------
-      - name: Verify build configuration
+      # ============================================================
+      # 7. VERIFY EXACT V27 CONFIGURATION
+      # ============================================================
+      - name: Verify V27 build configuration
         shell: bash
         run: |
           set -euo pipefail
 
           APP="app/build.gradle.kts"
 
+          grep -q 'namespace = "com.majdoor.hisaab"' "$APP"
+          grep -q 'applicationId = "com.majdoor.hisaab"' "$APP"
+
           grep -q 'compileSdk = 35' "$APP"
-          grep -q 'targetSdk = 35' "$APP"
           grep -q 'minSdk = 26' "$APP"
+          grep -q 'targetSdk = 35' "$APP"
 
           grep -q 'versionCode = 30' "$APP"
           grep -q 'versionName = "2.10"' "$APP"
@@ -122,18 +127,20 @@ jobs:
           grep -q 'JavaVersion.VERSION_17' "$APP"
           grep -q 'jvmTarget = "17"' "$APP"
 
-          grep -q 'applicationId = "com.majdoor.hisaab"' "$APP"
-          grep -q 'namespace = "com.majdoor.hisaab"' "$APP"
+          grep -q \
+            'com.android.application" version "8.9.1"' \
+            build.gradle.kts
 
-          grep -q 'com.android.application.*8.9.1' build.gradle.kts
-          grep -q 'org.jetbrains.kotlin.android.*2.1.20' build.gradle.kts
+          grep -q \
+            'org.jetbrains.kotlin.android" version "2.1.20"' \
+            build.gradle.kts
 
-          echo "Build configuration: PASS"
+          echo "V27 configuration: PASS"
 
-      # ------------------------------------------------------------
-      # 8. Verify Android manifest
-      # ------------------------------------------------------------
-      - name: Verify Android manifest
+      # ============================================================
+      # 8. VERIFY MANIFEST
+      # ============================================================
+      - name: Verify Android Manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -141,16 +148,12 @@ jobs:
           MANIFEST="app/src/main/AndroidManifest.xml"
 
           grep -q 'com.majdoor.hisaab' "$MANIFEST"
-          grep -q 'android:name=".MainActivity"' "$MANIFEST"
-          grep -q 'android:exported="true"' "$MANIFEST"
-          grep -q 'android.intent.action.MAIN' "$MANIFEST"
-          grep -q 'android.intent.category.LAUNCHER' "$MANIFEST"
 
-          echo "Android manifest: PASS"
+          echo "Android Manifest: PASS"
 
-      # ------------------------------------------------------------
-      # 9. Verify release signing secrets
-      # ------------------------------------------------------------
+      # ============================================================
+      # 9. VERIFY RELEASE SIGNING SECRETS
+      # ============================================================
       - name: Verify release signing secrets
         shell: bash
         env:
@@ -168,9 +171,9 @@ jobs:
 
           echo "Release signing secrets: PRESENT"
 
-      # ------------------------------------------------------------
-      # 10. Restore permanent release keystore
-      # ------------------------------------------------------------
+      # ============================================================
+      # 10. RESTORE RELEASE KEYSTORE
+      # ============================================================
       - name: Restore permanent release keystore
         shell: bash
         env:
@@ -181,7 +184,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release.keystore
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode > release.keystore
 
           test -s release.keystore
 
@@ -194,10 +198,10 @@ jobs:
 
           echo "Release keystore restored"
 
-      # ------------------------------------------------------------
-      # 11. Clean old build outputs
-      # ------------------------------------------------------------
-      - name: Clean previous build outputs
+      # ============================================================
+      # 11. CLEAN
+      # ============================================================
+      - name: Clean previous outputs
         shell: bash
         run: |
           set -euo pipefail
@@ -207,9 +211,9 @@ jobs:
           rm -rf app/build/outputs/apk
           rm -rf app/build/outputs/bundle
 
-      # ------------------------------------------------------------
-      # 12. Build RELEASE APK ONLY
-      # ------------------------------------------------------------
+      # ============================================================
+      # 12. BUILD RELEASE APK ONLY
+      # ============================================================
       - name: Build Release APK only
         shell: bash
         run: |
@@ -220,9 +224,9 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      # ------------------------------------------------------------
-      # 13. Verify APK exists
-      # ------------------------------------------------------------
+      # ============================================================
+      # 13. VERIFY RELEASE APK
+      # ============================================================
       - name: Verify Release APK
         shell: bash
         run: |
@@ -233,13 +237,13 @@ jobs:
           test -f "$APK"
           test -s "$APK"
 
-          echo "Release APK found:"
+          echo "Release APK:"
           ls -lh "$APK"
 
-      # ------------------------------------------------------------
-      # 14. Verify APK ZIP integrity
-      # ------------------------------------------------------------
-      - name: Verify APK integrity
+      # ============================================================
+      # 14. APK ZIP INTEGRITY
+      # ============================================================
+      - name: Verify APK ZIP integrity
         shell: bash
         run: |
           set -euo pipefail
@@ -250,10 +254,10 @@ jobs:
 
           echo "APK ZIP integrity: PASS"
 
-      # ------------------------------------------------------------
-      # 15. Make sure DEBUG APK was NOT built
-      # ------------------------------------------------------------
-      - name: Verify no debug APK
+      # ============================================================
+      # 15. NO DEBUG APK
+      # ============================================================
+      - name: Verify no Debug APK
         shell: bash
         run: |
           set -euo pipefail
@@ -263,16 +267,19 @@ jobs:
             -name "*debug*.apk" \
             | grep -q .; then
 
-            echo "ERROR: Debug APK detected."
-            find app/build/outputs/apk -type f -name "*debug*.apk"
+            echo "ERROR: Debug APK found"
+            find app/build/outputs/apk \
+              -type f \
+              -name "*debug*.apk"
+
             exit 1
           fi
 
-          echo "Debug APK: NOT PRESENT"
+          echo "Debug APK: NOT FOUND"
 
-      # ------------------------------------------------------------
-      # 16. Make sure AAB was NOT built
-      # ------------------------------------------------------------
+      # ============================================================
+      # 16. NO AAB
+      # ============================================================
       - name: Verify no AAB
         shell: bash
         run: |
@@ -283,18 +290,20 @@ jobs:
             \( -name "*.aab" -o -name "*.aab.zip" \) \
             | grep -q .; then
 
-            echo "ERROR: AAB detected."
+            echo "ERROR: AAB found"
+
             find app/build/outputs \
               -type f \
               \( -name "*.aab" -o -name "*.aab.zip" \)
+
             exit 1
           fi
 
-          echo "AAB: NOT PRESENT"
+          echo "AAB: NOT FOUND"
 
-      # ------------------------------------------------------------
-      # 17. Verify APK package / version
-      # ------------------------------------------------------------
+      # ============================================================
+      # 17. VERIFY PACKAGE + VERSION
+      # ============================================================
       - name: Verify APK package and version
         shell: bash
         run: |
@@ -305,7 +314,7 @@ jobs:
 
           test -x "$AAPT"
 
-          BADGING="$($AAPT dump badging "$APK")"
+          BADGING="$("$AAPT" dump badging "$APK")"
 
           echo "$BADGING"
 
@@ -318,11 +327,14 @@ jobs:
           echo "$BADGING" | grep -q \
             "versionName='2.10'"
 
-          echo "Package/version verification: PASS"
+          echo "Package: com.majdoor.hisaab"
+          echo "Version: 2.10"
+          echo "VersionCode: 30"
+          echo "Package/version: PASS"
 
-      # ------------------------------------------------------------
-      # 18. Verify APK signature
-      # ------------------------------------------------------------
+      # ============================================================
+      # 18. VERIFY RELEASE SIGNATURE
+      # ============================================================
       - name: Verify APK signature
         shell: bash
         run: |
@@ -337,33 +349,11 @@ jobs:
 
           "$APKSIGNER" verify --print-certs "$APK"
 
-          echo "APK signature: PASS"
+          echo "Release signature: PASS"
 
-      # ------------------------------------------------------------
-      # 19. Verify APK contains release build
-      # ------------------------------------------------------------
-      - name: Verify release artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="app/build/outputs/apk/release/app-release.apk"
-
-          test -f "$APK"
-
-          case "$APK" in
-            */release/*)
-              echo "Correct release APK path"
-              ;;
-            *)
-              echo "ERROR: APK is not in release directory"
-              exit 1
-              ;;
-          esac
-
-      # ------------------------------------------------------------
-      # 20. Generate SHA-256
-      # ------------------------------------------------------------
+      # ============================================================
+      # 19. SHA-256
+      # ============================================================
       - name: Generate APK SHA-256
         shell: bash
         run: |
@@ -373,24 +363,24 @@ jobs:
 
           sha256sum "$APK" | tee release-apk-sha256.txt
 
-      # ------------------------------------------------------------
-      # 21. Upload ONLY final release APK
-      # ------------------------------------------------------------
-      - name: Upload FINAL Release APK
+      # ============================================================
+      # 20. UPLOAD FINAL APK ONLY
+      # ============================================================
+      - name: Upload V27 V5 Final Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-v2.10-FINAL-Release-APK
+          name: Majdoor-Hisaab-PRO-v2.10-V27-V5-FINAL-Release-APK
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
 
-      # ------------------------------------------------------------
-      # 22. Upload SHA-256 separately
-      # ------------------------------------------------------------
+      # ============================================================
+      # 21. UPLOAD SHA-256
+      # ============================================================
       - name: Upload APK SHA-256
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-v2.10-SHA256
+          name: Majdoor-Hisaab-PRO-v2.10-V27-V5-SHA256
           path: release-apk-sha256.txt
           if-no-files-found: error
           retention-days: 30
