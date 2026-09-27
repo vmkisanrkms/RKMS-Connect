@@ -132,8 +132,13 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'rootProject.name = "MajdoorHisaab"' settings.gradle.kts
+          # ZIP में actual format:
+          # rootProject.name="MajdoorHisaab"
+          grep -Eq 'rootProject\.name[[:space:]]*=[[:space:]]*"MajdoorHisaab"' settings.gradle.kts
+
           grep -Fq 'include(":app")' settings.gradle.kts
+
+          echo "SETTINGS PASS"
 
       - name: Verify Gradle configuration
         shell: bash
@@ -271,11 +276,8 @@ jobs:
 
           replacements = {
 
-              # Previous compiler failure: line 938
               938: '''            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}''',
 
-              # Previous compiler failure: lines 1033-1036
-              # NOTE: -1 and +1 inside dailyShift remain Int.
               1033: '''            Hotspot("Back",0f,0f,12f,10f){reports()}, Hotspot("Prev",5f,8f,25f,8f){dailyShift(-1,fieldFilter)}, Hotspot("Next",70f,8f,25f,8f){dailyShift(1,fieldFilter)},''',
 
               1034: '''            Hotspot(tr("All Fields","सभी खेत"),5f,17f,25f,7f){dailyReport()}, Hotspot("Paddy",32f,17f,20f,7f){dailyReport("Paddy")}, Hotspot("Sugarcane",54f,17f,22f,7f){dailyReport("Sugarcane")}, Hotspot("Banana",77f,17f,18f,7f){dailyReport("Banana")},''',
@@ -284,10 +286,8 @@ jobs:
 
               1036: '''            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}''',
 
-              # Previous compiler failure: line 1077
               1077: '''        val lp=FrameLayout.LayoutParams(-1,0).apply{height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)}''',
 
-              # Previous compiler failure: lines 1211-1212
               1211: '''            Hotspot("Back",0f,0f,12f,10f){home()}, Hotspot("Create Backup",8f,14f,40f,15f){createBackup()}, Hotspot("Restore Backup",52f,14f,40f,15f){pickRestore()},''',
 
               1212: '''            Hotspot("Currency",8f,48f,84f,8f){currencyDialog()}, Hotspot("Language",8f,57f,84f,8f){languageDialog()}, Hotspot("Theme",8f,66f,84f,8f){themeDialog()}, Hotspot("Reset",8f,74f,84f,8f){confirmResetReference()}'''
@@ -327,13 +327,6 @@ jobs:
               lines[index] = replacement
 
           text = "\n".join(lines) + "\n"
-
-          # --------------------------------------------------------
-          # ONLY missing reportWorkerWhere() function
-          # Previous failures:
-          # 1149 unresolved reference
-          # 1185 unresolved reference
-          # --------------------------------------------------------
 
           if "private fun reportWorkerWhere(" not in text:
 
@@ -379,9 +372,6 @@ jobs:
           print("ONLY PREVIOUSLY FAILED SOURCE AREAS FIXED")
           PY
 
-      # ============================================================
-      # VERIFY EXACT FIXES
-      # ============================================================
       - name: Verify exact source fixes
         shell: bash
         run: |
@@ -421,9 +411,6 @@ jobs:
 
           echo "EXACT SOURCE FIX PASS"
 
-      # ============================================================
-      # CLEAN
-      # ============================================================
       - name: Clean
         shell: bash
         run: |
@@ -433,9 +420,6 @@ jobs:
 
           ./gradlew clean --no-daemon
 
-      # ============================================================
-      # FINAL RELEASE APK ONLY
-      # ============================================================
       - name: Build FINAL Release APK
         shell: bash
         run: |
@@ -454,9 +438,6 @@ jobs:
           echo "FINAL RELEASE APK CREATED"
           ls -lh "$APK"
 
-      # ============================================================
-      # NO DEBUG APK / NO AAB
-      # ============================================================
       - name: Verify final artifact
         shell: bash
         run: |
@@ -481,9 +462,6 @@ jobs:
 
           echo "FINAL ARTIFACT PASS"
 
-      # ============================================================
-      # PACKAGE + VERSION
-      # ============================================================
       - name: Verify APK package and version
         shell: bash
         run: |
@@ -511,9 +489,6 @@ jobs:
 
           echo "PACKAGE VERSION PASS"
 
-      # ============================================================
-      # SIGNATURE
-      # ============================================================
       - name: Verify APK signature
         shell: bash
         run: |
@@ -528,9 +503,6 @@ jobs:
 
           echo "SIGNATURE PASS"
 
-      # ============================================================
-      # SHA256
-      # ============================================================
       - name: Generate SHA256
         shell: bash
         run: |
@@ -542,9 +514,6 @@ jobs:
             app/build/outputs/apk/release/app-release.apk \
             | tee APK_SHA256.txt
 
-      # ============================================================
-      # FINAL APK NAME
-      # ============================================================
       - name: Prepare final APK
         shell: bash
         run: |
@@ -563,9 +532,6 @@ jobs:
           ls -lh \
             "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
 
-      # ============================================================
-      # FINAL RELEASE APK ARTIFACT
-      # ============================================================
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
         with:
