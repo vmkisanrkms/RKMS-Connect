@@ -2,8 +2,13 @@ name: Build Final Release APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: majdoor-hisaab-release-build
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -12,195 +17,142 @@ jobs:
 
     steps:
 
-      - name: Checkout repository
+      # ------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------
+      - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
+      # ------------------------------------------------------------
+      # 2. Java 17
+      # ------------------------------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
+      # ------------------------------------------------------------
+      # 3. Android SDK
+      # ------------------------------------------------------------
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK
+      # ------------------------------------------------------------
+      # 4. Install exact Android SDK components
+      # ------------------------------------------------------------
+      - name: Install Android SDK 35
+        shell: bash
         run: |
           set -euo pipefail
 
-          yes | sdkmanager --licenses >/dev/null || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK setup: PASS"
-
-      - name: Locate FINAL source ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SOURCE_ZIP="Majdoor_Hisaab_PRO_FINAL_FIXED_AUDITED_RELEASE_BUILD_V3.zip"
-
-          if [ ! -f "$GITHUB_WORKSPACE/$SOURCE_ZIP" ]; then
-            echo "ERROR: Source ZIP not found:"
-            echo "$GITHUB_WORKSPACE/$SOURCE_ZIP"
-            echo
-            echo "Repository files:"
-            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f | sort
-            exit 1
-          fi
-
-          echo "SOURCE_ZIP=$SOURCE_ZIP" >> "$GITHUB_ENV"
-
-          echo "Source ZIP found: PASS"
-          ls -lh "$GITHUB_WORKSPACE/$SOURCE_ZIP"
-
-      - name: Verify source ZIP
-        run: |
-          set -euo pipefail
-
-          unzip -t "$GITHUB_WORKSPACE/$SOURCE_ZIP" >/dev/null
-
-          echo "Source ZIP integrity: PASS"
-
-      - name: Extract FINAL source
-        run: |
-          set -euo pipefail
-
-          rm -rf "$GITHUB_WORKSPACE/build-source"
-
-          mkdir -p "$GITHUB_WORKSPACE/build-source"
-
-          unzip -q \
-            "$GITHUB_WORKSPACE/$SOURCE_ZIP" \
-            -d "$GITHUB_WORKSPACE/build-source"
-
-          echo "Source extracted: PASS"
-
+      # ------------------------------------------------------------
+      # 5. Verify project structure
+      # ------------------------------------------------------------
       - name: Verify project structure
         shell: bash
         run: |
           set -euo pipefail
 
-          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
+          test -f "settings.gradle.kts"
+          test -f "build.gradle.kts"
+          test -f "gradle.properties"
 
-          test -f "$PROJECT_DIR/settings.gradle.kts"
-          test -f "$PROJECT_DIR/build.gradle.kts"
-          test -f "$PROJECT_DIR/gradle.properties"
-          test -f "$PROJECT_DIR/app/build.gradle.kts"
+          test -f "app/build.gradle.kts"
+          test -f "app/src/main/AndroidManifest.xml"
+          test -f "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          test -f "$PROJECT_DIR/gradlew"
-
-          test -f \
-            "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar"
-
-          test -f \
-            "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/res/drawable-nodpi/majdoor_logo.png"
+          test -f "gradlew"
+          test -f "gradle/wrapper/gradle-wrapper.jar"
+          test -f "gradle/wrapper/gradle-wrapper.properties"
 
           echo "Project structure: PASS"
 
-      - name: Audit Android configuration
+      # ------------------------------------------------------------
+      # 6. Verify Gradle wrapper
+      # ------------------------------------------------------------
+      - name: Verify Gradle wrapper
         shell: bash
         run: |
           set -euo pipefail
 
-          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
-
-          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
-          ROOT_GRADLE="$PROJECT_DIR/build.gradle.kts"
-
-          grep -q 'compileSdk = 35' "$APP_GRADLE"
-          grep -q 'minSdk = 26' "$APP_GRADLE"
-          grep -q 'targetSdk = 35' "$APP_GRADLE"
-
-          grep -q 'versionCode = 24' "$APP_GRADLE"
-          grep -q 'versionName = "2.4"' "$APP_GRADLE"
+          chmod +x gradlew
 
           grep -q \
-            'id("com.android.application") version "8.9.1"' \
-            "$ROOT_GRADLE"
+            "gradle-8.11.1-bin.zip" \
+            gradle/wrapper/gradle-wrapper.properties
 
           grep -q \
-            'id("org.jetbrains.kotlin.android") version "2.1.20"' \
-            "$ROOT_GRADLE"
-
-          echo "Android configuration: PASS"
-
-      - name: Audit release signing configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
-
-          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q 'signingConfigs' "$APP_GRADLE"
-          grep -q 'releaseStoreFile' "$APP_GRADLE"
-          grep -q 'releaseStorePassword' "$APP_GRADLE"
-          grep -q 'releaseKeyAlias' "$APP_GRADLE"
-          grep -q 'releaseKeyPassword' "$APP_GRADLE"
-
-          grep -q \
-            'signingConfig = signingConfigs.getByName("release")' \
-            "$APP_GRADLE"
-
-          echo "Release signing configuration: PASS"
-
-      - name: Audit manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
-
-          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-          grep -q 'android:exported="true"' "$MANIFEST"
-
-          echo "Manifest audit: PASS"
-
-      - name: Audit Kotlin JVM 17
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
-
-          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q 'JavaVersion.VERSION_17' "$APP_GRADLE"
-
-          grep -q 'jvmTarget = "17"' "$APP_GRADLE"
-
-          echo "Java/Kotlin 17 configuration: PASS"
-
-      - name: Verify Gradle 8.11.1
-        working-directory: build-source
-        run: |
-          set -euo pipefail
-
-          chmod +x ./gradlew
+            "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6" \
+            gradle/wrapper/gradle-wrapper.properties
 
           ./gradlew --version
 
-          ./gradlew --version | grep -q 'Gradle 8.11.1'
+          ./gradlew --version | grep -q "Gradle 8.11.1"
 
-          echo "Gradle 8.11.1: PASS"
+          echo "Gradle wrapper: PASS"
 
-      - name: Verify signing secrets
+      # ------------------------------------------------------------
+      # 7. Verify Android / Kotlin configuration
+      # ------------------------------------------------------------
+      - name: Verify build configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP="app/build.gradle.kts"
+
+          grep -q 'compileSdk = 35' "$APP"
+          grep -q 'targetSdk = 35' "$APP"
+          grep -q 'minSdk = 26' "$APP"
+
+          grep -q 'versionCode = 30' "$APP"
+          grep -q 'versionName = "2.10"' "$APP"
+
+          grep -q 'JavaVersion.VERSION_17' "$APP"
+          grep -q 'jvmTarget = "17"' "$APP"
+
+          grep -q 'applicationId = "com.majdoor.hisaab"' "$APP"
+          grep -q 'namespace = "com.majdoor.hisaab"' "$APP"
+
+          grep -q 'com.android.application.*8.9.1' build.gradle.kts
+          grep -q 'org.jetbrains.kotlin.android.*2.1.20' build.gradle.kts
+
+          echo "Build configuration: PASS"
+
+      # ------------------------------------------------------------
+      # 8. Verify Android manifest
+      # ------------------------------------------------------------
+      - name: Verify Android manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MANIFEST="app/src/main/AndroidManifest.xml"
+
+          grep -q 'com.majdoor.hisaab' "$MANIFEST"
+          grep -q 'android:name=".MainActivity"' "$MANIFEST"
+          grep -q 'android:exported="true"' "$MANIFEST"
+          grep -q 'android.intent.action.MAIN' "$MANIFEST"
+          grep -q 'android.intent.category.LAUNCHER' "$MANIFEST"
+
+          echo "Android manifest: PASS"
+
+      # ------------------------------------------------------------
+      # 9. Verify release signing secrets
+      # ------------------------------------------------------------
+      - name: Verify release signing secrets
+        shell: bash
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -214,10 +166,13 @@ jobs:
           test -n "$RELEASE_KEY_ALIAS"
           test -n "$RELEASE_KEY_PASSWORD"
 
-          echo "All release signing secrets: PASS"
+          echo "Release signing secrets: PRESENT"
 
+      # ------------------------------------------------------------
+      # 10. Restore permanent release keystore
+      # ------------------------------------------------------------
       - name: Restore permanent release keystore
-        working-directory: build-source
+        shell: bash
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -226,33 +181,50 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "$RELEASE_KEYSTORE_BASE64" \
-            | base64 --decode > release.keystore
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release.keystore
 
           test -s release.keystore
 
           {
-            echo "releaseStoreFile=$GITHUB_WORKSPACE/build-source/release.keystore"
+            echo "releaseStoreFile=$GITHUB_WORKSPACE/release.keystore"
             echo "releaseStorePassword=$RELEASE_KEYSTORE_PASSWORD"
             echo "releaseKeyAlias=$RELEASE_KEY_ALIAS"
             echo "releaseKeyPassword=$RELEASE_KEY_PASSWORD"
           } >> gradle.properties
 
-          echo "Permanent release keystore restored: PASS"
+          echo "Release keystore restored"
 
-      - name: Build Release APK only
-        working-directory: build-source
+      # ------------------------------------------------------------
+      # 11. Clean old build outputs
+      # ------------------------------------------------------------
+      - name: Clean previous build outputs
+        shell: bash
         run: |
           set -euo pipefail
 
-          ./gradlew :app:assembleRelease \
+          ./gradlew clean --no-daemon
+
+          rm -rf app/build/outputs/apk
+          rm -rf app/build/outputs/bundle
+
+      # ------------------------------------------------------------
+      # 12. Build RELEASE APK ONLY
+      # ------------------------------------------------------------
+      - name: Build Release APK only
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            :app:assembleRelease \
             --no-daemon \
             --stacktrace
 
-          echo "Release APK build: PASS"
-
-      - name: Verify Release APK exists
-        working-directory: build-source
+      # ------------------------------------------------------------
+      # 13. Verify APK exists
+      # ------------------------------------------------------------
+      - name: Verify Release APK
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -261,65 +233,117 @@ jobs:
           test -f "$APK"
           test -s "$APK"
 
+          echo "Release APK found:"
+          ls -lh "$APK"
+
+      # ------------------------------------------------------------
+      # 14. Verify APK ZIP integrity
+      # ------------------------------------------------------------
+      - name: Verify APK integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
           unzip -t "$APK" >/dev/null
 
-          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "ERROR: Debug APK exists"
+          echo "APK ZIP integrity: PASS"
+
+      # ------------------------------------------------------------
+      # 15. Make sure DEBUG APK was NOT built
+      # ------------------------------------------------------------
+      - name: Verify no debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if find app/build/outputs/apk \
+            -type f \
+            -name "*debug*.apk" \
+            | grep -q .; then
+
+            echo "ERROR: Debug APK detected."
+            find app/build/outputs/apk -type f -name "*debug*.apk"
             exit 1
           fi
 
-          echo "Release APK exists: PASS"
+          echo "Debug APK: NOT PRESENT"
 
+      # ------------------------------------------------------------
+      # 16. Make sure AAB was NOT built
+      # ------------------------------------------------------------
+      - name: Verify no AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if find app/build/outputs \
+            -type f \
+            \( -name "*.aab" -o -name "*.aab.zip" \) \
+            | grep -q .; then
+
+            echo "ERROR: AAB detected."
+            find app/build/outputs \
+              -type f \
+              \( -name "*.aab" -o -name "*.aab.zip" \)
+            exit 1
+          fi
+
+          echo "AAB: NOT PRESENT"
+
+      # ------------------------------------------------------------
+      # 17. Verify APK package / version
+      # ------------------------------------------------------------
       - name: Verify APK package and version
-        working-directory: build-source
+        shell: bash
         run: |
           set -euo pipefail
 
           APK="app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
 
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-          AAPT="$BUILD_TOOLS/aapt"
-
-          test -f "$APK"
           test -x "$AAPT"
 
-          "$AAPT" dump badging "$APK" | grep -E \
-            "package: name='com\.majdoor\.hisaab'.*versionCode='24'.*versionName='2\.4'"
+          BADGING="$($AAPT dump badging "$APK")"
+
+          echo "$BADGING"
+
+          echo "$BADGING" | grep -q \
+            "package: name='com.majdoor.hisaab'"
+
+          echo "$BADGING" | grep -q \
+            "versionCode='30'"
+
+          echo "$BADGING" | grep -q \
+            "versionName='2.10'"
 
           echo "Package/version verification: PASS"
 
-      - name: Verify permanent APK signature
-        working-directory: build-source
+      # ------------------------------------------------------------
+      # 18. Verify APK signature
+      # ------------------------------------------------------------
+      - name: Verify APK signature
+        shell: bash
         run: |
           set -euo pipefail
 
           APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
 
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-
-          test -f "$APK"
           test -x "$APKSIGNER"
 
           "$APKSIGNER" verify --verbose "$APK"
 
           "$APKSIGNER" verify --print-certs "$APK"
 
-          echo "Permanent APK signature verification: PASS"
+          echo "APK signature: PASS"
 
-      - name: Calculate SHA256
-        working-directory: build-source
-        run: |
-          set -euo pipefail
-
-          APK="app/build/outputs/apk/release/app-release.apk"
-
-          sha256sum "$APK"
-
-          echo "SHA256: PASS"
-
-      - name: Final release-only check
-        working-directory: build-source
+      # ------------------------------------------------------------
+      # 19. Verify APK contains release build
+      # ------------------------------------------------------------
+      - name: Verify release artifact
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -327,19 +351,46 @@ jobs:
 
           test -f "$APK"
 
-          if find app/build/outputs/apk \
-            -type f \
-            -name '*debug*.apk' | grep -q .; then
-            echo "ERROR: Debug APK detected"
-            exit 1
-          fi
+          case "$APK" in
+            */release/*)
+              echo "Correct release APK path"
+              ;;
+            *)
+              echo "ERROR: APK is not in release directory"
+              exit 1
+              ;;
+          esac
 
-          echo "Final release-only check: PASS"
+      # ------------------------------------------------------------
+      # 20. Generate SHA-256
+      # ------------------------------------------------------------
+      - name: Generate APK SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
 
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          sha256sum "$APK" | tee release-apk-sha256.txt
+
+      # ------------------------------------------------------------
+      # 21. Upload ONLY final release APK
+      # ------------------------------------------------------------
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-v2.4-FINAL-Release-APK
-          path: build-source/app/build/outputs/apk/release/app-release.apk
+          name: Majdoor-Hisaab-PRO-v2.10-FINAL-Release-APK
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # ------------------------------------------------------------
+      # 22. Upload SHA-256 separately
+      # ------------------------------------------------------------
+      - name: Upload APK SHA-256
+        uses: actions/upload-artifact@v4
+        with:
+          name: Majdoor-Hisaab-PRO-v2.10-SHA256
+          path: release-apk-sha256.txt
           if-no-files-found: error
           retention-days: 30
