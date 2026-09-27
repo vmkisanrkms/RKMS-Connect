@@ -25,12 +25,14 @@ jobs:
       # =========================================================
       # 1. CHECKOUT
       # =========================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # =========================================================
       # 2. JAVA 17
       # =========================================================
+
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
@@ -48,6 +50,7 @@ jobs:
       # =========================================================
       # 3. ANDROID SDK
       # =========================================================
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -75,8 +78,8 @@ jobs:
 
       # =========================================================
       # 4. VERIFY ANDROID SDK
-      # zipalign -h intentionally NOT used
       # =========================================================
+
       - name: Verify Android SDK
         shell: bash
         run: |
@@ -102,8 +105,9 @@ jobs:
           echo "Zipalign: PASS"
 
       # =========================================================
-      # 5. LOCATE CORRECT AUDITED SOURCE ZIP
+      # 5. LOCATE SOURCE ZIP
       # =========================================================
+
       - name: Locate audited source ZIP
         id: source
         shell: bash
@@ -130,8 +134,9 @@ jobs:
           ls -lh "$SOURCE_ZIP"
 
       # =========================================================
-      # 6. VERIFY SOURCE ZIP
+      # 6. VERIFY ZIP
       # =========================================================
+
       - name: Verify source ZIP
         shell: bash
         run: |
@@ -148,6 +153,7 @@ jobs:
       # =========================================================
       # 7. EXTRACT SOURCE
       # =========================================================
+
       - name: Extract source
         shell: bash
         run: |
@@ -166,6 +172,7 @@ jobs:
       # =========================================================
       # 8. SET ANDROID PROJECT
       # =========================================================
+
       - name: Set Android project
         shell: bash
         run: |
@@ -198,8 +205,19 @@ jobs:
           test -f "$PROJECT_DIR/app/build.gradle.kts"
 
       # =========================================================
-      # 9. REPAIR ONLY KNOWN KOTLIN SYNTAX DEFECTS
+      # 9. REPAIR KOTLIN SOURCE
       # =========================================================
+      #
+      # IMPORTANT:
+      # This step repairs the two actual errors reported by
+      # GitHub Run #28:
+      #
+      # MainActivity.kt:400
+      # MainActivity.kt:626
+      #
+      # It also keeps the previously known ternary fixes.
+      # =========================================================
+
       - name: Repair verified Kotlin syntax
         shell: bash
         run: |
@@ -211,12 +229,19 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path(
               "build-source/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
           )
 
-          s = p.read_text(encoding="utf-8")
+          lines = p.read_text(encoding="utf-8").splitlines()
+
+          changed = []
+
+          # -----------------------------------------------------
+          # Previously identified malformed Kotlin expressions
+          # -----------------------------------------------------
 
           replacements = {
               'if(earned-paid>0)C.RED:C.MUTED':
@@ -244,92 +269,222 @@ jobs:
                   'if(e-p>0) C.RED else C.GREEN',
           }
 
-          changed = 0
+          for i, line in enumerate(lines):
+              original = line
 
-          for old, new in replacements.items():
-              count = s.count(old)
+              for old, new in replacements.items():
+                  line = line.replace(old, new)
 
-              if count:
-                  print(f"Replacing {count} occurrence(s): {old}")
-                  s = s.replace(old, new)
-                  changed += count
+              if line != original:
+                  changed.append(i + 1)
 
-          p.write_text(s, encoding="utf-8")
+              lines[i] = line
 
-          print(f"Total known syntax replacements: {changed}")
+          # -----------------------------------------------------
+          # ACTUAL ERROR #1
+          #
+          # MainActivity.kt:400
+          #
+          # GitHub compiler:
+          # "'if' must have both main and 'else' branches
+          #  when used as an expression."
+          #
+          # Repair the malformed selected/soft expression without
+          # changing the surrounding UI logic.
+          # -----------------------------------------------------
+
+          for i, line in enumerate(lines):
+
+              if "bg(if(selected)" in line and "soft" in line:
+
+                  original = line
+
+                  # Known malformed form:
+                  # if(selected)soft
+                  #
+                  # Convert it to:
+                  # if(selected) soft else Color.WHITE
+                  #
+                  # Only perform this when the malformed form exists.
+
+                  line = line.replace(
+                      "if(selected)soft",
+                      "if(selected) soft else Color.WHITE"
+                  )
+
+                  # Another malformed variant seen in the source:
+                  # if(selected)1 else 1
+                  #
+                  # This expression has no useful conditional effect,
+                  # so normalize it to the valid integer value 1.
+
+                  line = line.replace(
+                      "if(selected)1 else 1",
+                      "1"
+                  )
+
+                  if line != original:
+                      lines[i] = line
+                      changed.append(i + 1)
+
+          # -----------------------------------------------------
+          # ACTUAL ERROR #2
+          #
+          # MainActivity.kt:626
+          #
+          # GitHub compiler:
+          # "Unresolved reference 'date'"
+          #
+          # The TextView is referenced from inside its own initializer.
+          #
+          # Convert:
+          #
+          # val date = outline(...) { ... date.text ... }
+          #
+          # into:
+          #
+          # lateinit var date: TextView
+          # date = outline(...) { ... date.text ... }
+          #
+          # -----------------------------------------------------
+
+          for i, line in enumerate(lines):
+
+              if (
+                  "val date=outline(" in line
+                  and "payDate" in line
+                  and "date.text" in line
+              ):
+
+                  original = line
+
+                  line = line.replace(
+                      "val date=outline(",
+                      "date=outline(",
+                      1
+                  )
+
+                  if line != original:
+
+                      indent = re.match(r"^\\s*", line).group(0)
+
+                      lines.insert(
+                          i,
+                          indent + "lateinit var date: TextView;"
+                      )
+
+                      changed.append(i + 1)
+                      changed.append(i + 2)
+
+                      break
+
+          # -----------------------------------------------------
+          # Write repaired source
+          # -----------------------------------------------------
+
+          p.write_text(
+              "\\n".join(lines) + "\\n",
+              encoding="utf-8"
+          )
+
+          print("Kotlin repair completed.")
+          print("Changed lines:", sorted(set(changed)))
+
           PY
 
-          echo "Checking ONLY known malformed Kotlin patterns..."
+          echo
+          echo "Checking known malformed Kotlin expressions..."
+          echo
 
           if grep -nF \
             'if(earned-paid>0)C.RED:C.MUTED' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed RED/MUTED expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(c.getInt(4)==1)"Inactive":"Active"' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed worker status expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(id==null)"New Worker":"Worker Edit"' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed worker title expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(earned-paid>0)C.RED:C.GREEN' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed worker color expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(earned-paid>0)C.RED_SOFT:C.GREEN_SOFT' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed worker soft color expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(c.getInt(2)==1)"Inactive":"Active"' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed field status expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(id==null)"New Fields / Crops":"Field Edit"' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed field title expression remains."
             exit 1
           fi
 
           if grep -nF \
             'if(e-p>0)C.RED:C.GREEN' \
             "$MAIN"; then
-
-            echo "ERROR: Known malformed syntax remains."
+            echo "ERROR: malformed field color expression remains."
             exit 1
           fi
 
-          echo "Verified Kotlin syntax repair: PASS"
+          # -----------------------------------------------------
+          # Verify the two errors from Run #28 are repaired
+          # -----------------------------------------------------
+
+          if grep -nF \
+            'if(selected)soft' \
+            "$MAIN"; then
+            echo "ERROR: malformed selected/soft expression remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(selected)1 else 1' \
+            "$MAIN"; then
+            echo "ERROR: malformed selected integer expression remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'val date=outline(' \
+            "$MAIN"; then
+            echo "ERROR: date self-reference declaration remains."
+            exit 1
+          fi
+
+          echo
+          echo "Kotlin source repair: PASS"
+          echo
 
       # =========================================================
-      # 10. AUDIT FINAL SOURCE
+      # 10. SOURCE AUDIT
       # =========================================================
+
       - name: Audit final source
         shell: bash
         run: |
@@ -367,8 +522,9 @@ jobs:
           echo "Final source audit: PASS"
 
       # =========================================================
-      # 11. VERIFY JVM CONFIGURATION
+      # 11. JVM 17
       # =========================================================
+
       - name: Verify JVM configuration
         shell: bash
         run: |
@@ -395,8 +551,9 @@ jobs:
           echo "JVM 17 configuration: PASS"
 
       # =========================================================
-      # 12. SETUP GRADLE
+      # 12. GRADLE
       # =========================================================
+
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -412,12 +569,11 @@ jobs:
       # =========================================================
       # 13. FINAL PRE-BUILD AUDIT
       # =========================================================
+
       - name: Final pre-build audit
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Checking required Android files..."
 
           test -f "$PROJECT_DIR/settings.gradle.kts"
           test -f "$PROJECT_DIR/build.gradle.kts"
@@ -425,13 +581,9 @@ jobs:
           test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
           test -f "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          echo "Checking application ID..."
-
           grep -q \
             'applicationId="com.majdoor.hisaab"' \
             "$PROJECT_DIR/app/build.gradle.kts"
-
-          echo "Checking release configuration..."
 
           grep -q \
             'versionCode=5' \
@@ -446,6 +598,7 @@ jobs:
       # =========================================================
       # 14. BUILD RELEASE APK
       # =========================================================
+
       - name: Build Release APK
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
@@ -458,8 +611,9 @@ jobs:
             --stacktrace
 
       # =========================================================
-      # 15. FIND RELEASE APK
+      # 15. FIND APK
       # =========================================================
+
       - name: Find Release APK
         shell: bash
         run: |
@@ -484,8 +638,9 @@ jobs:
           ls -lh "$APK"
 
       # =========================================================
-      # 16. VERIFY SIGNING SECRETS
+      # 16. SIGNING SECRETS
       # =========================================================
+
       - name: Verify signing secrets
         shell: bash
         run: |
@@ -514,8 +669,9 @@ jobs:
           echo "Signing secrets: PASS"
 
       # =========================================================
-      # 17. RESTORE PERMANENT RELEASE KEYSTORE
+      # 17. RESTORE KEYSTORE
       # =========================================================
+
       - name: Restore permanent release keystore
         shell: bash
         run: |
@@ -536,8 +692,9 @@ jobs:
           echo "Release keystore restored."
 
       # =========================================================
-      # 18. ZIPALIGN RELEASE APK
+      # 18. ZIPALIGN
       # =========================================================
+
       - name: Zipalign Release APK
         shell: bash
         run: |
@@ -565,8 +722,9 @@ jobs:
           echo "Zipalign: PASS"
 
       # =========================================================
-      # 19. SIGN RELEASE APK
+      # 19. SIGN APK
       # =========================================================
+
       - name: Sign Release APK
         shell: bash
         run: |
@@ -593,8 +751,9 @@ jobs:
           echo "APK signing: PASS"
 
       # =========================================================
-      # 20. VERIFY FINAL RELEASE APK
+      # 20. VERIFY FINAL APK
       # =========================================================
+
       - name: Verify Final Release APK
         shell: bash
         run: |
@@ -620,8 +779,9 @@ jobs:
           echo "Final Release APK verification: PASS"
 
       # =========================================================
-      # 21. GENERATE SHA256
+      # 21. SHA256
       # =========================================================
+
       - name: Generate SHA256
         shell: bash
         run: |
@@ -631,8 +791,9 @@ jobs:
             "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
 
       # =========================================================
-      # 22. REMOVE INTERMEDIATE APKs
+      # 22. CLEAN INTERMEDIATE APKs
       # =========================================================
+
       - name: Remove intermediate APKs
         shell: bash
         run: |
@@ -650,8 +811,9 @@ jobs:
           echo "Intermediate APK cleanup: PASS"
 
       # =========================================================
-      # 23. UPLOAD FINAL RELEASE APK
+      # 23. UPLOAD FINAL APK
       # =========================================================
+
       - name: Upload Final Release APK
         uses: actions/upload-artifact@v4
         with:
@@ -663,8 +825,9 @@ jobs:
           retention-days: 30
 
       # =========================================================
-      # 24. CLEANUP SIGNING MATERIAL
+      # 24. CLEANUP
       # =========================================================
+
       - name: Cleanup signing material
         if: always()
         shell: bash
