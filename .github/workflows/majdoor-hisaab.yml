@@ -113,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          SOURCE_ZIP="Majdoor_Hisaab_PRO_v2_4_LOCAL_SQLITE_FINAL_FIXED_AUDITED.zip"
+          SOURCE_ZIP="Majdoor_Hisaab_PRO_FINAL_FIXED_AUDITED_RELEASE_BUILD.zip"
 
           echo "Looking for:"
           echo "$SOURCE_ZIP"
