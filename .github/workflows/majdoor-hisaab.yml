@@ -1,208 +1,75 @@
-name: Build Majdoor Hisaab PRO V27 v2.10 FINAL APK
+name: Build Final Release APK
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: majdoor-hisaab-v27-release
-  cancel-in-progress: true
+  push:
+    branches: [main]
 
 jobs:
   build:
-    name: V27 v2.10 FINAL Release APK
+    name: Build Final Release APK
     runs-on: ubuntu-latest
 
-    steps:
+    defaults:
+      run:
+        working-directory: src
 
-      - name: Checkout repository
-        uses: actions/checkout@v5
+    steps:
+      - name: Checkout V27 source
+        uses: actions/checkout@v4
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            src/gradle/wrapper/gradle-wrapper.properties
+            src/*.gradle
+            src/*.gradle.kts
+            src/app/*.gradle
+            src/app/*.gradle.kts
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
       - name: Install Android SDK 35
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Find exact V27 ZIP
-        shell: bash
+      - name: Verify V27 project structure
         run: |
           set -euo pipefail
 
-          ZIP_NAME="Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip"
+          test -f app/build.gradle.kts
+          test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+          test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
 
-          if [ ! -f "$ZIP_NAME" ]; then
-            echo "ERROR: Required ZIP not found:"
-            echo "$ZIP_NAME"
-            find . -maxdepth 3 -type f -name "*.zip" -print
-            exit 1
-          fi
-
-          ls -lh "$ZIP_NAME"
-
-      - name: Verify ZIP structure
-        shell: bash
+      - name: Verify Gradle and V27 configuration
         run: |
           set -euo pipefail
-
-          ZIP_NAME="Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip"
-
-          required_files=(
-            "src/settings.gradle.kts"
-            "src/build.gradle.kts"
-            "src/gradle.properties"
-            "src/gradlew"
-            "src/app/build.gradle.kts"
-            "src/app/src/main/AndroidManifest.xml"
-            "src/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-          )
-
-          for f in "${required_files[@]}"; do
-            if ! unzip -l "$ZIP_NAME" | grep -Fq "$f"; then
-              echo "ERROR: Missing ZIP entry: $f"
-              exit 1
-            fi
-          done
-
-          echo "ZIP STRUCTURE PASS"
-
-      - name: Extract V27 source
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rm -rf "$GITHUB_WORKSPACE/v27-source"
-          mkdir -p "$GITHUB_WORKSPACE/v27-source"
-
-          unzip -q \
-            "Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip" \
-            -d "$GITHUB_WORKSPACE/v27-source"
-
-          test -f "$GITHUB_WORKSPACE/v27-source/src/gradlew"
-
-      - name: Set project root
-        shell: bash
-        run: |
-          echo "PROJECT_ROOT=$GITHUB_WORKSPACE/v27-source/src" >> "$GITHUB_ENV"
-
-      - name: Verify Android project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          required_files=(
-            "settings.gradle.kts"
-            "build.gradle.kts"
-            "gradle.properties"
-            "gradlew"
-            "app/build.gradle.kts"
-            "app/src/main/AndroidManifest.xml"
-            "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-            "gradle/wrapper/gradle-wrapper.properties"
-            "gradle/wrapper/gradle-wrapper.jar"
-          )
-
-          for f in "${required_files[@]}"; do
-            test -f "$f" || {
-              echo "ERROR: Missing $f"
-              exit 1
-            }
-          done
 
           chmod +x gradlew
 
-      - name: Verify settings
-        shell: bash
-        run: |
-          set -euo pipefail
+          ./gradlew --version | grep -q 'Gradle 8.11.1'
 
-          cd "$PROJECT_ROOT"
+          grep -q 'compileSdk = 35' app/build.gradle.kts
+          grep -q 'targetSdk = 35' app/build.gradle.kts
+          grep -q 'versionCode = 30' app/build.gradle.kts
+          grep -q 'versionName = "2.10"' app/build.gradle.kts
+          grep -q 'JavaVersion.VERSION_17' app/build.gradle.kts
+          grep -q 'jvmTarget = "17"' app/build.gradle.kts
 
-          grep -Fq 'rootProject.name = "MajdoorHisaab"' settings.gradle.kts
-          grep -Fq 'include(":app")' settings.gradle.kts
-
-      - name: Verify Gradle configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq '8.9.1' build.gradle.kts
-          grep -Fq '2.1.20' build.gradle.kts
-          grep -Fq '8.11.1' gradle/wrapper/gradle-wrapper.properties
-
-      - name: Verify app configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq 'namespace = "com.majdoor.hisaab"' app/build.gradle.kts
-          grep -Fq 'applicationId = "com.majdoor.hisaab"' app/build.gradle.kts
-          grep -Fq 'compileSdk = 35' app/build.gradle.kts
-          grep -Fq 'minSdk = 26' app/build.gradle.kts
-          grep -Fq 'targetSdk = 35' app/build.gradle.kts
-          grep -Fq 'versionCode = 30' app/build.gradle.kts
-          grep -Fq 'versionName = "2.10"' app/build.gradle.kts
-          grep -Fq 'JavaVersion.VERSION_17' app/build.gradle.kts
-          grep -Fq 'jvmTarget = "17"' app/build.gradle.kts
-
-      - name: Verify AndroidManifest
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq 'android:exported="true"' \
-            app/src/main/AndroidManifest.xml
-
-          grep -Fq 'com.majdoor.hisaab.MainActivity' \
-            app/src/main/AndroidManifest.xml
-
-      - name: Verify MainActivity package
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq 'package com.majdoor.hisaab' \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
-
-      - name: Verify Gradle wrapper
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq 'gradle-8.11.1-bin.zip' \
-            gradle/wrapper/gradle-wrapper.properties
-
-          chmod +x gradlew
-
-          ./gradlew --version
-
-      - name: Verify release signing secrets
-        shell: bash
+      - name: Restore permanent release keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -216,355 +83,62 @@ jobs:
           test -n "$RELEASE_KEY_ALIAS"
           test -n "$RELEASE_KEY_PASSWORD"
 
-      - name: Restore permanent release keystore
-        shell: bash
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release.keystore
+
+          test -s release.keystore
+
+          {
+            echo "releaseStoreFile=$GITHUB_WORKSPACE/src/release.keystore"
+            echo "releaseStorePassword=$RELEASE_KEYSTORE_PASSWORD"
+            echo "releaseKeyAlias=$RELEASE_KEY_ALIAS"
+            echo "releaseKeyPassword=$RELEASE_KEY_PASSWORD"
+          } >> gradle.properties
+
+      - name: Clean previous outputs
         run: |
           set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release-keystore.jks
-
-          test -s release-keystore.jks
-
-          cat >> gradle.properties <<EOF
-
-          RELEASE_STORE_FILE=$PROJECT_ROOT/release-keystore.jks
-          RELEASE_STORE_PASSWORD=$RELEASE_KEYSTORE_PASSWORD
-          RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS
-          RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD
-          EOF
-
-      - name: Verify signing configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq 'signingConfigs' app/build.gradle.kts
-          grep -Fq 'RELEASE_STORE_FILE' app/build.gradle.kts
-          grep -Fq 'RELEASE_KEY_ALIAS' app/build.gradle.kts
-
-      # ============================================================
-      # ONLY PREVIOUSLY FAILED SOURCE AREAS
-      # ============================================================
-      - name: Fix previously failed MainActivity compile errors
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path(
-              "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-          )
-
-          lines = path.read_text(encoding="utf-8").splitlines()
-
-          # --------------------------------------------------------
-          # Exact failed compiler lines from previous run:
-          # 938
-          # 1033-1036
-          # 1077
-          # 1211-1212
-          #
-          # ONLY numeric coordinate literals on these lines are
-          # converted to Float.
-          # --------------------------------------------------------
-
-          targets = {
-              938,
-              1033,
-              1034,
-              1035,
-              1036,
-              1077,
-              1211,
-              1212,
-          }
-
-          for lineno in sorted(targets):
-              if lineno > len(lines):
-                  raise SystemExit(
-                      f"ERROR: Expected source line {lineno} not found"
-                  )
-
-          def fix_hotspot_numbers(s):
-              import re
-
-              # Only numeric arguments inside Hotspot(...)
-              def repl(m):
-                  prefix = m.group(1)
-                  body = m.group(2)
-
-                  # Convert only plain integer numeric literals.
-                  body = re.sub(
-                      r'(?<![\w.])-?\d+(?![\w.])',
-                      lambda x: x.group(0) + 'f',
-                      body
-                  )
-
-                  return prefix + body + ")"
-
-              return re.sub(
-                  r'(Hotspot\([^)]*?,)([^)]*)\)',
-                  repl,
-                  s
-              )
-
-          # Only Hotspot coordinate sections on the failed lines.
-          for lineno in [938, 1033, 1034, 1035, 1036, 1211, 1212]:
-              idx = lineno - 1
-              original = lines[idx]
-
-              if "Hotspot(" not in original:
-                  raise SystemExit(
-                      f"ERROR: Expected Hotspot on line {lineno}"
-                  )
-
-              lines[idx] = fix_hotspot_numbers(original)
-
-          # Exact failed pxX/pxY line.
-          idx = 1077 - 1
-
-          original = lines[idx]
-
-          if "pxY(61)" not in original \
-             or "pxX(3)" not in original \
-             or "pxY(28)" not in original:
-              raise SystemExit(
-                  "ERROR: Expected line 1077 source pattern not found"
-              )
-
-          lines[idx] = original \
-              .replace("pxY(61)", "pxY(61f)") \
-              .replace("pxX(3)", "pxX(3f)") \
-              .replace("pxY(28)", "pxY(28f)")
-
-          text = "\n".join(lines) + "\n"
-
-          # --------------------------------------------------------
-          # Missing function from exact previous errors:
-          #
-          # 1149 Unresolved reference reportWorkerWhere
-          # 1185 Unresolved reference reportWorkerWhere
-          #
-          # Add ONLY this missing function.
-          # --------------------------------------------------------
-
-          if "private fun reportWorkerWhere(" not in text:
-
-              marker = "    private fun shareReportSummary(){"
-
-              if marker not in text:
-                  raise SystemExit(
-                      "ERROR: shareReportSummary() not found"
-                  )
-
-              function = '''    private fun reportWorkerWhere(alias:String="w"):Pair<String,List<String>>{
-        val clauses=mutableListOf("$alias.date BETWEEN ? AND ?")
-        val args=mutableListOf(reportFrom,reportTo)
-
-        if(reportWorkerQuery.isNotBlank()){
-            clauses.add("$alias.worker_id IN (SELECT id FROM workers WHERE lower(name) LIKE ? OR lower(code) LIKE ?)")
-            val qv="%${reportWorkerQuery.lowercase(Locale.getDefault())}%"
-            args.add(qv)
-            args.add(qv)
-        }
-
-        if(reportFieldIds.isNotEmpty()){
-            clauses.add("$alias.field_id IN (${reportFieldIds.joinToString(",")})")
-        }
-
-        return clauses.joinToString(" AND ") to args
-    }
-
-'''
-
-              text = text.replace(
-                  marker,
-                  function + marker,
-                  1
-              )
-
-          path.write_text(text, encoding="utf-8")
-
-          print("ONLY PREVIOUSLY FAILED AREAS FIXED")
-          PY
-
-      # ============================================================
-      # VERIFY FIX
-      # ============================================================
-      - name: Verify source fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-
-          grep -Fq 'private fun reportWorkerWhere(' "$FILE"
-
-          grep -Fq 'reportWorkerWhere("w")' "$FILE"
-
-          grep -Fq 'pxY(61f)' "$FILE"
-          grep -Fq 'pxX(3f)' "$FILE"
-          grep -Fq 'pxY(28f)' "$FILE"
-
-          echo "PREVIOUS FAILURE FIX PASS"
-
-      # ============================================================
-      # CLEAN
-      # ============================================================
-      - name: Clean
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
           ./gradlew clean --no-daemon
 
-      # ============================================================
-      # FINAL RELEASE APK ONLY
-      # ============================================================
-      - name: Build FINAL Release APK
-        shell: bash
+      - name: Build FINAL Release APK only
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Verify FINAL Release APK
         run: |
           set -euo pipefail
 
-          cd "$PROJECT_ROOT"
+          APK=app/build/outputs/apk/release/app-release.apk
 
-          ./gradlew :app:assembleRelease \
-            --no-daemon \
-            --stacktrace
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
 
-          APK="app/build/outputs/apk/release/app-release.apk"
+          test ! -f app/build/outputs/apk/debug/app-debug.apk
+          test ! -d app/build/outputs/bundle
 
-          test -f "$APK"
-
-          echo "FINAL RELEASE APK CREATED"
-          ls -lh "$APK"
-
-      # ============================================================
-      # NO DEBUG / NO AAB
-      # ============================================================
-      - name: Verify final artifact
-        shell: bash
+      - name: Verify package and signature
         run: |
           set -euo pipefail
 
-          cd "$PROJECT_ROOT"
+          APK=app/build/outputs/apk/release/app-release.apk
+          BT="$ANDROID_HOME/build-tools/35.0.0"
 
-          APK="app/build/outputs/apk/release/app-release.apk"
+          "$BT/aapt" dump badging "$APK" | \
+            grep -E "package: name='com\.majdoor\.hisaab'.*versionCode='30'.*versionName='2\.10'"
 
-          test -f "$APK"
+          "$BT/apksigner" verify --verbose "$APK"
 
-          if find app/build/outputs -type f \
-            \( -name "*debug*.apk" -o -name "*.aab" \) | grep -q .; then
+          "$BT/apksigner" verify --print-certs "$APK"
 
-            echo "ERROR: Debug APK or AAB found"
-
-            find app/build/outputs -type f \
-              \( -name "*debug*.apk" -o -name "*.aab" \)
-
-            exit 1
-          fi
-
-          echo "FINAL ARTIFACT PASS"
-
-      # ============================================================
-      # PACKAGE + VERSION
-      # ============================================================
-      - name: Verify APK package and version
-        shell: bash
+      - name: SHA256
         run: |
           set -euo pipefail
+          sha256sum app/build/outputs/apk/release/app-release.apk
 
-          cd "$PROJECT_ROOT"
-
-          APK="app/build/outputs/apk/release/app-release.apk"
-
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging "$APK" | tee /tmp/aapt.txt
-
-          grep -Fq "package: name='com.majdoor.hisaab'" /tmp/aapt.txt
-          grep -Fq "versionCode='30'" /tmp/aapt.txt
-          grep -Fq "versionName='2.10'" /tmp/aapt.txt
-
-          echo "PACKAGE VERSION PASS"
-
-      # ============================================================
-      # SIGNATURE
-      # ============================================================
-      - name: Verify APK signature
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            verify \
-            --verbose \
-            app/build/outputs/apk/release/app-release.apk
-
-          echo "SIGNATURE PASS"
-
-      # ============================================================
-      # SHA256
-      # ============================================================
-      - name: Generate SHA256
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          sha256sum \
-            app/build/outputs/apk/release/app-release.apk \
-            | tee APK_SHA256.txt
-
-      # ============================================================
-      # FINAL APK NAME
-      # ============================================================
-      - name: Prepare final APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          cp \
-            app/build/outputs/apk/release/app-release.apk \
-            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
-
-          cp \
-            APK_SHA256.txt \
-            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
-
-          ls -lh \
-            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
-
-      # ============================================================
-      # FINAL RELEASE APK ARTIFACT
-      # ============================================================
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_APK
-          path: |
-            Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk
-            Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt
+          name: Majdoor-Hisaab-PRO-v2.10-FINAL-Release-APK
+          path: src/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
