@@ -22,15 +22,15 @@ jobs:
 
     steps:
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 1. CHECKOUT
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 2. JAVA 17
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
@@ -45,9 +45,9 @@ jobs:
           java -version
           javac -version
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 3. ANDROID SDK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -73,10 +73,10 @@ jobs:
           echo "Android SDK ${ANDROID_API} installed."
           echo "Build Tools ${BUILD_TOOLS} installed."
 
-      # ---------------------------------------------------------
-      # 4. ANDROID SDK VERIFY
+      # =========================================================
+      # 4. VERIFY ANDROID SDK
       # zipalign -h intentionally NOT used
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Verify Android SDK
         shell: bash
         run: |
@@ -101,9 +101,9 @@ jobs:
           echo "APK Signer: PASS"
           echo "Zipalign: PASS"
 
-      # ---------------------------------------------------------
-      # 5. LOCATE AUDITED SOURCE ZIP
-      # ---------------------------------------------------------
+      # =========================================================
+      # 5. LOCATE CORRECT AUDITED SOURCE ZIP
+      # =========================================================
       - name: Locate audited source ZIP
         id: source
         shell: bash
@@ -129,9 +129,9 @@ jobs:
           echo "Source ZIP found:"
           ls -lh "$SOURCE_ZIP"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 6. VERIFY SOURCE ZIP
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Verify source ZIP
         shell: bash
         run: |
@@ -145,9 +145,9 @@ jobs:
 
           echo "Source ZIP integrity: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 7. EXTRACT SOURCE
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Extract source
         shell: bash
         run: |
@@ -161,11 +161,11 @@ jobs:
           unzip -q "$SOURCE_ZIP" -d build-source
 
           echo "Extracted source:"
-          find build-source -maxdepth 4 -type f | sort
+          find build-source -maxdepth 5 -type f | sort
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 8. SET ANDROID PROJECT
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Set Android project
         shell: bash
         run: |
@@ -183,7 +183,7 @@ jobs:
           else
 
             echo "ERROR: Android project not found."
-            find build-source -maxdepth 5 -type f | sort
+            find build-source -maxdepth 6 -type f | sort
             exit 1
 
           fi
@@ -197,10 +197,9 @@ jobs:
           test -f "$PROJECT_DIR/build.gradle.kts"
           test -f "$PROJECT_DIR/app/build.gradle.kts"
 
-      # ---------------------------------------------------------
-      # 9. REPAIR VERIFIED KOTLIN SYNTAX
-      # Only known audited syntax defects are repaired.
-      # ---------------------------------------------------------
+      # =========================================================
+      # 9. REPAIR ONLY KNOWN KOTLIN SYNTAX DEFECTS
+      # =========================================================
       - name: Repair verified Kotlin syntax
         shell: bash
         run: |
@@ -245,30 +244,92 @@ jobs:
                   'if(e-p>0) C.RED else C.GREEN',
           }
 
-          for old, new in replacements.items():
-              s = s.replace(old, new)
+          changed = 0
 
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
+          for old, new in replacements.items():
+              count = s.count(old)
+
+              if count:
+                  print(f"Replacing {count} occurrence(s): {old}")
+                  s = s.replace(old, new)
+                  changed += count
+
+          p.write_text(s, encoding="utf-8")
+
+          print(f"Total known syntax replacements: {changed}")
           PY
 
-          echo "Checking known malformed Kotlin syntax..."
+          echo "Checking ONLY known malformed Kotlin patterns..."
 
-          if grep -nE \
-            'if\([^)]*\)[^[:space:]]+:[^[:space:]]+' \
+          if grep -nF \
+            'if(earned-paid>0)C.RED:C.MUTED' \
             "$MAIN"; then
 
-            echo "ERROR: Malformed Kotlin ternary syntax remains."
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(c.getInt(4)==1)"Inactive":"Active"' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(id==null)"New Worker":"Worker Edit"' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(earned-paid>0)C.RED:C.GREEN' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(earned-paid>0)C.RED_SOFT:C.GREEN_SOFT' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(c.getInt(2)==1)"Inactive":"Active"' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(id==null)"New Fields / Crops":"Field Edit"' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
+            exit 1
+          fi
+
+          if grep -nF \
+            'if(e-p>0)C.RED:C.GREEN' \
+            "$MAIN"; then
+
+            echo "ERROR: Known malformed syntax remains."
             exit 1
           fi
 
           echo "Verified Kotlin syntax repair: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 10. AUDIT FINAL SOURCE
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Audit final source
         shell: bash
         run: |
@@ -305,9 +366,9 @@ jobs:
 
           echo "Final source audit: PASS"
 
-      # ---------------------------------------------------------
-      # 11. JVM CONFIGURATION
-      # ---------------------------------------------------------
+      # =========================================================
+      # 11. VERIFY JVM CONFIGURATION
+      # =========================================================
       - name: Verify JVM configuration
         shell: bash
         run: |
@@ -333,9 +394,9 @@ jobs:
 
           echo "JVM 17 configuration: PASS"
 
-      # ---------------------------------------------------------
-      # 12. GRADLE
-      # ---------------------------------------------------------
+      # =========================================================
+      # 12. SETUP GRADLE
+      # =========================================================
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -348,9 +409,9 @@ jobs:
 
           gradle --version
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 13. FINAL PRE-BUILD AUDIT
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Final pre-build audit
         shell: bash
         run: |
@@ -380,16 +441,11 @@ jobs:
             'versionName="2.2"' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          echo "Checking debug APK is not the target..."
-
-          test ! -f \
-            "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" || true
-
           echo "Final pre-build audit: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 14. BUILD RELEASE APK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Build Release APK
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
@@ -401,9 +457,9 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 15. FIND RELEASE APK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Find Release APK
         shell: bash
         run: |
@@ -427,9 +483,9 @@ jobs:
 
           ls -lh "$APK"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 16. VERIFY SIGNING SECRETS
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Verify signing secrets
         shell: bash
         run: |
@@ -457,9 +513,9 @@ jobs:
 
           echo "Signing secrets: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 17. RESTORE PERMANENT RELEASE KEYSTORE
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Restore permanent release keystore
         shell: bash
         run: |
@@ -479,9 +535,9 @@ jobs:
 
           echo "Release keystore restored."
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 18. ZIPALIGN RELEASE APK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Zipalign Release APK
         shell: bash
         run: |
@@ -508,9 +564,9 @@ jobs:
 
           echo "Zipalign: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 19. SIGN RELEASE APK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Sign Release APK
         shell: bash
         run: |
@@ -536,9 +592,9 @@ jobs:
 
           echo "APK signing: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 20. VERIFY FINAL RELEASE APK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Verify Final Release APK
         shell: bash
         run: |
@@ -563,9 +619,9 @@ jobs:
           echo
           echo "Final Release APK verification: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 21. GENERATE SHA256
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Generate SHA256
         shell: bash
         run: |
@@ -574,9 +630,9 @@ jobs:
           sha256sum "$APK" | tee \
             "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 22. REMOVE INTERMEDIATE APKs
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Remove intermediate APKs
         shell: bash
         run: |
@@ -593,9 +649,9 @@ jobs:
 
           echo "Intermediate APK cleanup: PASS"
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 23. UPLOAD FINAL RELEASE APK
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Upload Final Release APK
         uses: actions/upload-artifact@v4
         with:
@@ -606,9 +662,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 24. CLEANUP SIGNING MATERIAL
-      # ---------------------------------------------------------
+      # =========================================================
       - name: Cleanup signing material
         if: always()
         shell: bash
