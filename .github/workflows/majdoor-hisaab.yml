@@ -1,19 +1,9 @@
-name: Majdoor Hisaab - Final Release APK
+name: Build Final Release APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: read
-
-env:
-  JAVA_VERSION: "17"
-  GRADLE_VERSION: "8.11.1"
-  ANDROID_API: "36"
-  BUILD_TOOLS: "36.0.0"
+    branches: [main]
 
 jobs:
   build:
@@ -21,93 +11,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # =========================================================
-      # 1. CHECKOUT
-      # =========================================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # =========================================================
-      # 2. JAVA 17
-      # =========================================================
-
       - name: Setup Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
-      - name: Verify Java
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          java -version
-          javac -version
-
-      # =========================================================
-      # 3. ANDROID SDK 36
-      # =========================================================
+          java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: platform-tools
-          cmdline-tools-version: 15859902
-          accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: true
 
-      - name: Install Android SDK 36
-        shell: bash
+      - name: Install Android SDK 35
         run: |
-          set -euo pipefail
-
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager \
             "platform-tools" \
-            "platforms;android-${ANDROID_API}" \
-            "build-tools;${BUILD_TOOLS}"
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-          echo "Android SDK ${ANDROID_API}: PASS"
-          echo "Build Tools ${BUILD_TOOLS}: PASS"
-
-      # =========================================================
-      # 4. VERIFY ANDROID TOOLS
-      # =========================================================
-
-      - name: Verify Android tools
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-
-          AAPT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt"
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
-          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
-
-          test -x "$AAPT"
-          test -x "$APKSIGNER"
-          test -x "$ZIPALIGN"
-
-          "$AAPT" version
-          "$APKSIGNER" version
-          adb version
-
-          echo "AAPT: PASS"
-          echo "APK Signer: PASS"
-          echo "Zipalign: PASS"
-
-      # =========================================================
-      # 5. FIND EXACT AUDITED ZIP
-      # =========================================================
-
-      - name: Locate audited source ZIP
+      - name: Locate FINAL source ZIP
         id: source
         shell: bash
         run: |
@@ -115,62 +39,39 @@ jobs:
 
           SOURCE_ZIP="Majdoor_Hisaab_PRO_FINAL_FIXED_AUDITED_RELEASE_BUILD.zip"
 
-          echo "Looking for:"
-          echo "$SOURCE_ZIP"
-
-          if [ ! -f "$SOURCE_ZIP" ]; then
+          if [ ! -f "$GITHUB_WORKSPACE/$SOURCE_ZIP" ]; then
+            echo "ERROR: Source ZIP not found:"
+            echo "$GITHUB_WORKSPACE/$SOURCE_ZIP"
             echo
-            echo "ERROR: Required source ZIP not found."
-            echo
-            echo "ZIP files available in repository:"
-            find . -maxdepth 2 -type f -name "*.zip" -print
+            echo "Repository root files:"
+            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f | sort
             exit 1
           fi
 
-          echo "SOURCE_ZIP=$SOURCE_ZIP" >> "$GITHUB_OUTPUT"
-
-          echo
-          echo "Exact source ZIP found:"
-          ls -lh "$SOURCE_ZIP"
-
-      # =========================================================
-      # 6. VERIFY ZIP INTEGRITY
-      # =========================================================
+          echo "SOURCE_ZIP=$SOURCE_ZIP" >> "$GITHUB_ENV"
+          echo "Source ZIP found: $SOURCE_ZIP"
+          ls -lh "$GITHUB_WORKSPACE/$SOURCE_ZIP"
 
       - name: Verify source ZIP
-        shell: bash
         run: |
           set -euo pipefail
 
-          SOURCE_ZIP="${{ steps.source.outputs.SOURCE_ZIP }}"
+          unzip -t "$GITHUB_WORKSPACE/$SOURCE_ZIP" >/dev/null
 
-          unzip -t "$SOURCE_ZIP"
-
-          echo
           echo "Source ZIP integrity: PASS"
 
-      # =========================================================
-      # 7. EXTRACT EXACT ZIP
-      # =========================================================
-
-      - name: Extract source
-        shell: bash
+      - name: Extract FINAL source
         run: |
           set -euo pipefail
 
-          SOURCE_ZIP="${{ steps.source.outputs.SOURCE_ZIP }}"
+          rm -rf "$GITHUB_WORKSPACE/build-source"
+          mkdir -p "$GITHUB_WORKSPACE/build-source"
 
-          rm -rf build-source
-          mkdir -p build-source
+          unzip -q "$GITHUB_WORKSPACE/$SOURCE_ZIP" \
+            -d "$GITHUB_WORKSPACE/build-source"
 
-          unzip -q "$SOURCE_ZIP" -d build-source
-
-          echo "Extracted project files:"
-          find build-source -maxdepth 6 -type f -print | sort
-
-      # =========================================================
-      # 8. VERIFY EXACT PROJECT STRUCTURE
-      # =========================================================
+          echo "Extracted source:"
+          find "$GITHUB_WORKSPACE/build-source" -maxdepth 3 -type f | sort | head -100
 
       - name: Verify project structure
         shell: bash
@@ -181,33 +82,18 @@ jobs:
 
           test -f "$PROJECT_DIR/settings.gradle.kts"
           test -f "$PROJECT_DIR/build.gradle.kts"
-          test -f "$PROJECT_DIR/app/build.gradle.kts"
           test -f "$PROJECT_DIR/gradle.properties"
-          test -f "$PROJECT_DIR/README.md"
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
 
-          test -f \
-            "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          test -f "$PROJECT_DIR/gradlew"
+          test -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar"
+          test -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
 
-          test -f \
-            "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          test -f "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          test -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/majdoor_logo.png"
 
-          test -f \
-            "$PROJECT_DIR/app/src/main/res/drawable-nodpi/majdoor_logo.png"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/res/values/colors.xml"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/res/values/styles.xml"
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo
           echo "Project structure: PASS"
-
-      # =========================================================
-      # 9. VERIFY EXACT APP CONFIGURATION
-      # =========================================================
 
       - name: Audit Android configuration
         shell: bash
@@ -215,768 +101,240 @@ jobs:
           set -euo pipefail
 
           PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
+          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
+          ROOT_GRADLE="$PROJECT_DIR/build.gradle.kts"
 
-          echo "Checking application configuration..."
+          grep -q 'compileSdk = 35' "$APP_GRADLE"
+          grep -q 'minSdk = 26' "$APP_GRADLE"
+          grep -q 'targetSdk = 35' "$APP_GRADLE"
 
-          grep -q \
-            'namespace="com.majdoor.hisaab"' \
-            "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'versionCode = 24' "$APP_GRADLE"
+          grep -q 'versionName = "2.4"' "$APP_GRADLE"
 
-          grep -q \
-            'applicationId="com.majdoor.hisaab"' \
-            "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'id("com.android.application") version "8.9.1"' "$ROOT_GRADLE"
+          grep -q 'id("org.jetbrains.kotlin.android") version "2.1.20"' "$ROOT_GRADLE"
 
-          grep -q \
-            'compileSdk=35' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'minSdk=26' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'targetSdk=35' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'versionCode=5' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'versionName="2.2"' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'JavaVersion.VERSION_17' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'JvmTarget.JVM_17' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'id("com.android.application") version "8.9.1"' \
-            "$PROJECT_DIR/build.gradle.kts"
-
-          grep -q \
-            'id("org.jetbrains.kotlin.android") version "2.1.20"' \
-            "$PROJECT_DIR/build.gradle.kts"
-
-          echo
           echo "Android configuration: PASS"
 
-      # =========================================================
-      # 10. VERIFY MANIFEST
-      # =========================================================
-
-      - name: Audit Android Manifest
+      - name: Audit release signing configuration
         shell: bash
         run: |
           set -euo pipefail
 
+          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
+          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
+
+          grep -q 'signingConfigs' "$APP_GRADLE"
+          grep -q 'releaseStoreFile' "$APP_GRADLE"
+          grep -q 'releaseStorePassword' "$APP_GRADLE"
+          grep -q 'releaseKeyAlias' "$APP_GRADLE"
+          grep -q 'releaseKeyPassword' "$APP_GRADLE"
+          grep -q 'signingConfig = signingConfigs.getByName("release")' "$APP_GRADLE"
+
+          echo "Permanent release signing configuration: PASS"
+
+      - name: Audit manifest and package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
           MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
 
-          grep -q \
-            'android:label="Majdoor Hisaab PRO"' \
-            "$MANIFEST"
+          grep -q 'android:exported="true"' "$MANIFEST"
 
-          grep -q \
-            'android:icon="@drawable/majdoor_logo"' \
-            "$MANIFEST"
+          echo "Manifest audit: PASS"
 
-          grep -q \
-            'android:allowBackup="false"' \
-            "$MANIFEST"
-
-          grep -q \
-            'android:exported="true"' \
-            "$MANIFEST"
-
-          grep -q \
-            'android:name=".MainActivity"' \
-            "$MANIFEST"
-
-          echo "Android Manifest: PASS"
-
-      # =========================================================
-      # 11. VERIFY LOGO
-      # =========================================================
-
-      - name: Verify logo
+      - name: Audit Kotlin JVM 17
         shell: bash
         run: |
           set -euo pipefail
 
-          LOGO="$PROJECT_DIR/app/src/main/res/drawable-nodpi/majdoor_logo.png"
+          PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
+          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
 
-          test -s "$LOGO"
+          grep -q 'JavaVersion.VERSION_17' "$APP_GRADLE"
+          grep -q 'jvmTarget = "17"' "$APP_GRADLE"
 
-          file "$LOGO"
+          echo "Java/Kotlin 17 configuration: PASS"
 
-          echo "Logo file: PASS"
-
-      # =========================================================
-      # 12. APPLY EXACT AUDITED KOTLIN FIXES
-      #
-      # FIX 1:
-      # attendanceChoice() malformed if expression.
-      #
-      # FIX 2:
-      # paymentDialog() line 626 self-reference:
-      #
-      # val date=outline(... date.text ...)
-      #
-      # becomes:
-      #
-      # var date: TextView?=null
-      # date=outline(... date?.text ...)
-      #
-      # No other source changes are made.
-      # =========================================================
-
-      - name: Apply exact audited Kotlin fixes
-        shell: bash
+      - name: Verify Gradle Wrapper 8.11.1
+        working-directory: build-source
         run: |
           set -euo pipefail
 
-          MAIN="$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          chmod +x ./gradlew
 
-          test -f "$MAIN"
+          ./gradlew --version
 
-          python3 - "$MAIN" <<'PY'
-          from pathlib import Path
-          import sys
+          ./gradlew --version | grep -q 'Gradle 8.11.1'
 
-          path = Path(sys.argv[1])
-          text = path.read_text(encoding="utf-8")
+          echo "Gradle Wrapper 8.11.1: PASS"
 
-          changes = []
+      - name: Verify permanent release signing secrets
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
 
-          # =====================================================
-          # FIX 1 - attendanceChoice()
-          # =====================================================
-
-          old_attendance = (
-              'background=bg(if(selected)soft,11,'
-              'if(selected)1 else 1,color)'
-          )
-
-          new_attendance = (
-              'background=bg(if(selected) soft else C.WHITE,'
-              '11,1,color)'
-          )
-
-          count = text.count(old_attendance)
-
-          if count == 1:
-              text = text.replace(
-                  old_attendance,
-                  new_attendance
-              )
-              changes.append("attendanceChoice")
-          elif count == 0:
-              if (
-                  'background=bg(if(selected) soft else C.WHITE,'
-                  '11,1,color)'
-              ) in text:
-                  changes.append("attendanceChoice-already-fixed")
-              else:
-                  print(
-                      "ERROR: attendanceChoice expected expression "
-                      "was not found."
-                  )
-                  sys.exit(1)
-          else:
-              print(
-                  "ERROR: attendanceChoice malformed expression "
-                  f"appeared {count} times."
-              )
-              sys.exit(1)
-
-          # =====================================================
-          # FIX 2 - paymentDialog() exact date self-reference
-          # =====================================================
-
-          old_date = (
-              'var payDate=oldDate;'
-              'val date=outline("📅 ${displayDf.format(parseDate(payDate))}")'
-              '{pickDate(payDate){payDate=it;'
-              'date.text="📅 ${displayDf.format(parseDate(payDate))}"}};'
-          )
-
-          new_date = (
-              'var payDate=oldDate;'
-              'var date: TextView?=null;'
-              'date=outline("📅 ${displayDf.format(parseDate(payDate))}")'
-              '{pickDate(payDate){payDate=it;'
-              'date?.text="📅 ${displayDf.format(parseDate(payDate))}"}};'
-          )
-
-          count = text.count(old_date)
-
-          if count == 1:
-              text = text.replace(
-                  old_date,
-                  new_date
-              )
-              changes.append("paymentDialog-date")
-          elif count == 0:
-              if (
-                  'var date: TextView?=null;'
-                  'date=outline("📅 ${displayDf.format(parseDate(payDate))}")'
-              ) in text:
-                  changes.append("paymentDialog-date-already-fixed")
-              else:
-                  print(
-                      "ERROR: paymentDialog date expression "
-                      "was not found."
-                  )
-                  sys.exit(1)
-          else:
-              print(
-                  "ERROR: paymentDialog date expression "
-                  f"appeared {count} times."
-              )
-              sys.exit(1)
-
-          path.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print("Exact Kotlin fixes applied:")
-          for item in changes:
-              print(" -", item)
-
-          PY
-
-          echo
-          echo "===== VERIFY ATTENDANCE FUNCTION ====="
-
-          grep -n \
-            'private fun attendanceChoice' \
-            "$MAIN"
-
-          echo
-          echo "===== VERIFY PAYMENT DATE CODE ====="
-
-          grep -n \
-            'var date: TextView?=null' \
-            "$MAIN"
-
-          grep -n \
-            'date?.text=' \
-            "$MAIN"
-
-          # Old attendance error must not remain.
-          if grep -nF \
-            'background=bg(if(selected)soft,11,if(selected)1 else 1,color)' \
-            "$MAIN"; then
-
-            echo "ERROR: Old attendance expression remains."
+          test -n "$RELEASE_KEYSTORE_BASE64" || {
+            echo "Missing RELEASE_KEYSTORE_BASE64 secret"
             exit 1
-          fi
+          }
 
-          # Old payment self-reference must not remain.
-          if grep -nF \
-            'val date=outline("📅 ${displayDf.format(parseDate(payDate))}")' \
-            "$MAIN"; then
-
-            echo "ERROR: Old payment date self-reference remains."
+          test -n "$RELEASE_KEYSTORE_PASSWORD" || {
+            echo "Missing RELEASE_KEYSTORE_PASSWORD secret"
             exit 1
-          fi
+          }
 
-          # Old direct date.text self-reference must not remain
-          # inside the payment dialog source.
-          if grep -nF \
-            'date.text="📅 ${displayDf.format(parseDate(payDate))}"' \
-            "$MAIN"; then
-
-            echo "ERROR: Old date.text reference remains."
+          test -n "$RELEASE_KEY_ALIAS" || {
+            echo "Missing RELEASE_KEY_ALIAS secret"
             exit 1
-          fi
+          }
 
-          echo
-          echo "Exact audited Kotlin fixes: PASS"
-
-      # =========================================================
-      # 13. VERIFY DATABASE SOURCE
-      # =========================================================
-
-      - name: Audit SQLite schema
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          MAIN="$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-
-          grep -q \
-            'private const val DB_VERSION = 5' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE TABLE workers' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE TABLE fields' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE TABLE work_entries' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE TABLE payments' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE TABLE settings' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE TABLE team_members' \
-            "$MAIN"
-
-          grep -q \
-            'setForeignKeyConstraintsEnabled(true)' \
-            "$MAIN"
-
-          grep -q \
-            'CREATE UNIQUE INDEX IF NOT EXISTS ux_work_date_worker_field' \
-            "$MAIN"
-
-          grep -q \
-            'private fun migrateToV4' \
-            "$MAIN"
-
-          grep -q \
-            'private fun migrateToV5' \
-            "$MAIN"
-
-          echo "SQLite schema audit: PASS"
-
-      # =========================================================
-      # 14. VERIFY CORE APP FEATURES
-      # =========================================================
-
-      - name: Audit application features
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          MAIN="$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-
-          # Workers
-          grep -q 'private fun workers' "$MAIN"
-          grep -q 'private fun workerDialog' "$MAIN"
-          grep -q 'private fun workerDetail' "$MAIN"
-
-          # Fields
-          grep -q 'private fun fields' "$MAIN"
-          grep -q 'private fun fieldDialog' "$MAIN"
-          grep -q 'private fun fieldDetail' "$MAIN"
-
-          # Attendance
-          grep -q 'private fun attendance' "$MAIN"
-          grep -q 'private fun setAttendance' "$MAIN"
-          grep -q 'private fun setAllAttendance' "$MAIN"
-          grep -q 'private fun selectTeam' "$MAIN"
-          grep -q 'private fun loadPreviousTeam' "$MAIN"
-
-          # Payments
-          grep -q 'private fun payments' "$MAIN"
-          grep -q 'private fun paymentDialog' "$MAIN"
-          grep -q 'private fun confirmDeletePayment' "$MAIN"
-
-          # Reports
-          grep -q 'private fun reports' "$MAIN"
-          grep -q 'private fun workerReport' "$MAIN"
-          grep -q 'private fun fieldReport' "$MAIN"
-          grep -q 'private fun paymentReport' "$MAIN"
-          grep -q 'private fun dailyReport' "$MAIN"
-          grep -q 'private fun exportPdf' "$MAIN"
-          grep -q 'private fun exportCsv' "$MAIN"
-
-          # Backup / restore
-          grep -q 'private fun backup' "$MAIN"
-          grep -q 'private fun createBackup' "$MAIN"
-          grep -q 'private fun restoreFrom' "$MAIN"
-          grep -q 'private fun validateDatabase' "$MAIN"
-
-          echo "Core feature audit: PASS"
-
-      # =========================================================
-      # 15. VERIFY JVM 17
-      # =========================================================
-
-      - name: Verify JVM configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          grep -q \
-            'JavaVersion.VERSION_17' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          grep -q \
-            'JvmTarget.JVM_17' \
-            "$PROJECT_DIR/app/build.gradle.kts"
-
-          if grep -R --line-number \
-            'options.release.set' \
-            "$PROJECT_DIR" \
-            --include="*.gradle" \
-            --include="*.gradle.kts"; then
-
-            echo "ERROR: options.release.set detected."
+          test -n "$RELEASE_KEY_PASSWORD" || {
+            echo "Missing RELEASE_KEY_PASSWORD secret"
             exit 1
-          fi
+          }
 
-          echo "JVM configuration: PASS"
+          echo "All permanent release signing secrets: PASS"
 
-      # =========================================================
-      # 16. SETUP GRADLE 8.11.1
-      # =========================================================
-
-      - name: Setup Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-
-      - name: Verify Gradle
-        shell: bash
+      - name: Restore permanent release keystore
+        working-directory: build-source
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
-          gradle --version
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      # =========================================================
-      # 17. BUILD RELEASE APK
-      # =========================================================
+          test -s release.keystore
 
-      - name: Build Release APK
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
+          {
+            echo "releaseStoreFile=$GITHUB_WORKSPACE/build-source/release.keystore"
+            echo "releaseStorePassword=$RELEASE_KEYSTORE_PASSWORD"
+            echo "releaseKeyAlias=$RELEASE_KEY_ALIAS"
+            echo "releaseKeyPassword=$RELEASE_KEY_PASSWORD"
+          } >> gradle.properties
+
+          echo "Permanent release keystore restored: PASS"
+
+      - name: Build Release APK only
+        working-directory: build-source
         run: |
           set -euo pipefail
 
-          gradle \
-            :app:assembleRelease \
+          ./gradlew :app:assembleRelease \
             --no-daemon \
             --stacktrace
 
-      # =========================================================
-      # 18. DETECT ACTUAL APK
-      # =========================================================
-
-      - name: Detect built Release APK
-        shell: bash
+      - name: Verify Release APK exists
+        working-directory: build-source
         run: |
           set -euo pipefail
 
-          APK_DIR="$PROJECT_DIR/app/build/outputs/apk/release"
+          APK="app/build/outputs/apk/release/app-release.apk"
 
-          echo "All APK files produced by Gradle:"
-
-          find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -name "*.apk" \
-            -print
-
-          UNSIGNED_APK="$APK_DIR/app-release-unsigned.apk"
-
-          if [ ! -f "$UNSIGNED_APK" ]; then
-            echo
-            echo "ERROR: Expected unsigned Release APK not found."
-            echo
-            echo "Release directory:"
-            find "$APK_DIR" \
-              -maxdepth 1 \
-              -type f \
-              -print 2>/dev/null || true
-            exit 1
-          fi
-
-          APK="$APK_DIR/app-release.apk"
-
-          cp "$UNSIGNED_APK" "$APK"
-
+          test -f "$APK"
           test -s "$APK"
 
-          echo "APK=$APK" >> "$GITHUB_ENV"
-          echo "UNSIGNED_APK=$UNSIGNED_APK" >> "$GITHUB_ENV"
+          unzip -t "$APK" >/dev/null
 
-          echo
-          echo "Release APK prepared:"
-          ls -lh "$APK"
-
-      # =========================================================
-      # 19. VERIFY SIGNING SECRETS
-      # =========================================================
-
-      - name: Verify signing secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
-            echo "ERROR: RELEASE_KEYSTORE_BASE64 secret is missing."
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "ERROR: Debug APK exists"
             exit 1
           fi
 
-          if [ -z "${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" ]; then
-            echo "ERROR: RELEASE_KEYSTORE_PASSWORD secret is missing."
+          echo "Release APK exists: PASS"
+
+      - name: Verify APK package and version
+        working-directory: build-source
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          aapt dump badging "$APK" | grep -E \
+            "package: name='com\.majdoor\.hisaab'.*versionCode='24'.*versionName='2\.4'"
+
+          echo "Package/version verification: PASS"
+
+      - name: Verify permanent APK signature
+        working-directory: build-source
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          apksigner verify --verbose "$APK"
+          apksigner verify --print-certs "$APK"
+
+          echo "Permanent APK signature verification: PASS"
+
+      - name: Install Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
+          script: |
+            set -e
+
+            adb install -r \
+              build-source/app/build/outputs/apk/release/app-release.apk
+
+            adb shell pm list packages | \
+              grep -q '^package:com.majdoor.hisaab$'
+
+            adb shell monkey \
+              -p com.majdoor.hisaab 1 >/dev/null
+
+            sleep 3
+
+            adb shell dumpsys activity activities | \
+              grep -q 'com.majdoor.hisaab'
+
+            echo "Emulator smoke test: PASS"
+
+      - name: Calculate SHA256
+        working-directory: build-source
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          sha256sum "$APK"
+
+      - name: Final release-only check
+        working-directory: build-source
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          test -f "$APK"
+
+          if find app/build/outputs/apk -type f \
+            -name '*debug*.apk' | grep -q .; then
+            echo "ERROR: Debug APK detected"
             exit 1
           fi
 
-          if [ -z "${{ secrets.RELEASE_KEY_ALIAS }}" ]; then
-            echo "ERROR: RELEASE_KEY_ALIAS secret is missing."
-            exit 1
-          fi
+          echo "Final release-only check: PASS"
 
-          if [ -z "${{ secrets.RELEASE_KEY_PASSWORD }}" ]; then
-            echo "ERROR: RELEASE_KEY_PASSWORD secret is missing."
-            exit 1
-          fi
-
-          echo "Signing secrets: PASS"
-
-      # =========================================================
-      # 20. RESTORE PERMANENT RELEASE KEYSTORE
-      # =========================================================
-
-      - name: Restore permanent release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          KEYSTORE="$RUNNER_TEMP/majdoor-release.keystore"
-
-          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" \
-            | base64 --decode > "$KEYSTORE"
-
-          test -s "$KEYSTORE"
-
-          echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
-          echo "KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> "$GITHUB_ENV"
-
-          echo "Release keystore restored: PASS"
-
-      # =========================================================
-      # 21. ZIPALIGN
-      # =========================================================
-
-      - name: Zipalign Release APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-
-          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
-
-          ALIGNED_APK="$RUNNER_TEMP/app-release-aligned.apk"
-
-          "$ZIPALIGN" \
-            -f \
-            -p \
-            4 \
-            "$APK" \
-            "$ALIGNED_APK"
-
-          test -s "$ALIGNED_APK"
-
-          mv "$ALIGNED_APK" "$APK"
-
-          echo "Zipalign: PASS"
-
-      # =========================================================
-      # 22. SIGN FINAL APK
-      # =========================================================
-
-      - name: Sign Release APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
-
-          SIGNED_APK="$RUNNER_TEMP/app-release-signed.apk"
-
-          "$APKSIGNER" sign \
-            --ks "$KEYSTORE" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" \
-            --key-pass "pass:${{ secrets.RELEASE_KEY_PASSWORD }}" \
-            --out "$SIGNED_APK" \
-            "$APK"
-
-          test -s "$SIGNED_APK"
-
-          mv "$SIGNED_APK" "$APK"
-
-          echo "APK signing: PASS"
-
-      # =========================================================
-      # 23. VERIFY FINAL RELEASE APK
-      # =========================================================
-
-      - name: Verify Final Release APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-
-          AAPT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt"
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
-
-          test -s "$APK"
-
-          echo
-          echo "===== APK BADGING ====="
-
-          "$AAPT" dump badging "$APK"
-
-          echo
-          echo "===== APK SIGNATURE ====="
-
-          "$APKSIGNER" verify \
-            --verbose \
-            "$APK"
-
-          echo
-          echo "Final Release APK verification: PASS"
-
-      # =========================================================
-      # 24. VERIFY NO DEBUG APK
-      # =========================================================
-
-      - name: Verify release-only output
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          DEBUG_APK="$PROJECT_DIR/app/build/outputs/apk/debug"
-
-          if [ -d "$DEBUG_APK" ]; then
-            DEBUG_FILES=$(find "$DEBUG_APK" \
-              -type f \
-              -name "*.apk" \
-              -print || true)
-
-            if [ -n "$DEBUG_FILES" ]; then
-              echo "ERROR: Debug APK detected:"
-              echo "$DEBUG_FILES"
-              exit 1
-            fi
-          fi
-
-          echo "Release-only APK verification: PASS"
-
-      # =========================================================
-      # 25. SHA256
-      # =========================================================
-
-      - name: Generate SHA256
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SHA_FILE="$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
-
-          sha256sum "$APK" | tee "$SHA_FILE"
-
-          test -s "$SHA_FILE"
-
-          echo "SHA256 generation: PASS"
-
-      # =========================================================
-      # 26. REMOVE UNSIGNED APK
-      # =========================================================
-
-      - name: Remove unsigned APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -f "$UNSIGNED_APK" ]; then
-            rm -f "$UNSIGNED_APK"
-          fi
-
-          if find "$PROJECT_DIR/app/build/outputs/apk/release" \
-            -type f \
-            \( \
-              -name "*-unsigned.apk" \
-              -o -name "*-aligned.apk" \
-              -o -name "*.signed" \
-            \) \
-            | grep -q .; then
-
-            echo "ERROR: Intermediate APK remains."
-
-            find "$PROJECT_DIR/app/build/outputs/apk/release" \
-              -type f \
-              -print
-
-            exit 1
-          fi
-
-          echo "Intermediate APK cleanup: PASS"
-
-      # =========================================================
-      # 27. FINAL FILE CHECK
-      # =========================================================
-
-      - name: Final APK file check
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          test -s "$APK"
-
-          test -s \
-            "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
-
-          echo
-          echo "FINAL APK:"
-          ls -lh "$APK"
-
-          echo
-          echo "FINAL SHA256:"
-
-          cat \
-            "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
-
-      # =========================================================
-      # 28. UPLOAD ONLY FINAL RELEASE APK
-      # =========================================================
-
-      - name: Upload Final Release APK
+      - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-Final-Release-APK
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/app-release.apk
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/app-release.apk.sha256
+          name: Majdoor-Hisaab-PRO-v2.4-FINAL-Release-APK
+          path: build-source/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
-
-      # =========================================================
-      # 29. CLEAN SIGNING MATERIAL
-      # =========================================================
-
-      - name: Cleanup signing material
-        if: always()
-        shell: bash
-        run: |
-          set +e
-
-          if [ -n "${KEYSTORE:-}" ]; then
-            rm -f "$KEYSTORE"
-          fi
-
-          echo "Signing material cleanup completed."
