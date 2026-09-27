@@ -17,39 +17,24 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # ============================================================
-      # 2. JAVA 17
-      # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      # ============================================================
-      # 3. ANDROID SDK
-      # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # ============================================================
-      # 4. INSTALL ANDROID SDK 35
-      # ============================================================
       - name: Install Android SDK 35
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      # ============================================================
-      # 5. FIND EXACT ZIP
-      # ============================================================
-      - name: Find V27 ZIP
+      - name: Find exact V27 ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -59,17 +44,12 @@ jobs:
           if [ ! -f "$ZIP_NAME" ]; then
             echo "ERROR: Required ZIP not found:"
             echo "$ZIP_NAME"
-            echo
             find . -maxdepth 3 -type f -name "*.zip" -print
             exit 1
           fi
 
-          echo "ZIP FOUND:"
           ls -lh "$ZIP_NAME"
 
-      # ============================================================
-      # 6. VERIFY REQUIRED ZIP CONTENT
-      # ============================================================
       - name: Verify ZIP structure
         shell: bash
         run: |
@@ -96,9 +76,6 @@ jobs:
 
           echo "ZIP STRUCTURE PASS"
 
-      # ============================================================
-      # 7. EXTRACT
-      # ============================================================
       - name: Extract V27 source
         shell: bash
         run: |
@@ -113,19 +90,11 @@ jobs:
 
           test -f "$GITHUB_WORKSPACE/v27-source/src/gradlew"
 
-          echo "SOURCE EXTRACT PASS"
-
-      # ============================================================
-      # 8. PROJECT ROOT
-      # ============================================================
       - name: Set project root
         shell: bash
         run: |
           echo "PROJECT_ROOT=$GITHUB_WORKSPACE/v27-source/src" >> "$GITHUB_ENV"
 
-      # ============================================================
-      # 9. VERIFY PROJECT FILES
-      # ============================================================
       - name: Verify Android project
         shell: bash
         run: |
@@ -154,12 +123,7 @@ jobs:
 
           chmod +x gradlew
 
-          echo "ANDROID PROJECT STRUCTURE PASS"
-
-      # ============================================================
-      # 10. VERIFY SETTINGS
-      # ============================================================
-      - name: Verify settings.gradle.kts
+      - name: Verify settings
         shell: bash
         run: |
           set -euo pipefail
@@ -169,11 +133,6 @@ jobs:
           grep -Fq 'rootProject.name = "MajdoorHisaab"' settings.gradle.kts
           grep -Fq 'include(":app")' settings.gradle.kts
 
-          echo "SETTINGS PASS"
-
-      # ============================================================
-      # 11. VERIFY ROOT BUILD CONFIG
-      # ============================================================
       - name: Verify Gradle configuration
         shell: bash
         run: |
@@ -185,11 +144,6 @@ jobs:
           grep -Fq '2.1.20' build.gradle.kts
           grep -Fq '8.11.1' gradle/wrapper/gradle-wrapper.properties
 
-          echo "GRADLE CONFIG PASS"
-
-      # ============================================================
-      # 12. VERIFY APP CONFIG
-      # ============================================================
       - name: Verify app configuration
         shell: bash
         run: |
@@ -207,11 +161,6 @@ jobs:
           grep -Fq 'JavaVersion.VERSION_17' app/build.gradle.kts
           grep -Fq 'jvmTarget = "17"' app/build.gradle.kts
 
-          echo "APP CONFIG PASS"
-
-      # ============================================================
-      # 13. VERIFY MANIFEST
-      # ============================================================
       - name: Verify AndroidManifest
         shell: bash
         run: |
@@ -225,11 +174,6 @@ jobs:
           grep -Fq 'com.majdoor.hisaab.MainActivity' \
             app/src/main/AndroidManifest.xml
 
-          echo "MANIFEST PASS"
-
-      # ============================================================
-      # 14. VERIFY MAINACTIVITY PACKAGE
-      # ============================================================
       - name: Verify MainActivity package
         shell: bash
         run: |
@@ -240,11 +184,6 @@ jobs:
           grep -Fq 'package com.majdoor.hisaab' \
             app/src/main/java/com/majdoor/hisaab/MainActivity.kt
 
-          echo "MAINACTIVITY PACKAGE PASS"
-
-      # ============================================================
-      # 15. VERIFY GRADLE WRAPPER
-      # ============================================================
       - name: Verify Gradle wrapper
         shell: bash
         run: |
@@ -259,9 +198,6 @@ jobs:
 
           ./gradlew --version
 
-      # ============================================================
-      # 16. VERIFY RELEASE SECRETS
-      # ============================================================
       - name: Verify release signing secrets
         shell: bash
         env:
@@ -277,11 +213,6 @@ jobs:
           test -n "$RELEASE_KEY_ALIAS"
           test -n "$RELEASE_KEY_PASSWORD"
 
-          echo "RELEASE SIGNING SECRETS PASS"
-
-      # ============================================================
-      # 17. RESTORE RELEASE KEYSTORE
-      # ============================================================
       - name: Restore permanent release keystore
         shell: bash
         env:
@@ -306,26 +237,7 @@ jobs:
           RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD
           EOF
 
-          echo "KEYSTORE RESTORE PASS"
-
-      # ============================================================
-      # 18. VERIFY SOURCE BEFORE FIX
-      # ============================================================
-      - name: Verify MainActivity source
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          test -s app/src/main/java/com/majdoor/hisaab/MainActivity.kt
-
-          echo "SOURCE FOUND"
-
-      # ============================================================
-      # 19. VERIFY SIGNING CONFIG
-      # ============================================================
-      - name: Verify release signing configuration
+      - name: Verify signing configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -336,27 +248,10 @@ jobs:
           grep -Fq 'RELEASE_STORE_FILE' app/build.gradle.kts
           grep -Fq 'RELEASE_KEY_ALIAS' app/build.gradle.kts
 
-          echo "SIGNING CONFIG PASS"
-
       # ============================================================
-      # 20. VERIFY APP VERSION
+      # ONLY FAILED SOURCE PARTS ARE CHANGED HERE
       # ============================================================
-      - name: Verify exact V27 v2.10
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          grep -Fq 'versionCode = 30' app/build.gradle.kts
-          grep -Fq 'versionName = "2.10"' app/build.gradle.kts
-
-          echo "V27 v2.10 VERSION PASS"
-
-      # ============================================================
-      # 21. FIX ONLY THE ACTUAL FAILED MainActivity ERRORS
-      # ============================================================
-      - name: Fix exact MainActivity compile errors
+      - name: Fix only previously failed MainActivity lines
         shell: bash
         run: |
           set -euo pipefail
@@ -373,118 +268,117 @@ jobs:
           text = path.read_text(encoding="utf-8")
 
           # --------------------------------------------------------
-          # FIX 1:
-          # GitHub compile failure:
-          # Argument type mismatch:
-          # actual type is Int, but Float was expected
+          # 1. ONLY line 938
+          # Previous error:
+          # Int supplied where Float expected
           #
-          # Existing source has many calls such as:
-          # Hotspot("Back",0,0,12,10){...}
-          #
-          # Only the Hotspot coordinate type is changed.
-          # Existing screen coordinates remain exactly the same.
+          # Do NOT change Hotspot class.
+          # Do NOT change any other screen.
           # --------------------------------------------------------
 
-          old_hotspot = (
-              'private data class Hotspot('
-              'val name:String,'
-              'val x:Float,'
-              'val y:Float,'
-              'val w:Float,'
-              'val h:Float,'
-              'val action:()->Unit'
-              ')'
-          )
+          old = '''            Hotspot("Home Nav",0,91,20,9){home()},Hotspot("Attendance Nav",20,91,20,9){attendance()},Hotspot("Workers Nav",40,91,20,9){workers()},Hotspot("Fields Nav",60,91,20,9){fields()},Hotspot("Reports Nav",80,91,20,9){reports()}
+          ))'''
 
-          new_hotspot = '''private class Hotspot(
-              val name:String,
-              x:Number,
-              y:Number,
-              w:Number,
-              h:Number,
-              val action:()->Unit
-          ){
-              val x:Float=x.toFloat()
-              val y:Float=y.toFloat()
-              val w:Float=w.toFloat()
-              val h:Float=h.toFloat()
-          }'''
+          new = '''            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}
+          ))'''
 
-          if old_hotspot in text:
-              text = text.replace(old_hotspot, new_hotspot, 1)
-              print("FIXED: Hotspot Int -> Float compile mismatch")
-          elif 'private class Hotspot(' in text:
-              print("Hotspot fix already present")
-          else:
+          if old not in text:
               raise SystemExit(
-                  "ERROR: Expected Hotspot declaration was not found"
+                  "ERROR: Expected line-938 source was not found"
               )
 
+          text = text.replace(old, new, 1)
+
           # --------------------------------------------------------
-          # FIX 2:
-          # GitHub compile failure:
-          # Unresolved reference: reportWorkerWhere
-          #
-          # Used by:
-          # shareReportSummary()
-          # shareReportWhatsApp()
-          #
-          # This function follows the existing report filters:
-          # - reportFrom/reportTo
-          # - reportWorkerQuery
-          # - reportFieldIds
+          # 2. ONLY lines 1033-1036
+          # --------------------------------------------------------
+
+          old = '''            Hotspot("Back",0,0,12,10){reports()}, Hotspot("Prev",5,8,25,8){dailyShift(-1,fieldFilter)}, Hotspot("Next",70,8,25,8){dailyShift(1,fieldFilter)},
+            Hotspot(tr("All Fields","सभी खेत"),5,17,25,7){dailyReport()}, Hotspot("Paddy",32,17,20,7){dailyReport("Paddy")}, Hotspot("Sugarcane",54,17,22,7){dailyReport("Sugarcane")}, Hotspot("Banana",77,17,18,7){dailyReport("Banana")},
+            Hotspot("Paddy row",5,30,90,12){dailyReport(fieldFilter)}, Hotspot("Sugarcane row",5,43,90,12){dailyReport(fieldFilter)}, Hotspot("Banana row",5,56,90,12){dailyReport(fieldFilter)}, Hotspot("Mustard row",5,69,90,12){dailyReport(fieldFilter)},
+            Hotspot("Home Nav",0,91,20,9){home()},Hotspot("Attendance Nav",20,91,20,9){attendance()},Hotspot("Workers Nav",40,91,20,9){workers()},Hotspot("Fields Nav",60,91,20,9){fields()},Hotspot("Reports Nav",80,91,20,9){reports()}'''
+
+          new = '''            Hotspot("Back",0f,0f,12f,10f){reports()}, Hotspot("Prev",5f,8f,25f,8f){dailyShift(-1,fieldFilter)}, Hotspot("Next",70f,8f,25f,8f){dailyShift(1,fieldFilter)},
+            Hotspot(tr("All Fields","सभी खेत"),5f,17f,25f,7f){dailyReport()}, Hotspot("Paddy",32f,17f,20f,7f){dailyReport("Paddy")}, Hotspot("Sugarcane",54f,17f,22f,7f){dailyReport("Sugarcane")}, Hotspot("Banana",77f,17f,18f,7f){dailyReport("Banana")},
+            Hotspot("Paddy row",5f,30f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Sugarcane row",5f,43f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Banana row",5f,56f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Mustard row",5f,69f,90f,12f){dailyReport(fieldFilter)},
+            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}'''
+
+          if old not in text:
+              raise SystemExit(
+                  "ERROR: Expected lines 1033-1036 were not found"
+              )
+
+          text = text.replace(old, new, 1)
+
+          # --------------------------------------------------------
+          # 3. ONLY line 1077
+          # Previous errors:
+          # Int supplied where Float expected in pxY/pxX
+          # --------------------------------------------------------
+
+          old = '''        val lp=FrameLayout.LayoutParams(-1,0).apply{height=pxY(61);leftMargin=pxX(3);topMargin=pxY(28)}'''
+
+          new = '''        val lp=FrameLayout.LayoutParams(-1,0).apply{height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)}'''
+
+          if old not in text:
+              raise SystemExit(
+                  "ERROR: Expected line-1077 source was not found"
+              )
+
+          text = text.replace(old, new, 1)
+
+          # --------------------------------------------------------
+          # 4. ONLY lines 1211-1212
+          # --------------------------------------------------------
+
+          old = '''            Hotspot("Back",0,0,12,10){home()}, Hotspot("Create Backup",8,14,40,15){createBackup()}, Hotspot("Restore Backup",52,14,40,15){pickRestore()},
+            Hotspot("Currency",8,48,84,8){currencyDialog()}, Hotspot("Language",8,57,84,8){languageDialog()}, Hotspot("Theme",8,66,84,8){themeDialog()}, Hotspot("Reset",8,74,84,8){confirmResetReference()}'''
+
+          new = '''            Hotspot("Back",0f,0f,12f,10f){home()}, Hotspot("Create Backup",8f,14f,40f,15f){createBackup()}, Hotspot("Restore Backup",52f,14f,40f,15f){pickRestore()},
+            Hotspot("Currency",8f,48f,84f,8f){currencyDialog()}, Hotspot("Language",8f,57f,84f,8f){languageDialog()}, Hotspot("Theme",8f,66f,84f,8f){themeDialog()}, Hotspot("Reset",8f,74f,84f,8f){confirmResetReference()}'''
+
+          if old not in text:
+              raise SystemExit(
+                  "ERROR: Expected lines 1211-1212 were not found"
+              )
+
+          text = text.replace(old, new, 1)
+
+          # --------------------------------------------------------
+          # 5. ONLY missing function reportWorkerWhere()
+          # Errors were exactly:
+          # 1149 Unresolved reference reportWorkerWhere
+          # 1185 Unresolved reference reportWorkerWhere
           # --------------------------------------------------------
 
           if "private fun reportWorkerWhere(" not in text:
 
-              marker = "    private fun shareReportSummary(){"
+              marker = '''    private fun shareReportSummary(){'''
 
               if marker not in text:
                   raise SystemExit(
-                      "ERROR: shareReportSummary marker not found"
+                      "ERROR: shareReportSummary() marker not found"
                   )
 
-              function = '''    private fun reportWorkerWhere(
-                  alias:String="w"
-              ):Pair<String,List<String>>{
+              function = '''    private fun reportWorkerWhere(alias:String="w"):Pair<String,List<String>>{
+        val clauses=mutableListOf("$alias.date BETWEEN ? AND ?")
+        val args=mutableListOf(reportFrom,reportTo)
 
-                  val clauses=mutableListOf(
-                      "$alias.date BETWEEN ? AND ?"
-                  )
+        if(reportWorkerQuery.isNotBlank()){
+            clauses.add("$alias.worker_id IN (SELECT id FROM workers WHERE lower(name) LIKE ? OR lower(code) LIKE ?)")
+            val qv="%${reportWorkerQuery.lowercase(Locale.getDefault())}%"
+            args.add(qv)
+            args.add(qv)
+        }
 
-                  val args=mutableListOf(
-                      reportFrom,
-                      reportTo
-                  )
+        if(reportFieldIds.isNotEmpty()){
+            clauses.add("$alias.field_id IN (${reportFieldIds.joinToString(",")})")
+        }
 
-                  if(reportWorkerQuery.isNotBlank()){
+        return clauses.joinToString(" AND ") to args
+    }
 
-                      clauses.add(
-                          "$alias.worker_id IN (" +
-                          "SELECT id FROM workers " +
-                          "WHERE lower(name) LIKE ? " +
-                          "OR lower(code) LIKE ?" +
-                          ")"
-                      )
-
-                      val qv =
-                          "%${reportWorkerQuery.lowercase(Locale.getDefault())}%"
-
-                      args.add(qv)
-                      args.add(qv)
-                  }
-
-                  if(reportFieldIds.isNotEmpty()){
-                      clauses.add(
-                          "$alias.field_id IN " +
-                          "(${reportFieldIds.joinToString(",")})"
-                      )
-                  }
-
-                  return clauses.joinToString(" AND ") to args
-              }
-
-          '''
+'''
 
               text = text.replace(
                   marker,
@@ -492,46 +386,47 @@ jobs:
                   1
               )
 
-              print("FIXED: reportWorkerWhere()")
-          else:
-              print("reportWorkerWhere() already present")
-
           path.write_text(text, encoding="utf-8")
 
-          print("EXACT FAILED SOURCE FIXES APPLIED")
+          print("ONLY PREVIOUSLY FAILED SOURCE PARTS CHANGED")
           PY
 
       # ============================================================
-      # 22. VERIFY EXACT SOURCE FIX
+      # VERIFY THAT ONLY REQUIRED FIXES EXIST
       # ============================================================
-      - name: Verify exact source fix
+      - name: Verify exact fixes
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'private class Hotspot(' \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          grep -Fq 'x:Number' \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+          grep -Fq 'Hotspot("Home Nav",0f,91f,20f,9f)' "$FILE"
 
-          grep -Fq 'val x:Float=x.toFloat()' \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+          grep -Fq 'Hotspot("Back",0f,0f,12f,10f){reports()}' "$FILE"
 
-          grep -Fq 'private fun reportWorkerWhere(' \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+          grep -Fq 'Hotspot("Prev",5f,8f,25f,8f)' "$FILE"
 
-          grep -Fq 'reportWorkerWhere("w")' \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+          grep -Fq 'Hotspot("Paddy",32f,17f,20f,7f)' "$FILE"
 
-          echo "EXACT SOURCE FIX PASS"
+          grep -Fq 'height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)' "$FILE"
+
+          grep -Fq 'Hotspot("Create Backup",8f,14f,40f,15f)' "$FILE"
+
+          grep -Fq 'Hotspot("Currency",8f,48f,84f,8f)' "$FILE"
+
+          grep -Fq 'private fun reportWorkerWhere(alias:String="w")' "$FILE"
+
+          grep -Fq 'reportWorkerWhere("w")' "$FILE"
+
+          echo "EXACT FIX VERIFICATION PASS"
 
       # ============================================================
-      # 23. CLEAN
+      # CLEAN
       # ============================================================
-      - name: Clean V27 build
+      - name: Clean
         shell: bash
         run: |
           set -euo pipefail
@@ -540,12 +435,10 @@ jobs:
 
           ./gradlew clean --no-daemon
 
-          echo "CLEAN PASS"
-
       # ============================================================
-      # 24. BUILD FINAL RELEASE APK ONLY
+      # FINAL RELEASE APK
       # ============================================================
-      - name: Build FINAL Release APK only
+      - name: Build Release APK
         shell: bash
         run: |
           set -euo pipefail
@@ -558,18 +451,15 @@ jobs:
 
           APK="app/build/outputs/apk/release/app-release.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: Release APK not generated"
-            exit 1
-          fi
+          test -f "$APK"
 
-          echo "RELEASE APK GENERATED:"
+          echo "FINAL RELEASE APK CREATED"
           ls -lh "$APK"
 
       # ============================================================
-      # 25. VERIFY NO DEBUG APK / NO AAB
+      # NO DEBUG / NO AAB
       # ============================================================
-      - name: Verify final artifact type
+      - name: Verify final artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -581,19 +471,17 @@ jobs:
           test -f "$APK"
 
           if find app/build/outputs -type f \
-            \( -name "*debug*.apk" -o -name "*.aab" \) \
-            | grep -q .; then
-
-            echo "ERROR: Debug APK or AAB found"
+            \( -name "*debug*.apk" -o -name "*.aab" \) | grep -q .; then
+            echo "ERROR: Debug APK or AAB exists"
             find app/build/outputs -type f \
               \( -name "*debug*.apk" -o -name "*.aab" \)
             exit 1
           fi
 
-          echo "FINAL ARTIFACT TYPE PASS"
+          echo "FINAL ARTIFACT PASS"
 
       # ============================================================
-      # 26. VERIFY APK PACKAGE + VERSION
+      # PACKAGE / VERSION
       # ============================================================
       - name: Verify APK package and version
         shell: bash
@@ -611,10 +499,10 @@ jobs:
           grep -Fq "versionCode='30'" /tmp/aapt.txt
           grep -Fq "versionName='2.10'" /tmp/aapt.txt
 
-          echo "APK PACKAGE/VERSION PASS"
+          echo "PACKAGE/VERSION PASS"
 
       # ============================================================
-      # 27. VERIFY APK SIGNATURE
+      # SIGNATURE
       # ============================================================
       - name: Verify APK signature
         shell: bash
@@ -623,16 +511,14 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          APK="app/build/outputs/apk/release/app-release.apk"
-
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
             --verbose \
-            "$APK"
+            app/build/outputs/apk/release/app-release.apk
 
-          echo "APK SIGNATURE PASS"
+          echo "SIGNATURE PASS"
 
       # ============================================================
-      # 28. SHA256
+      # SHA256
       # ============================================================
       - name: Generate SHA256
         shell: bash
@@ -641,12 +527,12 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          APK="app/build/outputs/apk/release/app-release.apk"
-
-          sha256sum "$APK" | tee APK_SHA256.txt
+          sha256sum \
+            app/build/outputs/apk/release/app-release.apk \
+            | tee APK_SHA256.txt
 
       # ============================================================
-      # 29. COPY FINAL APK
+      # FINAL NAME
       # ============================================================
       - name: Prepare final APK
         shell: bash
@@ -663,11 +549,8 @@ jobs:
             APK_SHA256.txt \
             "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
 
-          ls -lh \
-            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
-
       # ============================================================
-      # 30. UPLOAD FINAL APK
+      # UPLOAD FINAL APK ONLY
       # ============================================================
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
