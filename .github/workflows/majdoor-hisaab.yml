@@ -1,6 +1,9 @@
 name: Build Majdoor Hisaab PRO V27 v2.10 FINAL APK
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -249,9 +252,9 @@ jobs:
           grep -Fq 'RELEASE_KEY_ALIAS' app/build.gradle.kts
 
       # ============================================================
-      # ONLY FAILED SOURCE PARTS ARE CHANGED HERE
+      # ONLY PREVIOUSLY FAILED SOURCE AREAS
       # ============================================================
-      - name: Fix only previously failed MainActivity lines
+      - name: Fix previously failed MainActivity compile errors
         shell: bash
         run: |
           set -euo pipefail
@@ -265,99 +268,106 @@ jobs:
               "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
           )
 
-          text = path.read_text(encoding="utf-8")
+          lines = path.read_text(encoding="utf-8").splitlines()
 
           # --------------------------------------------------------
-          # 1. ONLY line 938
-          # Previous error:
-          # Int supplied where Float expected
+          # Exact failed compiler lines from previous run:
+          # 938
+          # 1033-1036
+          # 1077
+          # 1211-1212
           #
-          # Do NOT change Hotspot class.
-          # Do NOT change any other screen.
+          # ONLY numeric coordinate literals on these lines are
+          # converted to Float.
           # --------------------------------------------------------
 
-          old = '''            Hotspot("Home Nav",0,91,20,9){home()},Hotspot("Attendance Nav",20,91,20,9){attendance()},Hotspot("Workers Nav",40,91,20,9){workers()},Hotspot("Fields Nav",60,91,20,9){fields()},Hotspot("Reports Nav",80,91,20,9){reports()}
-          ))'''
+          targets = {
+              938,
+              1033,
+              1034,
+              1035,
+              1036,
+              1077,
+              1211,
+              1212,
+          }
 
-          new = '''            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}
-          ))'''
+          for lineno in sorted(targets):
+              if lineno > len(lines):
+                  raise SystemExit(
+                      f"ERROR: Expected source line {lineno} not found"
+                  )
 
-          if old not in text:
-              raise SystemExit(
-                  "ERROR: Expected line-938 source was not found"
+          def fix_hotspot_numbers(s):
+              import re
+
+              # Only numeric arguments inside Hotspot(...)
+              def repl(m):
+                  prefix = m.group(1)
+                  body = m.group(2)
+
+                  # Convert only plain integer numeric literals.
+                  body = re.sub(
+                      r'(?<![\w.])-?\d+(?![\w.])',
+                      lambda x: x.group(0) + 'f',
+                      body
+                  )
+
+                  return prefix + body + ")"
+
+              return re.sub(
+                  r'(Hotspot\([^)]*?,)([^)]*)\)',
+                  repl,
+                  s
               )
 
-          text = text.replace(old, new, 1)
+          # Only Hotspot coordinate sections on the failed lines.
+          for lineno in [938, 1033, 1034, 1035, 1036, 1211, 1212]:
+              idx = lineno - 1
+              original = lines[idx]
 
-          # --------------------------------------------------------
-          # 2. ONLY lines 1033-1036
-          # --------------------------------------------------------
+              if "Hotspot(" not in original:
+                  raise SystemExit(
+                      f"ERROR: Expected Hotspot on line {lineno}"
+                  )
 
-          old = '''            Hotspot("Back",0,0,12,10){reports()}, Hotspot("Prev",5,8,25,8){dailyShift(-1,fieldFilter)}, Hotspot("Next",70,8,25,8){dailyShift(1,fieldFilter)},
-            Hotspot(tr("All Fields","सभी खेत"),5,17,25,7){dailyReport()}, Hotspot("Paddy",32,17,20,7){dailyReport("Paddy")}, Hotspot("Sugarcane",54,17,22,7){dailyReport("Sugarcane")}, Hotspot("Banana",77,17,18,7){dailyReport("Banana")},
-            Hotspot("Paddy row",5,30,90,12){dailyReport(fieldFilter)}, Hotspot("Sugarcane row",5,43,90,12){dailyReport(fieldFilter)}, Hotspot("Banana row",5,56,90,12){dailyReport(fieldFilter)}, Hotspot("Mustard row",5,69,90,12){dailyReport(fieldFilter)},
-            Hotspot("Home Nav",0,91,20,9){home()},Hotspot("Attendance Nav",20,91,20,9){attendance()},Hotspot("Workers Nav",40,91,20,9){workers()},Hotspot("Fields Nav",60,91,20,9){fields()},Hotspot("Reports Nav",80,91,20,9){reports()}'''
+              lines[idx] = fix_hotspot_numbers(original)
 
-          new = '''            Hotspot("Back",0f,0f,12f,10f){reports()}, Hotspot("Prev",5f,8f,25f,8f){dailyShift(-1,fieldFilter)}, Hotspot("Next",70f,8f,25f,8f){dailyShift(1,fieldFilter)},
-            Hotspot(tr("All Fields","सभी खेत"),5f,17f,25f,7f){dailyReport()}, Hotspot("Paddy",32f,17f,20f,7f){dailyReport("Paddy")}, Hotspot("Sugarcane",54f,17f,22f,7f){dailyReport("Sugarcane")}, Hotspot("Banana",77f,17f,18f,7f){dailyReport("Banana")},
-            Hotspot("Paddy row",5f,30f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Sugarcane row",5f,43f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Banana row",5f,56f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Mustard row",5f,69f,90f,12f){dailyReport(fieldFilter)},
-            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}'''
+          # Exact failed pxX/pxY line.
+          idx = 1077 - 1
 
-          if old not in text:
+          original = lines[idx]
+
+          if "pxY(61)" not in original \
+             or "pxX(3)" not in original \
+             or "pxY(28)" not in original:
               raise SystemExit(
-                  "ERROR: Expected lines 1033-1036 were not found"
+                  "ERROR: Expected line 1077 source pattern not found"
               )
 
-          text = text.replace(old, new, 1)
+          lines[idx] = original \
+              .replace("pxY(61)", "pxY(61f)") \
+              .replace("pxX(3)", "pxX(3f)") \
+              .replace("pxY(28)", "pxY(28f)")
+
+          text = "\n".join(lines) + "\n"
 
           # --------------------------------------------------------
-          # 3. ONLY line 1077
-          # Previous errors:
-          # Int supplied where Float expected in pxY/pxX
-          # --------------------------------------------------------
-
-          old = '''        val lp=FrameLayout.LayoutParams(-1,0).apply{height=pxY(61);leftMargin=pxX(3);topMargin=pxY(28)}'''
-
-          new = '''        val lp=FrameLayout.LayoutParams(-1,0).apply{height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)}'''
-
-          if old not in text:
-              raise SystemExit(
-                  "ERROR: Expected line-1077 source was not found"
-              )
-
-          text = text.replace(old, new, 1)
-
-          # --------------------------------------------------------
-          # 4. ONLY lines 1211-1212
-          # --------------------------------------------------------
-
-          old = '''            Hotspot("Back",0,0,12,10){home()}, Hotspot("Create Backup",8,14,40,15){createBackup()}, Hotspot("Restore Backup",52,14,40,15){pickRestore()},
-            Hotspot("Currency",8,48,84,8){currencyDialog()}, Hotspot("Language",8,57,84,8){languageDialog()}, Hotspot("Theme",8,66,84,8){themeDialog()}, Hotspot("Reset",8,74,84,8){confirmResetReference()}'''
-
-          new = '''            Hotspot("Back",0f,0f,12f,10f){home()}, Hotspot("Create Backup",8f,14f,40f,15f){createBackup()}, Hotspot("Restore Backup",52f,14f,40f,15f){pickRestore()},
-            Hotspot("Currency",8f,48f,84f,8f){currencyDialog()}, Hotspot("Language",8f,57f,84f,8f){languageDialog()}, Hotspot("Theme",8f,66f,84f,8f){themeDialog()}, Hotspot("Reset",8f,74f,84f,8f){confirmResetReference()}'''
-
-          if old not in text:
-              raise SystemExit(
-                  "ERROR: Expected lines 1211-1212 were not found"
-              )
-
-          text = text.replace(old, new, 1)
-
-          # --------------------------------------------------------
-          # 5. ONLY missing function reportWorkerWhere()
-          # Errors were exactly:
+          # Missing function from exact previous errors:
+          #
           # 1149 Unresolved reference reportWorkerWhere
           # 1185 Unresolved reference reportWorkerWhere
+          #
+          # Add ONLY this missing function.
           # --------------------------------------------------------
 
           if "private fun reportWorkerWhere(" not in text:
 
-              marker = '''    private fun shareReportSummary(){'''
+              marker = "    private fun shareReportSummary(){"
 
               if marker not in text:
                   raise SystemExit(
-                      "ERROR: shareReportSummary() marker not found"
+                      "ERROR: shareReportSummary() not found"
                   )
 
               function = '''    private fun reportWorkerWhere(alias:String="w"):Pair<String,List<String>>{
@@ -388,13 +398,13 @@ jobs:
 
           path.write_text(text, encoding="utf-8")
 
-          print("ONLY PREVIOUSLY FAILED SOURCE PARTS CHANGED")
+          print("ONLY PREVIOUSLY FAILED AREAS FIXED")
           PY
 
       # ============================================================
-      # VERIFY THAT ONLY REQUIRED FIXES EXIST
+      # VERIFY FIX
       # ============================================================
-      - name: Verify exact fixes
+      - name: Verify source fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -403,25 +413,15 @@ jobs:
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          grep -Fq 'Hotspot("Home Nav",0f,91f,20f,9f)' "$FILE"
-
-          grep -Fq 'Hotspot("Back",0f,0f,12f,10f){reports()}' "$FILE"
-
-          grep -Fq 'Hotspot("Prev",5f,8f,25f,8f)' "$FILE"
-
-          grep -Fq 'Hotspot("Paddy",32f,17f,20f,7f)' "$FILE"
-
-          grep -Fq 'height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)' "$FILE"
-
-          grep -Fq 'Hotspot("Create Backup",8f,14f,40f,15f)' "$FILE"
-
-          grep -Fq 'Hotspot("Currency",8f,48f,84f,8f)' "$FILE"
-
-          grep -Fq 'private fun reportWorkerWhere(alias:String="w")' "$FILE"
+          grep -Fq 'private fun reportWorkerWhere(' "$FILE"
 
           grep -Fq 'reportWorkerWhere("w")' "$FILE"
 
-          echo "EXACT FIX VERIFICATION PASS"
+          grep -Fq 'pxY(61f)' "$FILE"
+          grep -Fq 'pxX(3f)' "$FILE"
+          grep -Fq 'pxY(28f)' "$FILE"
+
+          echo "PREVIOUS FAILURE FIX PASS"
 
       # ============================================================
       # CLEAN
@@ -436,9 +436,9 @@ jobs:
           ./gradlew clean --no-daemon
 
       # ============================================================
-      # FINAL RELEASE APK
+      # FINAL RELEASE APK ONLY
       # ============================================================
-      - name: Build Release APK
+      - name: Build FINAL Release APK
         shell: bash
         run: |
           set -euo pipefail
@@ -472,16 +472,19 @@ jobs:
 
           if find app/build/outputs -type f \
             \( -name "*debug*.apk" -o -name "*.aab" \) | grep -q .; then
-            echo "ERROR: Debug APK or AAB exists"
+
+            echo "ERROR: Debug APK or AAB found"
+
             find app/build/outputs -type f \
               \( -name "*debug*.apk" -o -name "*.aab" \)
+
             exit 1
           fi
 
           echo "FINAL ARTIFACT PASS"
 
       # ============================================================
-      # PACKAGE / VERSION
+      # PACKAGE + VERSION
       # ============================================================
       - name: Verify APK package and version
         shell: bash
@@ -492,14 +495,14 @@ jobs:
 
           APK="app/build/outputs/apk/release/app-release.apk"
 
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" \
-            | tee /tmp/aapt.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            dump badging "$APK" | tee /tmp/aapt.txt
 
           grep -Fq "package: name='com.majdoor.hisaab'" /tmp/aapt.txt
           grep -Fq "versionCode='30'" /tmp/aapt.txt
           grep -Fq "versionName='2.10'" /tmp/aapt.txt
 
-          echo "PACKAGE/VERSION PASS"
+          echo "PACKAGE VERSION PASS"
 
       # ============================================================
       # SIGNATURE
@@ -511,7 +514,8 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
             --verbose \
             app/build/outputs/apk/release/app-release.apk
 
@@ -532,7 +536,7 @@ jobs:
             | tee APK_SHA256.txt
 
       # ============================================================
-      # FINAL NAME
+      # FINAL APK NAME
       # ============================================================
       - name: Prepare final APK
         shell: bash
@@ -549,8 +553,11 @@ jobs:
             APK_SHA256.txt \
             "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
 
+          ls -lh \
+            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
+
       # ============================================================
-      # UPLOAD FINAL APK ONLY
+      # FINAL RELEASE APK ARTIFACT
       # ============================================================
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
