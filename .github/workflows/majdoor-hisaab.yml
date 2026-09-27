@@ -205,17 +205,7 @@ jobs:
           test -f "$PROJECT_DIR/app/build.gradle.kts"
 
       # =========================================================
-      # 9. REPAIR KOTLIN SOURCE
-      # =========================================================
-      #
-      # IMPORTANT:
-      # This step repairs the two actual errors reported by
-      # GitHub Run #28:
-      #
-      # MainActivity.kt:400
-      # MainActivity.kt:626
-      #
-      # It also keeps the previously known ternary fixes.
+      # 9. REPAIR VERIFIED KOTLIN SOURCE
       # =========================================================
 
       - name: Repair verified Kotlin syntax
@@ -229,7 +219,6 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path(
               "build-source/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
@@ -240,7 +229,7 @@ jobs:
           changed = []
 
           # -----------------------------------------------------
-          # Previously identified malformed Kotlin expressions
+          # Known malformed Kotlin expressions
           # -----------------------------------------------------
 
           replacements = {
@@ -269,8 +258,9 @@ jobs:
                   'if(e-p>0) C.RED else C.GREEN',
           }
 
-          for i, line in enumerate(lines):
-              original = line
+          for i in range(len(lines)):
+              original = lines[i]
+              line = lines[i]
 
               for old, new in replacements.items():
                   line = line.replace(old, new)
@@ -281,42 +271,20 @@ jobs:
               lines[i] = line
 
           # -----------------------------------------------------
-          # ACTUAL ERROR #1
-          #
-          # MainActivity.kt:400
-          #
-          # GitHub compiler:
-          # "'if' must have both main and 'else' branches
-          #  when used as an expression."
-          #
-          # Repair the malformed selected/soft expression without
-          # changing the surrounding UI logic.
+          # Fix selected/soft expression
           # -----------------------------------------------------
 
-          for i, line in enumerate(lines):
+          for i in range(len(lines)):
+              line = lines[i]
 
               if "bg(if(selected)" in line and "soft" in line:
 
                   original = line
 
-                  # Known malformed form:
-                  # if(selected)soft
-                  #
-                  # Convert it to:
-                  # if(selected) soft else Color.WHITE
-                  #
-                  # Only perform this when the malformed form exists.
-
                   line = line.replace(
                       "if(selected)soft",
                       "if(selected) soft else Color.WHITE"
                   )
-
-                  # Another malformed variant seen in the source:
-                  # if(selected)1 else 1
-                  #
-                  # This expression has no useful conditional effect,
-                  # so normalize it to the valid integer value 1.
 
                   line = line.replace(
                       "if(selected)1 else 1",
@@ -328,62 +296,54 @@ jobs:
                       changed.append(i + 1)
 
           # -----------------------------------------------------
-          # ACTUAL ERROR #2
+          # Fix payment date declaration
           #
-          # MainActivity.kt:626
-          #
-          # GitHub compiler:
-          # "Unresolved reference 'date'"
-          #
-          # The TextView is referenced from inside its own initializer.
-          #
-          # Convert:
-          #
-          # val date = outline(...) { ... date.text ... }
-          #
-          # into:
-          #
-          # lateinit var date: TextView
-          # date = outline(...) { ... date.text ... }
-          #
+          # IMPORTANT:
+          # Do not use re.match(...).group(...)
+          # because it caused the previous workflow failure.
           # -----------------------------------------------------
 
-          for i, line in enumerate(lines):
+          for i in range(len(lines)):
 
               if (
-                  "val date=outline(" in line
-                  and "payDate" in line
-                  and "date.text" in line
+                  "val date=outline(" in lines[i]
+                  and "payDate" in lines[i]
+                  and "date.text" in lines[i]
               ):
 
-                  original = line
+                  original = lines[i]
 
-                  line = line.replace(
+                  lines[i] = lines[i].replace(
                       "val date=outline(",
                       "date=outline(",
                       1
                   )
 
-                  if line != original:
+                  if lines[i] != original:
 
-                      indent = re.match(r"^\\s*", line).group(0)
+                      indent = lines[i][
+                          :len(lines[i]) - len(lines[i].lstrip())
+                      ]
 
-                      lines.insert(
-                          i,
-                          indent + "lateinit var date: TextView;"
+                      # Avoid inserting duplicate declaration
+                      already_declared = any(
+                          "lateinit var date: TextView" in x
+                          for x in lines[max(0, i-20):i]
                       )
 
+                      if not already_declared:
+                          lines.insert(
+                              i,
+                              indent + "lateinit var date: TextView;"
+                          )
+                          changed.append(i + 1)
+
                       changed.append(i + 1)
-                      changed.append(i + 2)
 
                       break
 
-          # -----------------------------------------------------
-          # Write repaired source
-          # -----------------------------------------------------
-
           p.write_text(
-              "\\n".join(lines) + "\\n",
+              "\n".join(lines) + "\n",
               encoding="utf-8"
           )
 
@@ -451,10 +411,6 @@ jobs:
             echo "ERROR: malformed field color expression remains."
             exit 1
           fi
-
-          # -----------------------------------------------------
-          # Verify the two errors from Run #28 are repaired
-          # -----------------------------------------------------
 
           if grep -nF \
             'if(selected)soft' \
@@ -551,7 +507,7 @@ jobs:
           echo "JVM 17 configuration: PASS"
 
       # =========================================================
-      # 12. GRADLE
+      # 12. GRADLE 8.11.1
       # =========================================================
 
       - name: Setup Gradle 8.11.1
@@ -611,7 +567,7 @@ jobs:
             --stacktrace
 
       # =========================================================
-      # 15. FIND APK
+      # 15. FIND RELEASE APK
       # =========================================================
 
       - name: Find Release APK
@@ -638,7 +594,7 @@ jobs:
           ls -lh "$APK"
 
       # =========================================================
-      # 16. SIGNING SECRETS
+      # 16. VERIFY SIGNING SECRETS
       # =========================================================
 
       - name: Verify signing secrets
@@ -669,7 +625,7 @@ jobs:
           echo "Signing secrets: PASS"
 
       # =========================================================
-      # 17. RESTORE KEYSTORE
+      # 17. RESTORE PERMANENT RELEASE KEYSTORE
       # =========================================================
 
       - name: Restore permanent release keystore
@@ -751,7 +707,7 @@ jobs:
           echo "APK signing: PASS"
 
       # =========================================================
-      # 20. VERIFY FINAL APK
+      # 20. VERIFY FINAL RELEASE APK
       # =========================================================
 
       - name: Verify Final Release APK
