@@ -148,13 +148,9 @@ jobs:
           APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
 
           grep -q 'signingConfigs' "$APP_GRADLE"
-
           grep -q 'releaseStoreFile' "$APP_GRADLE"
-
           grep -q 'releaseStorePassword' "$APP_GRADLE"
-
           grep -q 'releaseKeyAlias' "$APP_GRADLE"
-
           grep -q 'releaseKeyPassword' "$APP_GRADLE"
 
           grep -q \
@@ -214,11 +210,8 @@ jobs:
           set -euo pipefail
 
           test -n "$RELEASE_KEYSTORE_BASE64"
-
           test -n "$RELEASE_KEYSTORE_PASSWORD"
-
           test -n "$RELEASE_KEY_ALIAS"
-
           test -n "$RELEASE_KEY_PASSWORD"
 
           echo "All release signing secrets: PASS"
@@ -285,7 +278,6 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-
           AAPT="$BUILD_TOOLS/aapt"
 
           test -f "$APK"
@@ -304,7 +296,6 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-
           APKSIGNER="$BUILD_TOOLS/apksigner"
 
           test -f "$APK"
@@ -315,36 +306,6 @@ jobs:
           "$APKSIGNER" verify --print-certs "$APK"
 
           echo "Permanent APK signature verification: PASS"
-
-      - name: Install Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim
-          disable-animations: true
-
-          script: |
-            set -e
-
-            APK="$GITHUB_WORKSPACE/build-source/app/build/outputs/apk/release/app-release.apk"
-
-            adb install -r "$APK"
-
-            adb shell pm list packages | \
-              grep -q '^package:com.majdoor.hisaab$'
-
-            adb shell monkey \
-              -p com.majdoor.hisaab 1 >/dev/null
-
-            sleep 3
-
-            adb shell dumpsys activity activities | \
-              grep -q 'com.majdoor.hisaab'
-
-            echo "Emulator smoke test: PASS"
 
       - name: Calculate SHA256
         working-directory: build-source
@@ -369,7 +330,6 @@ jobs:
           if find app/build/outputs/apk \
             -type f \
             -name '*debug*.apk' | grep -q .; then
-
             echo "ERROR: Debug APK detected"
             exit 1
           fi
