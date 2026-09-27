@@ -9,9 +9,8 @@ permissions:
 env:
   JAVA_VERSION: "17"
   GRADLE_VERSION: "8.11.1"
-  ANDROID_API: "35"
-  BUILD_TOOLS: "35.0.0"
-  SOURCE_ZIP: Majdoor_Hisaab_PRO_v2_4_LOCAL_SQLITE_FINAL_APK_BUILD.zip
+  ANDROID_API: "36"
+  BUILD_TOOLS: "36.0.0"
 
 jobs:
   build-release-apk:
@@ -50,7 +49,7 @@ jobs:
 
 
       # ============================================================
-      # 3. ANDROID SDK
+      # 3. ANDROID SDK 36
       # ============================================================
 
       - name: Setup Android SDK
@@ -58,7 +57,7 @@ jobs:
         with:
           packages: "platform-tools"
 
-      - name: Install Android SDK
+      - name: Install Android SDK 36
         shell: bash
         run: |
           set -euo pipefail
@@ -69,10 +68,11 @@ jobs:
 
           sdkmanager \
             "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;${BUILD_TOOLS}"
 
-          echo "Android SDK installed."
+          echo "Android SDK ${ANDROID_API} installed."
+          echo "Build Tools ${BUILD_TOOLS} installed."
 
 
       - name: Verify Android SDK
@@ -82,11 +82,17 @@ jobs:
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
-          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
-          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" version
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" version
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          test -x "$ZIPALIGN"
+
+          "$AAPT" version
+          "$APKSIGNER" version
+          "$ZIPALIGN" -h >/dev/null
 
           adb version
 
@@ -94,45 +100,58 @@ jobs:
 
 
       # ============================================================
-      # 4. FIND SOURCE ZIP
+      # 4. FIND AUDITED SOURCE ZIP
       # ============================================================
 
-      - name: Locate source ZIP
+      - name: Locate audited source ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Looking for:"
-          echo "$SOURCE_ZIP"
+          echo "Repository ZIP files:"
+          find . -type f -iname "*.zip" -print | sort || true
 
-          if [ ! -f "$SOURCE_ZIP" ]; then
+          SOURCE_ZIP="$(
+            find . \
+              -type f \
+              -iname "*FINAL_AUDITED_READY*.zip" \
+              -print -quit
+          )"
 
-            FOUND="$(
-              find . \
-                -type f \
-                -name "$SOURCE_ZIP" \
-                -print -quit
-            )"
-
-            if [ -z "$FOUND" ]; then
-              echo "ERROR: $SOURCE_ZIP not found."
-              echo ""
-              echo "ZIP files available:"
-              find . -type f -iname "*.zip" -print
-              exit 1
-            fi
-
-            cp "$FOUND" "$SOURCE_ZIP"
-
+          if [ -z "$SOURCE_ZIP" ]; then
+            echo "ERROR: FINAL_AUDITED_READY source ZIP not found."
+            exit 1
           fi
 
-          test -f "$SOURCE_ZIP"
+          echo "Using audited source ZIP:"
+          echo "$SOURCE_ZIP"
 
-          ls -lh "$SOURCE_ZIP"
+          echo "SOURCE_ZIP=$SOURCE_ZIP" >> "$GITHUB_ENV"
 
 
       # ============================================================
-      # 5. EXTRACT SOURCE
+      # 5. VERIFY SOURCE ZIP
+      # ============================================================
+
+      - name: Verify source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f "$SOURCE_ZIP"
+
+          unzip -t "$SOURCE_ZIP"
+
+          echo ""
+          echo "Source ZIP SHA-256:"
+          sha256sum "$SOURCE_ZIP"
+
+          echo ""
+          echo "Source ZIP verification: PASS"
+
+
+      # ============================================================
+      # 6. EXTRACT SOURCE
       # ============================================================
 
       - name: Extract source
@@ -141,7 +160,6 @@ jobs:
           set -euo pipefail
 
           rm -rf build-source
-
           mkdir -p build-source
 
           unzip -q \
@@ -149,7 +167,7 @@ jobs:
             -d build-source
 
           echo ""
-          echo "Extracted files:"
+          echo "Extracted project files:"
           find build-source \
             -maxdepth 6 \
             -type f \
@@ -157,7 +175,7 @@ jobs:
 
 
       # ============================================================
-      # 6. USE EXACT AUDITED PROJECT ROOT
+      # 7. SET ANDROID PROJECT ROOT
       # ============================================================
 
       - name: Set Android project
@@ -166,12 +184,6 @@ jobs:
           set -euo pipefail
 
           PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
-
-          echo "PROJECT_DIR:"
-          echo "$PROJECT_DIR"
-
-          echo ""
-          echo "Checking project files..."
 
           test -f "$PROJECT_DIR/settings.gradle.kts"
           test -f "$PROJECT_DIR/build.gradle.kts"
@@ -187,17 +199,17 @@ jobs:
           test -f \
             "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
           echo ""
           echo "Android project structure: PASS"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
 
       # ============================================================
-      # 7. SHOW ORIGINAL PROJECT CONFIG
+      # 8. AUDIT SOURCE — NO SOURCE MODIFICATION
       # ============================================================
 
-      - name: Audit project configuration
+      - name: Audit final source
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
@@ -215,173 +227,43 @@ jobs:
           cat settings.gradle.kts
 
           echo ""
-          echo "================ MAIN ACTIVITY ================"
-          grep -n "onCreate" \
-            app/src/main/java/com/majdoor/hisaab/MainActivity.kt \
-            || true
+          echo "================ MANIFEST ================"
+          cat app/src/main/AndroidManifest.xml
+
+          echo ""
+          echo "================ MAIN ACTIVITY CHECK ================"
+
+          grep -n "class MainActivity" \
+            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          grep -n "override fun onCreate" \
+            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          echo ""
+          echo "================ SDK CHECK ================"
+
+          grep -n "compileSdk" app/build.gradle.kts
+          grep -n "targetSdk" app/build.gradle.kts
+
+          echo ""
+          echo "================ JVM CHECK ================"
+
+          grep -n "VERSION_17" app/build.gradle.kts
+          grep -n "JVM_17" app/build.gradle.kts
+
+          echo ""
+          echo "Source audit: PASS"
 
 
       # ============================================================
-      # 8. FIX MainActivity onCreate
+      # 9. VERIFY NO OLD JVM SETTINGS
       # ============================================================
 
-      - name: Fix MainActivity
+      - name: Verify JVM configuration
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
-
-          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-
-          test -f "$FILE"
-
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path("app/src/main/java/com/majdoor/hisaab/MainActivity.kt")
-
-          s = p.read_text()
-
-          pattern = r'(?m)^(\s*)fun\s+onCreate\s*\('
-
-          s2, count = re.subn(
-              pattern,
-              r'\1override fun onCreate(',
-              s,
-              count=1
-          )
-
-          if count:
-              p.write_text(s2)
-              print("MainActivity onCreate override added.")
-          else:
-              print("onCreate already patched or not found.")
-
-          PY
-
-          echo ""
-          grep -n -A2 -B2 "onCreate" "$FILE"
-
-
-      # ============================================================
-      # 9. FIX ONLY inTransaction SYNTAX ERROR
-      # ============================================================
-
-      - name: Fix inTransaction syntax
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
-
-          test -f "$FILE"
-
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path("app/src/main/java/com/majdoor/hisaab/MainActivity.kt")
-          s = p.read_text()
-
-          # Fix only usages of SQLiteDatabase.inTransaction
-          # that are incorrectly written as a property.
-          #
-          # Wrong:
-          #     db.inTransaction
-          #
-          # Correct:
-          #     db.inTransaction()
-
-          pattern = r'\.inTransaction\b(?!\s*\()'
-
-          s2, count = re.subn(
-              pattern,
-              '.inTransaction()',
-              s
-          )
-
-          if count:
-              p.write_text(s2)
-              print(f"Fixed {count} incorrect inTransaction usage(s).")
-          else:
-              print("No incorrect inTransaction usage found.")
-
-          PY
-
-          echo ""
-          echo "Checking remaining inTransaction usages:"
-          grep -n "inTransaction" "$FILE" || true
-
-          echo ""
-          echo "inTransaction syntax check: PASS"
-
-
-      # ============================================================
-      # 10. FIX JAVA + KOTLIN JVM TARGETS
-      # ============================================================
-
-      - name: Configure Java 17 and Kotlin 17
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-
-          if "compileOptions" not in s:
-
-              marker = 'android {'
-
-              if marker not in s:
-                  raise SystemExit(
-                      "ERROR: android block not found."
-                  )
-
-              replacement = '''android {
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-          '''
-
-              s = s.replace(
-                  marker,
-                  replacement,
-                  1
-              )
-
-          if "JvmTarget.JVM_17" not in s:
-
-              s += '''
-
-          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-              compilerOptions {
-                  jvmTarget.set(
-                      org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
-                  )
-              }
-          }
-          '''
-
-          p.write_text(s)
-
-          print("Java 17 + Kotlin JVM 17 configuration added.")
-
-          PY
-
-          echo ""
-          echo "================ FINAL APP BUILD ================"
-
-          cat app/build.gradle.kts
-
-          echo ""
-          echo "Checking forbidden old JVM settings..."
 
           if grep -RniE \
             'VERSION_1_8|VERSION_8|jvmTarget.*1\.8|jvmTarget.*"8"|options\.release' \
@@ -390,22 +272,21 @@ jobs:
             --include='*.gradle.kts'; then
 
             echo ""
-            echo "ERROR: Old JVM configuration found."
+            echo "ERROR: Old JVM configuration detected."
             exit 1
           fi
 
-          echo ""
-          echo "JVM configuration: PASS"
+          echo "Java/Kotlin JVM configuration: PASS"
 
 
       # ============================================================
-      # 11. SETUP GRADLE 8.11.1
+      # 10. SETUP GRADLE 8.11.1
       # ============================================================
 
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.11.1"
+          gradle-version: ${{ env.GRADLE_VERSION }}
 
 
       - name: Verify Gradle
@@ -423,13 +304,13 @@ jobs:
 
           echo "Detected Gradle: $VERSION"
 
-          test "$VERSION" = "8.11.1"
+          test "$VERSION" = "$GRADLE_VERSION"
 
           echo "Gradle verification: PASS"
 
 
       # ============================================================
-      # 12. VERIFY FINAL PROJECT BEFORE BUILD
+      # 11. FINAL PRE-BUILD AUDIT
       # ============================================================
 
       - name: Final pre-build audit
@@ -443,41 +324,36 @@ jobs:
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f gradle.properties
-
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
 
           echo ""
           echo "Application ID:"
-          grep -n "applicationId" app/build.gradle.kts
-
-          echo ""
-          echo "Namespace:"
-          grep -n "namespace" app/build.gradle.kts
+          grep "applicationId" app/build.gradle.kts
 
           echo ""
           echo "Compile SDK:"
-          grep -n "compileSdk" app/build.gradle.kts
+          grep "compileSdk" app/build.gradle.kts
 
           echo ""
           echo "Target SDK:"
-          grep -n "targetSdk" app/build.gradle.kts
+          grep "targetSdk" app/build.gradle.kts
 
           echo ""
-          echo "Kotlin JVM:"
-          grep -n "JVM_17" app/build.gradle.kts
+          echo "Java 17:"
+          grep "VERSION_17" app/build.gradle.kts
 
           echo ""
-          echo "Java compatibility:"
-          grep -n "VERSION_17" app/build.gradle.kts
+          echo "Kotlin JVM 17:"
+          grep "JVM_17" app/build.gradle.kts
 
           echo ""
           echo "PRE-BUILD AUDIT: PASS"
 
 
       # ============================================================
-      # 13. BUILD RELEASE APK
+      # 12. BUILD RELEASE APK
       # ============================================================
 
       - name: Build Release APK
@@ -487,7 +363,7 @@ jobs:
           set -euo pipefail
 
           echo "=========================================="
-          echo "MAJDOOR HISAAB RELEASE APK"
+          echo "MAJDOOR HISAAB FINAL RELEASE APK"
           echo "=========================================="
 
           gradle \
@@ -497,11 +373,11 @@ jobs:
             --stacktrace
 
           echo ""
-          echo "BUILD COMPLETED."
+          echo "Release build completed."
 
 
       # ============================================================
-      # 14. FIND APK
+      # 13. FIND RELEASE APK
       # ============================================================
 
       - name: Find Release APK
@@ -518,11 +394,7 @@ jobs:
           )"
 
           if [ -z "$APK" ]; then
-
             echo "ERROR: Release APK not found."
-
-            echo ""
-            echo "Available APK files:"
 
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
@@ -532,7 +404,6 @@ jobs:
             exit 1
           fi
 
-          echo ""
           echo "Release APK:"
           echo "$APK"
 
@@ -540,46 +411,73 @@ jobs:
             "$APK" \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk"
 
-          ls -lh \
+          test -s \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk"
 
 
       # ============================================================
-      # 15. CREATE TEMPORARY RELEASE KEY
+      # 14. VERIFY REQUIRED SIGNING SECRETS
       # ============================================================
 
-      - name: Prepare release signing
+      - name: Verify signing secrets
         shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.MAJDOOR_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MAJDOOR_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MAJDOOR_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MAJDOOR_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -n "$KEYSTORE_B64" \
+            || { echo "Missing MAJDOOR_KEYSTORE_BASE64"; exit 1; }
+
+          test -n "$KEYSTORE_PASSWORD" \
+            || { echo "Missing MAJDOOR_KEYSTORE_PASSWORD"; exit 1; }
+
+          test -n "$KEY_ALIAS" \
+            || { echo "Missing MAJDOOR_KEY_ALIAS"; exit 1; }
+
+          test -n "$KEY_PASSWORD" \
+            || { echo "Missing MAJDOOR_KEY_PASSWORD"; exit 1; }
+
+          echo "Required signing secrets: PASS"
+
+
+      # ============================================================
+      # 15. RESTORE PERMANENT KEYSTORE
+      # ============================================================
+
+      - name: Restore permanent release keystore
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.MAJDOOR_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MAJDOOR_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MAJDOOR_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MAJDOOR_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
           KEYSTORE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
 
-          KEYSTORE_PASSWORD="MajdoorHisaabRelease2026!"
-          KEY_ALIAS="majdoor-hisaab"
-          KEY_PASSWORD="MajdoorHisaabRelease2026!"
-
-          keytool \
-            -genkeypair \
-            -v \
-            -keystore "$KEYSTORE" \
-            -storetype JKS \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            -alias "$KEY_ALIAS" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Majdoor Hisaab, OU=RKMS, O=Rastriya Kisan Majdur Sangathan, L=India, ST=Uttar Pradesh, C=IN"
+          printf '%s' "$KEYSTORE_B64" |
+            base64 --decode > "$KEYSTORE"
 
           test -s "$KEYSTORE"
+
+          keytool \
+            -list \
+            -keystore "$KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            >/dev/null
 
           echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
           echo "KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
           echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-          echo "Release keystore created successfully."
+          echo "Permanent release keystore: PASS"
 
 
       # ============================================================
@@ -593,7 +491,7 @@ jobs:
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
-          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
           test -x "$ZIPALIGN"
 
@@ -618,10 +516,10 @@ jobs:
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
 
           test -x "$APKSIGNER"
-          test -f "$KEYSTORE"
+          test -s "$KEYSTORE"
 
           "$APKSIGNER" sign \
             --ks "$KEYSTORE" \
@@ -631,35 +529,35 @@ jobs:
             --out "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk" \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Aligned.apk"
 
-          test -f "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
-
-          ls -lh "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
+          test -s \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
 
           echo "APK signing: PASS"
 
 
       # ============================================================
-      # 18. VERIFY FINAL SIGNED APK
+      # 18. VERIFY FINAL APK
       # ============================================================
 
-      - name: Verify Release APK
+      - name: Verify Final Release APK
         shell: bash
         run: |
           set -euo pipefail
 
           APK="$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk"
 
-          test -f "$APK"
+          test -s "$APK"
 
-          if [[ "$APK" == *debug* ]]; then
+          if [[ "$(basename "$APK")" == *debug* ]]; then
             echo "ERROR: Debug APK detected."
             exit 1
           fi
 
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
-          AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
           echo ""
           echo "================ APK PACKAGE ================"
@@ -673,25 +571,24 @@ jobs:
           echo "$PACKAGE_LINE"
 
           echo "$PACKAGE_LINE" |
-            grep "name='com.majdoor.hisaab'"
+            grep -F "name='com.majdoor.hisaab'"
 
           echo "$PACKAGE_LINE" |
-            grep "versionCode='5'"
+            grep -F "versionCode='5'"
 
           echo "$PACKAGE_LINE" |
-            grep "versionName='2.2'"
+            grep -F "versionName='2.2'"
 
           echo ""
           echo "================ APK SIGNATURE ================"
 
           "$APKSIGNER" verify \
             --verbose \
+            --print-certs \
             "$APK"
 
           echo ""
           echo "================ APK ALIGNMENT ================"
-
-          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
 
           "$ZIPALIGN" \
             -c \
@@ -721,12 +618,35 @@ jobs:
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
 
           echo ""
+          echo "Final APK SHA-256:"
           cat \
             "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release.apk.sha256"
 
 
       # ============================================================
-      # 20. UPLOAD ONLY FINAL RELEASE APK
+      # 20. REMOVE INTERMEDIATE FILES
+      # ============================================================
+
+      - name: Remove intermediate APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -f \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk" \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Aligned.apk"
+
+          test ! -f \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Unsigned.apk"
+
+          test ! -f \
+            "$GITHUB_WORKSPACE/Majdoor-Hisaab-Release-Aligned.apk"
+
+          echo "Intermediate APK cleanup: PASS"
+
+
+      # ============================================================
+      # 21. UPLOAD ONLY FINAL RELEASE APK + SHA256
       # ============================================================
 
       - name: Upload Final Release APK
@@ -738,3 +658,25 @@ jobs:
             Majdoor-Hisaab-Release.apk.sha256
           if-no-files-found: error
           retention-days: 30
+
+
+      # ============================================================
+      # 22. CLEAN SIGNING MATERIAL
+      # ============================================================
+
+      - name: Cleanup signing material
+        if: always()
+        shell: bash
+        run: |
+          set +e
+
+          if [ -n "${KEYSTORE:-}" ]; then
+            rm -f "$KEYSTORE"
+          fi
+
+          unset KEYSTORE
+          unset KEY_ALIAS
+          unset KEYSTORE_PASSWORD
+          unset KEY_PASSWORD
+
+          echo "Signing material cleanup completed."
