@@ -145,16 +145,6 @@ jobs:
 
       # =========================================================
       # 8. SET EXACT PROJECT ROOT
-      #
-      # ZIP VERIFIED:
-      #
-      # src/
-      # ├── settings.gradle.kts
-      # ├── build.gradle.kts
-      # ├── gradle.properties
-      # ├── gradlew
-      # └── app/
-      #     └── build.gradle.kts
       # =========================================================
       - name: Set V27 project root
         shell: bash
@@ -497,7 +487,7 @@ jobs:
           echo "Permanent release keystore restored."
 
       # =========================================================
-      # 19. VERIFY SIGNING CONFIG BEFORE BUILD
+      # 19. VERIFY SIGNING CONFIGURATION
       # =========================================================
       - name: Verify release signing configuration
         shell: bash
@@ -517,7 +507,96 @@ jobs:
           echo "Release signing configuration: PASS"
 
       # =========================================================
-      # 20. CLEAN
+      # 20. FIX VERIFIED KOTLIN FLOAT TYPE ERROR
+      #
+      # Build failure found at:
+      # MainActivity.kt:1211
+      # MainActivity.kt:1212
+      #
+      # Error:
+      # actual type is Int, but Float was expected.
+      #
+      # Only numeric literals inside floatArrayOf(...) are
+      # converted to Float literals.
+      # =========================================================
+      - name: Fix Kotlin Float array literals
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          MAIN="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          python3 - "$MAIN" <<'PY'
+          import re
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              lines = f.readlines()
+
+          changed = 0
+
+          for i, line in enumerate(lines):
+              if "floatArrayOf(" not in line:
+                  continue
+
+              original = line
+
+              # Only change numeric literals occurring on a line
+              # containing floatArrayOf(...).
+              #
+              # Examples:
+              # 0   -> 0f
+              # 10  -> 10f
+              # 1.5 -> 1.5f
+              #
+              # Existing Float suffixes are preserved.
+              def convert(match):
+                  value = match.group(1)
+
+                  # Don't touch values already followed by f/F.
+                  end = match.end()
+                  if end < len(line) and line[end:end + 1] in ("f", "F"):
+                      return value
+
+                  return value + "f"
+
+              line = re.sub(
+                  r'(?<![A-Za-z0-9_.])(-?(?:\d+\.\d+|\d+))(?![A-Za-z0-9_.])',
+                  convert,
+                  line
+              )
+
+              if line != original:
+                  lines[i] = line
+                  changed += 1
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.writelines(lines)
+
+          print("Float-array lines changed:", changed)
+
+          if changed == 0:
+              raise SystemExit(
+                  "ERROR: No floatArrayOf(...) numeric literals were found."
+              )
+          PY
+
+          echo
+          echo "=========================================="
+          echo "CHECK MainActivity.kt"
+          echo "=========================================="
+
+          sed -n '1205,1218p' "$MAIN"
+
+          echo
+          echo "Float type correction: PASS"
+
+      # =========================================================
+      # 21. CLEAN BUILD
       # =========================================================
       - name: Clean V27 build
         shell: bash
@@ -534,7 +613,7 @@ jobs:
           echo "Clean build environment: PASS"
 
       # =========================================================
-      # 21. FINAL RELEASE APK ONLY
+      # 22. FINAL RELEASE APK ONLY
       # =========================================================
       - name: Build FINAL Release APK only
         shell: bash
@@ -549,7 +628,7 @@ jobs:
             --stacktrace
 
       # =========================================================
-      # 22. VERIFY FINAL APK EXISTS
+      # 23. VERIFY FINAL APK EXISTS
       # =========================================================
       - name: Verify final release APK
         shell: bash
@@ -579,7 +658,7 @@ jobs:
           echo "=========================================="
 
       # =========================================================
-      # 23. ENSURE NO DEBUG APK
+      # 24. ENSURE NO DEBUG APK
       # =========================================================
       - name: Verify no debug APK
         shell: bash
@@ -604,7 +683,7 @@ jobs:
           echo "Debug APK: NONE"
 
       # =========================================================
-      # 24. ENSURE NO AAB
+      # 25. ENSURE NO AAB
       # =========================================================
       - name: Verify no AAB
         shell: bash
@@ -629,7 +708,7 @@ jobs:
           echo "AAB: NONE"
 
       # =========================================================
-      # 25. VERIFY APK PACKAGE / VERSION
+      # 26. VERIFY APK PACKAGE / VERSION
       # =========================================================
       - name: Verify APK package and version
         shell: bash
@@ -664,7 +743,7 @@ jobs:
           echo "Package/version verification: PASS"
 
       # =========================================================
-      # 26. VERIFY APK SIGNATURE
+      # 27. VERIFY RELEASE APK SIGNATURE
       # =========================================================
       - name: Verify release APK signature
         shell: bash
@@ -686,7 +765,7 @@ jobs:
           echo "Release APK signature: PASS"
 
       # =========================================================
-      # 27. GENERATE SHA256
+      # 28. GENERATE SHA256
       # =========================================================
       - name: Generate final APK SHA-256
         shell: bash
@@ -701,7 +780,7 @@ jobs:
             | tee "$GITHUB_WORKSPACE/release-apk-sha256.txt"
 
       # =========================================================
-      # 28. PREPARE FINAL ARTIFACT
+      # 29. PREPARE FINAL ARTIFACT
       # =========================================================
       - name: Prepare FINAL artifact
         shell: bash
@@ -727,7 +806,7 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/final"
 
       # =========================================================
-      # 29. UPLOAD ONLY FINAL APK
+      # 30. UPLOAD ONLY FINAL APK
       # =========================================================
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
@@ -738,7 +817,7 @@ jobs:
           retention-days: 30
 
       # =========================================================
-      # 30. UPLOAD SHA256
+      # 31. UPLOAD FINAL APK SHA256
       # =========================================================
       - name: Upload FINAL APK SHA-256
         uses: actions/upload-artifact@v4
@@ -749,7 +828,7 @@ jobs:
           retention-days: 30
 
       # =========================================================
-      # 31. FINAL SUMMARY
+      # 32. FINAL SUMMARY
       # =========================================================
       - name: Final build summary
         shell: bash
