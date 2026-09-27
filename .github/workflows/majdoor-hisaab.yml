@@ -45,8 +45,7 @@ jobs:
           ZIP_NAME="Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip"
 
           if [ ! -f "$ZIP_NAME" ]; then
-            echo "ERROR: Required ZIP not found:"
-            echo "$ZIP_NAME"
+            echo "ERROR: Required ZIP not found: $ZIP_NAME"
             find . -maxdepth 3 -type f -name "*.zip" -print
             exit 1
           fi
@@ -71,10 +70,10 @@ jobs:
           )
 
           for f in "${required_files[@]}"; do
-            if ! unzip -l "$ZIP_NAME" | grep -Fq "$f"; then
+            unzip -l "$ZIP_NAME" | grep -Fq "$f" || {
               echo "ERROR: Missing ZIP entry: $f"
               exit 1
-            fi
+            }
           done
 
           echo "ZIP STRUCTURE PASS"
@@ -252,9 +251,9 @@ jobs:
           grep -Fq 'RELEASE_KEY_ALIAS' app/build.gradle.kts
 
       # ============================================================
-      # ONLY PREVIOUSLY FAILED SOURCE AREAS
+      # ONLY PREVIOUSLY FAILED MainActivity SOURCE AREAS
       # ============================================================
-      - name: Fix previously failed MainActivity compile errors
+      - name: Fix only previously failed MainActivity source
         shell: bash
         run: |
           set -euo pipefail
@@ -270,95 +269,70 @@ jobs:
 
           lines = path.read_text(encoding="utf-8").splitlines()
 
-          # --------------------------------------------------------
-          # Exact failed compiler lines from previous run:
-          # 938
-          # 1033-1036
-          # 1077
-          # 1211-1212
-          #
-          # ONLY numeric coordinate literals on these lines are
-          # converted to Float.
-          # --------------------------------------------------------
+          replacements = {
 
-          targets = {
-              938,
-              1033,
-              1034,
-              1035,
-              1036,
-              1077,
-              1211,
-              1212,
+              # Previous compiler failure: line 938
+              938: '''            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}''',
+
+              # Previous compiler failure: lines 1033-1036
+              # NOTE: -1 and +1 inside dailyShift remain Int.
+              1033: '''            Hotspot("Back",0f,0f,12f,10f){reports()}, Hotspot("Prev",5f,8f,25f,8f){dailyShift(-1,fieldFilter)}, Hotspot("Next",70f,8f,25f,8f){dailyShift(1,fieldFilter)},''',
+
+              1034: '''            Hotspot(tr("All Fields","सभी खेत"),5f,17f,25f,7f){dailyReport()}, Hotspot("Paddy",32f,17f,20f,7f){dailyReport("Paddy")}, Hotspot("Sugarcane",54f,17f,22f,7f){dailyReport("Sugarcane")}, Hotspot("Banana",77f,17f,18f,7f){dailyReport("Banana")},''',
+
+              1035: '''            Hotspot("Paddy row",5f,30f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Sugarcane row",5f,43f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Banana row",5f,56f,90f,12f){dailyReport(fieldFilter)}, Hotspot("Mustard row",5f,69f,90f,12f){dailyReport(fieldFilter)},''',
+
+              1036: '''            Hotspot("Home Nav",0f,91f,20f,9f){home()},Hotspot("Attendance Nav",20f,91f,20f,9f){attendance()},Hotspot("Workers Nav",40f,91f,20f,9f){workers()},Hotspot("Fields Nav",60f,91f,20f,9f){fields()},Hotspot("Reports Nav",80f,91f,20f,9f){reports()}''',
+
+              # Previous compiler failure: line 1077
+              1077: '''        val lp=FrameLayout.LayoutParams(-1,0).apply{height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)}''',
+
+              # Previous compiler failure: lines 1211-1212
+              1211: '''            Hotspot("Back",0f,0f,12f,10f){home()}, Hotspot("Create Backup",8f,14f,40f,15f){createBackup()}, Hotspot("Restore Backup",52f,14f,40f,15f){pickRestore()},''',
+
+              1212: '''            Hotspot("Currency",8f,48f,84f,8f){currencyDialog()}, Hotspot("Language",8f,57f,84f,8f){languageDialog()}, Hotspot("Theme",8f,66f,84f,8f){themeDialog()}, Hotspot("Reset",8f,74f,84f,8f){confirmResetReference()}'''
           }
 
-          for lineno in sorted(targets):
-              if lineno > len(lines):
+          for lineno, replacement in replacements.items():
+
+              index = lineno - 1
+
+              if index >= len(lines):
                   raise SystemExit(
-                      f"ERROR: Expected source line {lineno} not found"
+                      f"ERROR: Source line {lineno} does not exist"
                   )
 
-          def fix_hotspot_numbers(s):
-              import re
+              original = lines[index]
 
-              # Only numeric arguments inside Hotspot(...)
-              def repl(m):
-                  prefix = m.group(1)
-                  body = m.group(2)
+              if lineno == 1077:
 
-                  # Convert only plain integer numeric literals.
-                  body = re.sub(
-                      r'(?<![\w.])-?\d+(?![\w.])',
-                      lambda x: x.group(0) + 'f',
-                      body
+                  expected = (
+                      "height=pxY(61);"
+                      "leftMargin=pxX(3);"
+                      "topMargin=pxY(28)"
                   )
 
-                  return prefix + body + ")"
+                  if expected not in original:
+                      raise SystemExit(
+                          "ERROR: Expected original line 1077 was not found"
+                      )
 
-              return re.sub(
-                  r'(Hotspot\([^)]*?,)([^)]*)\)',
-                  repl,
-                  s
-              )
+              else:
 
-          # Only Hotspot coordinate sections on the failed lines.
-          for lineno in [938, 1033, 1034, 1035, 1036, 1211, 1212]:
-              idx = lineno - 1
-              original = lines[idx]
+                  if "Hotspot(" not in original:
+                      raise SystemExit(
+                          f"ERROR: Expected Hotspot source at line {lineno} was not found"
+                      )
 
-              if "Hotspot(" not in original:
-                  raise SystemExit(
-                      f"ERROR: Expected Hotspot on line {lineno}"
-                  )
-
-              lines[idx] = fix_hotspot_numbers(original)
-
-          # Exact failed pxX/pxY line.
-          idx = 1077 - 1
-
-          original = lines[idx]
-
-          if "pxY(61)" not in original \
-             or "pxX(3)" not in original \
-             or "pxY(28)" not in original:
-              raise SystemExit(
-                  "ERROR: Expected line 1077 source pattern not found"
-              )
-
-          lines[idx] = original \
-              .replace("pxY(61)", "pxY(61f)") \
-              .replace("pxX(3)", "pxX(3f)") \
-              .replace("pxY(28)", "pxY(28f)")
+              lines[index] = replacement
 
           text = "\n".join(lines) + "\n"
 
           # --------------------------------------------------------
-          # Missing function from exact previous errors:
-          #
-          # 1149 Unresolved reference reportWorkerWhere
-          # 1185 Unresolved reference reportWorkerWhere
-          #
-          # Add ONLY this missing function.
+          # ONLY missing reportWorkerWhere() function
+          # Previous failures:
+          # 1149 unresolved reference
+          # 1185 unresolved reference
           # --------------------------------------------------------
 
           if "private fun reportWorkerWhere(" not in text:
@@ -370,25 +344,26 @@ jobs:
                       "ERROR: shareReportSummary() not found"
                   )
 
-              function = '''    private fun reportWorkerWhere(alias:String="w"):Pair<String,List<String>>{
-        val clauses=mutableListOf("$alias.date BETWEEN ? AND ?")
-        val args=mutableListOf(reportFrom,reportTo)
-
-        if(reportWorkerQuery.isNotBlank()){
-            clauses.add("$alias.worker_id IN (SELECT id FROM workers WHERE lower(name) LIKE ? OR lower(code) LIKE ?)")
-            val qv="%${reportWorkerQuery.lowercase(Locale.getDefault())}%"
-            args.add(qv)
-            args.add(qv)
-        }
-
-        if(reportFieldIds.isNotEmpty()){
-            clauses.add("$alias.field_id IN (${reportFieldIds.joinToString(",")})")
-        }
-
-        return clauses.joinToString(" AND ") to args
-    }
-
-'''
+              function = "\n".join([
+                  '    private fun reportWorkerWhere(alias:String="w"):Pair<String,List<String>>{',
+                  '        val clauses=mutableListOf("$alias.date BETWEEN ? AND ?")',
+                  '        val args=mutableListOf(reportFrom,reportTo)',
+                  '',
+                  '        if(reportWorkerQuery.isNotBlank()){',
+                  '            clauses.add("$alias.worker_id IN (SELECT id FROM workers WHERE lower(name) LIKE ? OR lower(code) LIKE ?)")',
+                  '            val qv="%${reportWorkerQuery.lowercase(Locale.getDefault())}%"',
+                  '            args.add(qv)',
+                  '            args.add(qv)',
+                  '        }',
+                  '',
+                  '        if(reportFieldIds.isNotEmpty()){',
+                  '            clauses.add("$alias.field_id IN (${reportFieldIds.joinToString(",")})")',
+                  '        }',
+                  '',
+                  '        return clauses.joinToString(" AND ") to args',
+                  '    }',
+                  ''
+              ]) + "\n"
 
               text = text.replace(
                   marker,
@@ -396,15 +371,18 @@ jobs:
                   1
               )
 
-          path.write_text(text, encoding="utf-8")
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
 
-          print("ONLY PREVIOUSLY FAILED AREAS FIXED")
+          print("ONLY PREVIOUSLY FAILED SOURCE AREAS FIXED")
           PY
 
       # ============================================================
-      # VERIFY FIX
+      # VERIFY EXACT FIXES
       # ============================================================
-      - name: Verify source fixes
+      - name: Verify exact source fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -413,15 +391,35 @@ jobs:
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          grep -Fq 'private fun reportWorkerWhere(' "$FILE"
+          grep -Fq \
+            'Hotspot("Home Nav",0f,91f,20f,9f)' \
+            "$FILE"
 
-          grep -Fq 'reportWorkerWhere("w")' "$FILE"
+          grep -Fq \
+            'Hotspot("Back",0f,0f,12f,10f){reports()}' \
+            "$FILE"
 
-          grep -Fq 'pxY(61f)' "$FILE"
-          grep -Fq 'pxX(3f)' "$FILE"
-          grep -Fq 'pxY(28f)' "$FILE"
+          grep -Fq \
+            'Hotspot("Prev",5f,8f,25f,8f){dailyShift(-1,fieldFilter)}' \
+            "$FILE"
 
-          echo "PREVIOUS FAILURE FIX PASS"
+          grep -Fq \
+            'height=pxY(61f);leftMargin=pxX(3f);topMargin=pxY(28f)' \
+            "$FILE"
+
+          grep -Fq \
+            'Hotspot("Create Backup",8f,14f,40f,15f)' \
+            "$FILE"
+
+          grep -Fq \
+            'private fun reportWorkerWhere(alias:String="w")' \
+            "$FILE"
+
+          grep -Fq \
+            'reportWorkerWhere("w")' \
+            "$FILE"
+
+          echo "EXACT SOURCE FIX PASS"
 
       # ============================================================
       # CLEAN
@@ -457,7 +455,7 @@ jobs:
           ls -lh "$APK"
 
       # ============================================================
-      # NO DEBUG / NO AAB
+      # NO DEBUG APK / NO AAB
       # ============================================================
       - name: Verify final artifact
         shell: bash
@@ -466,12 +464,12 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          APK="app/build/outputs/apk/release/app-release.apk"
-
-          test -f "$APK"
+          test -f \
+            app/build/outputs/apk/release/app-release.apk
 
           if find app/build/outputs -type f \
-            \( -name "*debug*.apk" -o -name "*.aab" \) | grep -q .; then
+            \( -name "*debug*.apk" -o -name "*.aab" \) \
+            | grep -q .; then
 
             echo "ERROR: Debug APK or AAB found"
 
@@ -496,11 +494,20 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging "$APK" | tee /tmp/aapt.txt
+            dump badging "$APK" \
+            | tee /tmp/aapt.txt
 
-          grep -Fq "package: name='com.majdoor.hisaab'" /tmp/aapt.txt
-          grep -Fq "versionCode='30'" /tmp/aapt.txt
-          grep -Fq "versionName='2.10'" /tmp/aapt.txt
+          grep -Fq \
+            "package: name='com.majdoor.hisaab'" \
+            /tmp/aapt.txt
+
+          grep -Fq \
+            "versionCode='30'" \
+            /tmp/aapt.txt
+
+          grep -Fq \
+            "versionName='2.10'" \
+            /tmp/aapt.txt
 
           echo "PACKAGE VERSION PASS"
 
