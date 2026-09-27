@@ -17,32 +17,20 @@ jobs:
 
     steps:
 
-      # =========================================================
-      # 1. CHECKOUT
-      # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
-      # =========================================================
-      # 2. JAVA 17
-      # =========================================================
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      # =========================================================
-      # 3. ANDROID SDK
-      # =========================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # =========================================================
-      # 4. INSTALL EXACT ANDROID SDK / BUILD TOOLS
-      # =========================================================
       - name: Install Android SDK 35
         shell: bash
         run: |
@@ -55,22 +43,15 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "=========================================="
-          echo "Android SDK"
-          echo "platform     : android-35"
-          echo "build-tools  : 35.0.0"
-          echo "status       : PASS"
-          echo "=========================================="
+          echo "Android SDK: PASS"
 
-      # =========================================================
-      # 5. FIND EXACT V27 ZIP
-      # =========================================================
       - name: Find V27 V5 ZIP
         shell: bash
         run: |
           set -euo pipefail
 
           ZIP_NAME="Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip"
+
           ZIP_FILE="$GITHUB_WORKSPACE/$ZIP_NAME"
 
           if [ ! -f "$ZIP_FILE" ]; then
@@ -84,27 +65,19 @@ jobs:
 
           if [ -z "${ZIP_FILE:-}" ] || [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: $ZIP_NAME not found."
-            echo
-            echo "Repository files:"
             find "$GITHUB_WORKSPACE" -maxdepth 4 -type f | sort
             exit 1
           fi
 
           echo "V27_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
 
-          echo
-          echo "V27 ZIP FOUND:"
+          echo "Using:"
           ls -lh "$ZIP_FILE"
 
-      # =========================================================
-      # 6. VERIFY ZIP BEFORE EXTRACTION
-      # =========================================================
       - name: Verify V27 ZIP structure
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Checking ZIP..."
 
           unzip -t "$V27_ZIP" >/dev/null
 
@@ -116,12 +89,8 @@ jobs:
           unzip -l "$V27_ZIP" | grep -Fq "src/app/src/main/AndroidManifest.xml"
           unzip -l "$V27_ZIP" | grep -Fq "src/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          echo
           echo "V27 ZIP structure: PASS"
 
-      # =========================================================
-      # 7. EXTRACT
-      # =========================================================
       - name: Extract V27 source
         shell: bash
         run: |
@@ -131,21 +100,15 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/v27-source"
 
-          unzip -q \
-            "$V27_ZIP" \
+          unzip -q "$V27_ZIP" \
             -d "$GITHUB_WORKSPACE/v27-source"
 
-          echo
-          echo "Extracted source:"
           find "$GITHUB_WORKSPACE/v27-source/src" \
             -maxdepth 4 \
             -type f \
             | sort \
             | head -250
 
-      # =========================================================
-      # 8. SET EXACT PROJECT ROOT
-      # =========================================================
       - name: Set V27 project root
         shell: bash
         run: |
@@ -154,7 +117,6 @@ jobs:
           PROJECT_ROOT="$GITHUB_WORKSPACE/v27-source/src"
 
           test -d "$PROJECT_ROOT"
-
           test -f "$PROJECT_ROOT/settings.gradle.kts"
           test -f "$PROJECT_ROOT/build.gradle.kts"
           test -f "$PROJECT_ROOT/gradle.properties"
@@ -163,16 +125,8 @@ jobs:
 
           echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
-          echo
-          echo "=========================================="
-          echo "PROJECT ROOT"
-          echo "=========================================="
           echo "$PROJECT_ROOT"
-          echo "=========================================="
 
-      # =========================================================
-      # 9. COMPLETE PROJECT STRUCTURE AUDIT
-      # =========================================================
       - name: Audit V27 project files
         shell: bash
         run: |
@@ -203,12 +157,8 @@ jobs:
 
           chmod +x gradlew
 
-          echo
           echo "All required V27 files: PASS"
 
-      # =========================================================
-      # 10. VERIFY SETTINGS.GRADLE.KTS
-      # =========================================================
       - name: Verify settings.gradle.kts
         shell: bash
         run: |
@@ -216,19 +166,11 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq \
-            'rootProject.name="MajdoorHisaab"' \
-            settings.gradle.kts
-
-          grep -Fq \
-            'include(":app")' \
-            settings.gradle.kts
+          grep -Fq 'rootProject.name="MajdoorHisaab"' settings.gradle.kts
+          grep -Fq 'include(":app")' settings.gradle.kts
 
           echo "settings.gradle.kts: PASS"
 
-      # =========================================================
-      # 11. VERIFY ROOT BUILD.GRADLE.KTS
-      # =========================================================
       - name: Verify root Gradle configuration
         shell: bash
         run: |
@@ -254,9 +196,6 @@ jobs:
 
           echo "Root Gradle configuration: PASS"
 
-      # =========================================================
-      # 12. VERIFY APP BUILD.GRADLE.KTS
-      # =========================================================
       - name: Verify V27 application configuration
         shell: bash
         run: |
@@ -266,66 +205,21 @@ jobs:
 
           APP="app/build.gradle.kts"
 
-          grep -Fq \
-            'namespace = "com.majdoor.hisaab"' \
-            "$APP"
-
-          grep -Fq \
-            'compileSdk = 35' \
-            "$APP"
-
-          grep -Fq \
-            'applicationId = "com.majdoor.hisaab"' \
-            "$APP"
-
-          grep -Fq \
-            'minSdk = 26' \
-            "$APP"
-
-          grep -Fq \
-            'targetSdk = 35' \
-            "$APP"
-
-          grep -Fq \
-            'versionCode = 30' \
-            "$APP"
-
-          grep -Fq \
-            'versionName = "2.10"' \
-            "$APP"
-
-          grep -Fq \
-            'JavaVersion.VERSION_17' \
-            "$APP"
-
-          grep -Fq \
-            'jvmTarget = "17"' \
-            "$APP"
-
+          grep -Fq 'namespace = "com.majdoor.hisaab"' "$APP"
+          grep -Fq 'compileSdk = 35' "$APP"
+          grep -Fq 'applicationId = "com.majdoor.hisaab"' "$APP"
+          grep -Fq 'minSdk = 26' "$APP"
+          grep -Fq 'targetSdk = 35' "$APP"
+          grep -Fq 'versionCode = 30' "$APP"
+          grep -Fq 'versionName = "2.10"' "$APP"
+          grep -Fq 'JavaVersion.VERSION_17' "$APP"
+          grep -Fq 'jvmTarget = "17"' "$APP"
           grep -Fq \
             'signingConfig = signingConfigs.getByName("release")' \
             "$APP"
 
-          echo
-          echo "=========================================="
-          echo "V27 APPLICATION CONFIG"
-          echo "=========================================="
-          echo "Package      : com.majdoor.hisaab"
-          echo "Version      : 2.10"
-          echo "VersionCode  : 30"
-          echo "compileSdk   : 35"
-          echo "targetSdk    : 35"
-          echo "minSdk       : 26"
-          echo "Java         : 17"
-          echo "AGP          : 8.9.1"
-          echo "Kotlin       : 2.1.20"
-          echo "Gradle       : 8.11.1"
-          echo "=========================================="
           echo "Application configuration: PASS"
 
-      # =========================================================
-      # 13. VERIFY MANIFEST
-      # =========================================================
       - name: Verify AndroidManifest.xml
         shell: bash
         run: |
@@ -353,9 +247,6 @@ jobs:
 
           echo "AndroidManifest.xml: PASS"
 
-      # =========================================================
-      # 14. VERIFY MAIN ACTIVITY
-      # =========================================================
       - name: Verify MainActivity
         shell: bash
         run: |
@@ -373,13 +264,8 @@ jobs:
 
           echo "MainActivity.kt: PASS"
 
-          echo
-          echo "MainActivity size:"
           wc -c "$MAIN"
 
-      # =========================================================
-      # 15. VERIFY WRAPPER
-      # =========================================================
       - name: Verify Gradle Wrapper 8.11.1
         shell: bash
         run: |
@@ -397,12 +283,8 @@ jobs:
             'f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
             gradle/wrapper/gradle-wrapper.properties
 
-          echo
           echo "Gradle wrapper configuration: PASS"
 
-      # =========================================================
-      # 16. GRADLE VERSION TEST
-      # =========================================================
       - name: Test Gradle 8.11.1
         shell: bash
         run: |
@@ -419,9 +301,6 @@ jobs:
 
           echo "Gradle 8.11.1: PASS"
 
-      # =========================================================
-      # 17. VERIFY SIGNING SECRETS
-      # =========================================================
       - name: Verify release signing secrets
         shell: bash
         env:
@@ -454,9 +333,6 @@ jobs:
 
           echo "Release signing secrets: PRESENT"
 
-      # =========================================================
-      # 18. RESTORE RELEASE KEYSTORE
-      # =========================================================
       - name: Restore permanent release keystore
         shell: bash
         env:
@@ -472,8 +348,7 @@ jobs:
           rm -f release.keystore
 
           printf '%s' "$RELEASE_KEYSTORE_BASE64" \
-            | base64 --decode \
-            > release.keystore
+            | base64 --decode > release.keystore
 
           test -s release.keystore
 
@@ -486,9 +361,6 @@ jobs:
 
           echo "Permanent release keystore restored."
 
-      # =========================================================
-      # 19. VERIFY SIGNING CONFIGURATION
-      # =========================================================
       - name: Verify release signing configuration
         shell: bash
         run: |
@@ -499,27 +371,34 @@ jobs:
           test -f release.keystore
           test -s release.keystore
 
-          grep -Fq "releaseStoreFile=" gradle.properties
-          grep -Fq "releaseStorePassword=" gradle.properties
-          grep -Fq "releaseKeyAlias=" gradle.properties
-          grep -Fq "releaseKeyPassword=" gradle.properties
+          grep -Fq "releaseStoreFile=" \
+            gradle.properties
+
+          grep -Fq "releaseStorePassword=" \
+            gradle.properties
+
+          grep -Fq "releaseKeyAlias=" \
+            gradle.properties
+
+          grep -Fq "releaseKeyPassword=" \
+            gradle.properties
 
           echo "Release signing configuration: PASS"
 
-      # =========================================================
-      # 20. FIX VERIFIED KOTLIN FLOAT TYPE ERROR
-      #
-      # Build failure found at:
+      # ---------------------------------------------------------
+      # EXACT SOURCE FIX
+      # Previous build failed at:
       # MainActivity.kt:1211
       # MainActivity.kt:1212
       #
-      # Error:
-      # actual type is Int, but Float was expected.
+      # Hotspot constructor expects Float:
+      # x:Float, y:Float, w:Float, h:Float
       #
-      # Only numeric literals inside floatArrayOf(...) are
-      # converted to Float literals.
-      # =========================================================
-      - name: Fix Kotlin Float array literals
+      # Only the two failing backup() lines are corrected here.
+      # No generic regex / unrelated source changes.
+      # ---------------------------------------------------------
+
+      - name: Fix exact MainActivity Hotspot Float error
         shell: bash
         run: |
           set -euo pipefail
@@ -529,75 +408,86 @@ jobs:
           MAIN="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
           python3 - "$MAIN" <<'PY'
-          import re
           import sys
 
           path = sys.argv[1]
 
           with open(path, "r", encoding="utf-8") as f:
-              lines = f.readlines()
+              s = f.read()
 
-          changed = 0
+          old1 = '''            Hotspot("Back",0,0,12,10){home()}, Hotspot("Create Backup",8,14,40,15){createBackup()}, Hotspot("Restore Backup",52,14,40,15){pickRestore()},'''
 
-          for i, line in enumerate(lines):
-              if "floatArrayOf(" not in line:
-                  continue
+          new1 = '''            Hotspot("Back",0f,0f,12f,10f){home()}, Hotspot("Create Backup",8f,14f,40f,15f){createBackup()}, Hotspot("Restore Backup",52f,14f,40f,15f){pickRestore()},'''
 
-              original = line
+          old2 = '''            Hotspot("Currency",8,48,84,8){currencyDialog()}, Hotspot("Language",8,57,84,8){languageDialog()}, Hotspot("Theme",8,66,84,8){themeDialog()}, Hotspot("Reset",8,74,84,8){confirmResetReference()}'''
 
-              # Only change numeric literals occurring on a line
-              # containing floatArrayOf(...).
-              #
-              # Examples:
-              # 0   -> 0f
-              # 10  -> 10f
-              # 1.5 -> 1.5f
-              #
-              # Existing Float suffixes are preserved.
-              def convert(match):
-                  value = match.group(1)
+          new2 = '''            Hotspot("Currency",8f,48f,84f,8f){currencyDialog()}, Hotspot("Language",8f,57f,84f,8f){languageDialog()}, Hotspot("Theme",8f,66f,84f,8f){themeDialog()}, Hotspot("Reset",8f,74f,84f,8f){confirmResetReference()}'''
 
-                  # Don't touch values already followed by f/F.
-                  end = match.end()
-                  if end < len(line) and line[end:end + 1] in ("f", "F"):
-                      return value
-
-                  return value + "f"
-
-              line = re.sub(
-                  r'(?<![A-Za-z0-9_.])(-?(?:\d+\.\d+|\d+))(?![A-Za-z0-9_.])',
-                  convert,
-                  line
+          if old1 not in s:
+              raise SystemExit(
+                  "ERROR: Expected backup() line 1211 was not found exactly."
               )
 
-              if line != original:
-                  lines[i] = line
-                  changed += 1
+          if old2 not in s:
+              raise SystemExit(
+                  "ERROR: Expected backup() line 1212 was not found exactly."
+              )
+
+          s = s.replace(old1, new1, 1)
+          s = s.replace(old2, new2, 1)
 
           with open(path, "w", encoding="utf-8") as f:
-              f.writelines(lines)
+              f.write(s)
 
-          print("Float-array lines changed:", changed)
-
-          if changed == 0:
-              raise SystemExit(
-                  "ERROR: No floatArrayOf(...) numeric literals were found."
-              )
+          print("Exact backup() Float correction: APPLIED")
           PY
 
           echo
-          echo "=========================================="
-          echo "CHECK MainActivity.kt"
-          echo "=========================================="
-
-          sed -n '1205,1218p' "$MAIN"
+          echo "Corrected MainActivity backup() section:"
+          sed -n '1208,1214p' "$MAIN"
 
           echo
-          echo "Float type correction: PASS"
+          echo "Exact source fix: PASS"
 
-      # =========================================================
-      # 21. CLEAN BUILD
-      # =========================================================
+      - name: Verify exact source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          MAIN="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          grep -Fq \
+            'Hotspot("Back",0f,0f,12f,10f)' \
+            "$MAIN"
+
+          grep -Fq \
+            'Hotspot("Create Backup",8f,14f,40f,15f)' \
+            "$MAIN"
+
+          grep -Fq \
+            'Hotspot("Restore Backup",52f,14f,40f,15f)' \
+            "$MAIN"
+
+          grep -Fq \
+            'Hotspot("Currency",8f,48f,84f,8f)' \
+            "$MAIN"
+
+          grep -Fq \
+            'Hotspot("Language",8f,57f,84f,8f)' \
+            "$MAIN"
+
+          grep -Fq \
+            'Hotspot("Theme",8f,66f,84f,8f)' \
+            "$MAIN"
+
+          grep -Fq \
+            'Hotspot("Reset",8f,74f,84f,8f)' \
+            "$MAIN"
+
+          echo "Exact source verification: PASS"
+
       - name: Clean V27 build
         shell: bash
         run: |
@@ -612,9 +502,6 @@ jobs:
 
           echo "Clean build environment: PASS"
 
-      # =========================================================
-      # 22. FINAL RELEASE APK ONLY
-      # =========================================================
       - name: Build FINAL Release APK only
         shell: bash
         run: |
@@ -627,9 +514,6 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      # =========================================================
-      # 23. VERIFY FINAL APK EXISTS
-      # =========================================================
       - name: Verify final release APK
         shell: bash
         run: |
@@ -641,7 +525,11 @@ jobs:
 
           if [ ! -f "$APK" ]; then
             echo "ERROR: Final release APK not found."
-            find app/build/outputs -type f | sort || true
+
+            find app/build/outputs \
+              -type f \
+              | sort || true
+
             exit 1
           fi
 
@@ -649,17 +537,10 @@ jobs:
 
           unzip -t "$APK" >/dev/null
 
-          echo
-          echo "=========================================="
-          echo "FINAL APK"
-          echo "=========================================="
           ls -lh "$APK"
-          echo "Integrity: PASS"
-          echo "=========================================="
 
-      # =========================================================
-      # 24. ENSURE NO DEBUG APK
-      # =========================================================
+          echo "Integrity: PASS"
+
       - name: Verify no debug APK
         shell: bash
         run: |
@@ -682,9 +563,6 @@ jobs:
 
           echo "Debug APK: NONE"
 
-      # =========================================================
-      # 25. ENSURE NO AAB
-      # =========================================================
       - name: Verify no AAB
         shell: bash
         run: |
@@ -707,9 +585,6 @@ jobs:
 
           echo "AAB: NONE"
 
-      # =========================================================
-      # 26. VERIFY APK PACKAGE / VERSION
-      # =========================================================
       - name: Verify APK package and version
         shell: bash
         run: |
@@ -728,23 +603,16 @@ jobs:
           echo "$BADGING"
 
           echo "$BADGING" \
-            | grep -Fq \
-            "package: name='com.majdoor.hisaab'"
+            | grep -Fq "package: name='com.majdoor.hisaab'"
 
           echo "$BADGING" \
-            | grep -Fq \
-            "versionCode='30'"
+            | grep -Fq "versionCode='30'"
 
           echo "$BADGING" \
-            | grep -Fq \
-            "versionName='2.10'"
+            | grep -Fq "versionName='2.10'"
 
-          echo
           echo "Package/version verification: PASS"
 
-      # =========================================================
-      # 27. VERIFY RELEASE APK SIGNATURE
-      # =========================================================
       - name: Verify release APK signature
         shell: bash
         run: |
@@ -764,9 +632,6 @@ jobs:
 
           echo "Release APK signature: PASS"
 
-      # =========================================================
-      # 28. GENERATE SHA256
-      # =========================================================
       - name: Generate final APK SHA-256
         shell: bash
         run: |
@@ -779,9 +644,6 @@ jobs:
           sha256sum "$APK" \
             | tee "$GITHUB_WORKSPACE/release-apk-sha256.txt"
 
-      # =========================================================
-      # 29. PREPARE FINAL ARTIFACT
-      # =========================================================
       - name: Prepare FINAL artifact
         shell: bash
         run: |
@@ -801,13 +663,8 @@ jobs:
             "$GITHUB_WORKSPACE/release-apk-sha256.txt" \
             "$GITHUB_WORKSPACE/final/release-apk-sha256.txt"
 
-          echo
-          echo "FINAL FILES:"
           ls -lh "$GITHUB_WORKSPACE/final"
 
-      # =========================================================
-      # 30. UPLOAD ONLY FINAL APK
-      # =========================================================
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
         with:
@@ -816,9 +673,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # =========================================================
-      # 31. UPLOAD FINAL APK SHA256
-      # =========================================================
       - name: Upload FINAL APK SHA-256
         uses: actions/upload-artifact@v4
         with:
@@ -827,15 +681,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # =========================================================
-      # 32. FINAL SUMMARY
-      # =========================================================
       - name: Final build summary
         shell: bash
         run: |
           set -euo pipefail
 
-          echo
           echo "=================================================="
           echo "MAJDOOR HISAAB PRO V27 v2.10"
           echo "FINAL RELEASE BUILD"
