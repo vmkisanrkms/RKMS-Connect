@@ -75,8 +75,7 @@ jobs:
 
       # ---------------------------------------------------------
       # 4. ANDROID SDK VERIFY
-      # IMPORTANT:
-      # zipalign does NOT support -h
+      # zipalign -h intentionally NOT used
       # ---------------------------------------------------------
       - name: Verify Android SDK
         shell: bash
@@ -95,7 +94,6 @@ jobs:
 
           "$AAPT" version
           "$APKSIGNER" version
-
           adb version
 
           echo "Android SDK verification: PASS"
@@ -115,11 +113,14 @@ jobs:
           echo "Repository ZIP files:"
           find . -maxdepth 2 -type f -name "*.zip" -print
 
-          SOURCE_ZIP="Majdoor_Hisaab_PRO_v2_4_LOCAL_SQLITE_FINAL_APK_BUILD.zip"
+          SOURCE_ZIP="Majdoor_Hisaab_PRO_v2_4_LOCAL_SQLITE_BUILD_FINAL_AUDITED_READY.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Required source ZIP not found:"
             echo "$SOURCE_ZIP"
+            echo
+            echo "Available ZIP files:"
+            find . -maxdepth 2 -type f -name "*.zip" -print
             exit 1
           fi
 
@@ -160,7 +161,7 @@ jobs:
           unzip -q "$SOURCE_ZIP" -d build-source
 
           echo "Extracted source:"
-          find build-source -maxdepth 3 -type f | sort | head -200
+          find build-source -maxdepth 4 -type f | sort
 
       # ---------------------------------------------------------
       # 8. SET ANDROID PROJECT
@@ -172,15 +173,19 @@ jobs:
 
           if [ -f "build-source/settings.gradle.kts" ] && \
              [ -f "build-source/app/build.gradle.kts" ]; then
+
             PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
 
           elif [ -d "build-source/app" ]; then
+
             PROJECT_DIR="$GITHUB_WORKSPACE/build-source"
 
           else
+
             echo "ERROR: Android project not found."
-            find build-source -maxdepth 4 -type f | sort
+            find build-source -maxdepth 5 -type f | sort
             exit 1
+
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
@@ -193,45 +198,127 @@ jobs:
           test -f "$PROJECT_DIR/app/build.gradle.kts"
 
       # ---------------------------------------------------------
-      # 9. AUDIT FINAL SOURCE
+      # 9. REPAIR VERIFIED KOTLIN SYNTAX
+      # Only known audited syntax defects are repaired.
+      # ---------------------------------------------------------
+      - name: Repair verified Kotlin syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          test -f "$MAIN"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path(
+              "build-source/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          )
+
+          s = p.read_text(encoding="utf-8")
+
+          replacements = {
+              'if(earned-paid>0)C.RED:C.MUTED':
+                  'if(earned-paid>0) C.RED else C.MUTED',
+
+              'if(c.getInt(4)==1)"Inactive":"Active"':
+                  'if(c.getInt(4)==1) "Inactive" else "Active"',
+
+              'if(id==null)"New Worker":"Worker Edit"':
+                  'if(id==null) "New Worker" else "Worker Edit"',
+
+              'if(earned-paid>0)C.RED:C.GREEN':
+                  'if(earned-paid>0) C.RED else C.GREEN',
+
+              'if(earned-paid>0)C.RED_SOFT:C.GREEN_SOFT':
+                  'if(earned-paid>0) C.RED_SOFT else C.GREEN_SOFT',
+
+              'if(c.getInt(2)==1)"Inactive":"Active"':
+                  'if(c.getInt(2)==1) "Inactive" else "Active"',
+
+              'if(id==null)"New Fields / Crops":"Field Edit"':
+                  'if(id==null) "New Fields / Crops" else "Field Edit"',
+
+              'if(e-p>0)C.RED:C.GREEN':
+                  'if(e-p>0) C.RED else C.GREEN',
+          }
+
+          for old, new in replacements.items():
+              s = s.replace(old, new)
+
+          p.write_text(
+              s,
+              encoding="utf-8"
+          )
+          PY
+
+          echo "Checking known malformed Kotlin syntax..."
+
+          if grep -nE \
+            'if\([^)]*\)[^[:space:]]+:[^[:space:]]+' \
+            "$MAIN"; then
+
+            echo "ERROR: Malformed Kotlin ternary syntax remains."
+            exit 1
+          fi
+
+          echo "Verified Kotlin syntax repair: PASS"
+
+      # ---------------------------------------------------------
+      # 10. AUDIT FINAL SOURCE
       # ---------------------------------------------------------
       - name: Audit final source
         shell: bash
         run: |
           set -euo pipefail
 
+          MAIN="$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
           test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          test -f "$MAIN"
 
-          grep -q 'applicationId="com.majdoor.hisaab"' \
+          grep -q \
+            'applicationId="com.majdoor.hisaab"' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          grep -q 'compileSdk=35' \
+          grep -q \
+            'compileSdk=35' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          grep -q 'minSdk=26' \
+          grep -q \
+            'minSdk=26' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          grep -q 'targetSdk=35' \
+          grep -q \
+            'targetSdk=35' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          grep -q 'VERSION_17' \
+          grep -q \
+            'VERSION_17' \
             "$PROJECT_DIR/app/build.gradle.kts"
+
+          grep -q \
+            'class MainActivity' \
+            "$MAIN"
 
           echo "Final source audit: PASS"
 
       # ---------------------------------------------------------
-      # 10. JVM CONFIGURATION
+      # 11. JVM CONFIGURATION
       # ---------------------------------------------------------
       - name: Verify JVM configuration
         shell: bash
         run: |
           set -euo pipefail
 
-          grep -q 'JavaVersion.VERSION_17' \
+          grep -q \
+            'JavaVersion.VERSION_17' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          grep -q 'JvmTarget.JVM_17' \
+          grep -q \
+            'JvmTarget.JVM_17' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
           if grep -R --line-number \
@@ -247,7 +334,7 @@ jobs:
           echo "JVM 17 configuration: PASS"
 
       # ---------------------------------------------------------
-      # 11. GRADLE
+      # 12. GRADLE
       # ---------------------------------------------------------
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
@@ -262,7 +349,7 @@ jobs:
           gradle --version
 
       # ---------------------------------------------------------
-      # 12. FINAL PRE-BUILD AUDIT
+      # 13. FINAL PRE-BUILD AUDIT
       # ---------------------------------------------------------
       - name: Final pre-build audit
         shell: bash
@@ -277,23 +364,31 @@ jobs:
           test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
           test -f "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
 
-          echo "Checking MainActivity..."
+          echo "Checking application ID..."
 
-          grep -q 'class MainActivity' \
-            "$PROJECT_DIR/app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+          grep -q \
+            'applicationId="com.majdoor.hisaab"' \
+            "$PROJECT_DIR/app/build.gradle.kts"
 
           echo "Checking release configuration..."
 
-          grep -q 'versionCode=5' \
+          grep -q \
+            'versionCode=5' \
             "$PROJECT_DIR/app/build.gradle.kts"
 
-          grep -q 'versionName="2.2"' \
+          grep -q \
+            'versionName="2.2"' \
             "$PROJECT_DIR/app/build.gradle.kts"
+
+          echo "Checking debug APK is not the target..."
+
+          test ! -f \
+            "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" || true
 
           echo "Final pre-build audit: PASS"
 
       # ---------------------------------------------------------
-      # 13. BUILD RELEASE APK
+      # 14. BUILD RELEASE APK
       # ---------------------------------------------------------
       - name: Build Release APK
         shell: bash
@@ -307,7 +402,7 @@ jobs:
             --stacktrace
 
       # ---------------------------------------------------------
-      # 14. FIND RELEASE APK
+      # 15. FIND RELEASE APK
       # ---------------------------------------------------------
       - name: Find Release APK
         shell: bash
@@ -333,7 +428,7 @@ jobs:
           ls -lh "$APK"
 
       # ---------------------------------------------------------
-      # 15. VERIFY SIGNING SECRETS
+      # 16. VERIFY SIGNING SECRETS
       # ---------------------------------------------------------
       - name: Verify signing secrets
         shell: bash
@@ -363,7 +458,7 @@ jobs:
           echo "Signing secrets: PASS"
 
       # ---------------------------------------------------------
-      # 16. RESTORE PERMANENT RELEASE KEYSTORE
+      # 17. RESTORE PERMANENT RELEASE KEYSTORE
       # ---------------------------------------------------------
       - name: Restore permanent release keystore
         shell: bash
@@ -372,17 +467,20 @@ jobs:
 
           KEYSTORE="$RUNNER_TEMP/majdoor-release.keystore"
 
-          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE"
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" \
+            | base64 --decode > "$KEYSTORE"
 
           test -s "$KEYSTORE"
 
           echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
-          echo "KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> "$GITHUB_ENV"
+
+          echo "KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" \
+            >> "$GITHUB_ENV"
 
           echo "Release keystore restored."
 
       # ---------------------------------------------------------
-      # 17. ZIPALIGN RELEASE APK
+      # 18. ZIPALIGN RELEASE APK
       # ---------------------------------------------------------
       - name: Zipalign Release APK
         shell: bash
@@ -394,6 +492,8 @@ jobs:
           ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
           ALIGNED_APK="$RUNNER_TEMP/app-release-aligned.apk"
+
+          test -x "$ZIPALIGN"
 
           "$ZIPALIGN" \
             -f \
@@ -409,7 +509,7 @@ jobs:
           echo "Zipalign: PASS"
 
       # ---------------------------------------------------------
-      # 18. SIGN RELEASE APK
+      # 19. SIGN RELEASE APK
       # ---------------------------------------------------------
       - name: Sign Release APK
         shell: bash
@@ -419,6 +519,8 @@ jobs:
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
+
+          test -x "$APKSIGNER"
 
           "$APKSIGNER" sign \
             --ks "$KEYSTORE" \
@@ -435,7 +537,7 @@ jobs:
           echo "APK signing: PASS"
 
       # ---------------------------------------------------------
-      # 19. VERIFY FINAL RELEASE APK
+      # 20. VERIFY FINAL RELEASE APK
       # ---------------------------------------------------------
       - name: Verify Final Release APK
         shell: bash
@@ -462,7 +564,7 @@ jobs:
           echo "Final Release APK verification: PASS"
 
       # ---------------------------------------------------------
-      # 20. GENERATE SHA256
+      # 21. GENERATE SHA256
       # ---------------------------------------------------------
       - name: Generate SHA256
         shell: bash
@@ -473,7 +575,7 @@ jobs:
             "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk.sha256"
 
       # ---------------------------------------------------------
-      # 21. REMOVE INTERMEDIATE APKs
+      # 22. REMOVE INTERMEDIATE APKs
       # ---------------------------------------------------------
       - name: Remove intermediate APKs
         shell: bash
@@ -482,15 +584,17 @@ jobs:
 
           find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
-            \( -name "*-unsigned.apk" \
-               -o -name "*-aligned.apk" \
-               -o -name "*.signed" \) \
+            \( \
+              -name "*-unsigned.apk" \
+              -o -name "*-aligned.apk" \
+              -o -name "*.signed" \
+            \) \
             -delete
 
           echo "Intermediate APK cleanup: PASS"
 
       # ---------------------------------------------------------
-      # 22. UPLOAD FINAL RELEASE APK
+      # 23. UPLOAD FINAL RELEASE APK
       # ---------------------------------------------------------
       - name: Upload Final Release APK
         uses: actions/upload-artifact@v4
@@ -503,7 +607,7 @@ jobs:
           retention-days: 30
 
       # ---------------------------------------------------------
-      # 23. CLEANUP SIGNING MATERIAL
+      # 24. CLEANUP SIGNING MATERIAL
       # ---------------------------------------------------------
       - name: Cleanup signing material
         if: always()
