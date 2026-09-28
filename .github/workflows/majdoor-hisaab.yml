@@ -200,6 +200,10 @@ jobs:
 
           echo "APP CONFIG PASS"
 
+      # ============================================================
+      # ONLY FAILED STEP FROM RUN #60 IS CORRECTED HERE
+      # ============================================================
+
       - name: Verify AndroidManifest
         shell: bash
         run: |
@@ -215,7 +219,7 @@ jobs:
             'android:exported="true"' \
             "$MANIFEST"
 
-          # Actual ZIP uses:
+          # ZIP में actual MainActivity declaration:
           # android:name=".MainActivity"
           grep -Fq \
             'android:name=".MainActivity"' \
@@ -324,7 +328,7 @@ jobs:
           echo "SIGNING CONFIG PASS"
 
       # ============================================================
-      # ONLY PREVIOUSLY FAILED MAINACTIVITY AREAS
+      # PREVIOUSLY REQUIRED SOURCE FIXES — UNCHANGED
       # ============================================================
 
       - name: Fix only previously failed MainActivity source
