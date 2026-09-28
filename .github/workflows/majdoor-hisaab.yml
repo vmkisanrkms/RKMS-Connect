@@ -1,4 +1,4 @@
-      - name: Build FINAL Release APK
+      Build FINAL Release APK
         shell: bash
         run: |
           set -euo pipefail
