@@ -200,10 +200,6 @@ jobs:
 
           echo "APP CONFIG PASS"
 
-      # ============================================================
-      # RUN #60 में यही STEP FAIL हुआ था
-      # ============================================================
-
       - name: Verify AndroidManifest
         shell: bash
         run: |
@@ -304,11 +300,6 @@ jobs:
 
           echo "KEYSTORE RESTORE PASS"
 
-      # ============================================================
-      # RUN #63 में FAIL हुआ था
-      # वास्तविक app/build.gradle.kts के property names के अनुसार FIX
-      # ============================================================
-
       - name: Verify signing configuration
         shell: bash
         run: |
@@ -339,7 +330,19 @@ jobs:
           echo "SIGNING CONFIG PASS"
 
       # ============================================================
-      # PREVIOUSLY REQUIRED SOURCE FIXES — UNCHANGED
+      # ONLY CURRENT BUILD FAILURE IS FIXED HERE
+      # Build #64:
+      # MainActivity.kt had integer Hotspot coordinates.
+      # Hotspot requires Float coordinates.
+      #
+      # Example:
+      # Hotspot("Back",0,0,12,10)
+      #
+      # becomes:
+      # Hotspot("Back",0f,0f,12f,10f)
+      #
+      # No UI/action/function is changed.
+      # Only numeric coordinate types are corrected.
       # ============================================================
 
       - name: Fix only previously failed MainActivity source
@@ -351,14 +354,21 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           path = Path(
               "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
           )
 
-          lines = path.read_text(
+          text = path.read_text(
               encoding="utf-8"
-          ).splitlines()
+          )
+
+          # --------------------------------------------------------
+          # Previously applied exact source fixes
+          # --------------------------------------------------------
+
+          lines = text.splitlines()
 
           replacements = {
 
@@ -414,6 +424,10 @@ jobs:
 
           text = "\n".join(lines) + "\n"
 
+          # --------------------------------------------------------
+          # Existing report helper fix
+          # --------------------------------------------------------
+
           if "private fun reportWorkerWhere(" not in text:
 
               marker = "    private fun shareReportSummary(){"
@@ -450,13 +464,74 @@ jobs:
                   1
               )
 
+          # --------------------------------------------------------
+          # CURRENT BUILD FAILURE FIX
+          #
+          # Convert ONLY the four coordinate arguments of Hotspot
+          # from Int literals to Float literals.
+          #
+          # It does not change:
+          # - labels
+          # - functions/actions
+          # - screen layouts
+          # - database logic
+          # - calculations
+          # - navigation logic
+          # --------------------------------------------------------
+
+          hotspot_pattern = re.compile(
+              r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
+          )
+
+          converted = 0
+
+          def convert_hotspot(match):
+              nonlocal converted
+
+              converted += 1
+
+              label = match.group(1)
+              x = match.group(2)
+              y = match.group(3)
+              w = match.group(4)
+              h = match.group(5)
+
+              return (
+                  f"Hotspot({label},"
+                  f"{x}f,"
+                  f"{y}f,"
+                  f"{w}f,"
+                  f"{h}f"
+              )
+
+          text = hotspot_pattern.sub(
+              convert_hotspot,
+              text
+          )
+
+          if converted == 0:
+              raise SystemExit(
+                  "ERROR: No integer Hotspot coordinates were found"
+              )
+
+          # --------------------------------------------------------
+          # Make sure no integer-coordinate Hotspot remains.
+          # --------------------------------------------------------
+
+          remaining = hotspot_pattern.search(text)
+
+          if remaining:
+              raise SystemExit(
+                  "ERROR: Integer Hotspot coordinate remains"
+              )
+
           path.write_text(
               text,
               encoding="utf-8"
           )
 
           print(
-              "ONLY PREVIOUSLY FAILED SOURCE AREAS FIXED"
+              f"MAINACTIVITY HOTSPOT FLOAT FIX PASS: converted {converted} Hotspot entries"
           )
           PY
 
@@ -496,6 +571,15 @@ jobs:
           grep -Fq \
             'reportWorkerWhere("w")' \
             "$FILE"
+
+          # No Hotspot with four integer coordinates may remain.
+          if grep -nE \
+            'Hotspot\([^)]*,[[:space:]]*-?[0-9]+,[[:space:]]*-?[0-9]+,[[:space:]]*-?[0-9]+,[[:space:]]*-?[0-9]+\)' \
+            "$FILE"; then
+
+            echo "ERROR: Integer Hotspot coordinates still remain"
+            exit 1
+          fi
 
           echo "EXACT SOURCE FIX PASS"
 
