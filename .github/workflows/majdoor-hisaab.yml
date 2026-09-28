@@ -201,7 +201,7 @@ jobs:
           echo "APP CONFIG PASS"
 
       # ============================================================
-      # ONLY FAILED STEP FROM RUN #60 IS CORRECTED HERE
+      # RUN #60 में यही STEP FAIL हुआ था
       # ============================================================
 
       - name: Verify AndroidManifest
@@ -219,8 +219,6 @@ jobs:
             'android:exported="true"' \
             "$MANIFEST"
 
-          # ZIP में actual MainActivity declaration:
-          # android:name=".MainActivity"
           grep -Fq \
             'android:name=".MainActivity"' \
             "$MANIFEST"
@@ -298,13 +296,18 @@ jobs:
 
           cat >> gradle.properties <<EOF
 
-          RELEASE_STORE_FILE=$PROJECT_ROOT/release-keystore.jks
-          RELEASE_STORE_PASSWORD=$RELEASE_KEYSTORE_PASSWORD
-          RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS
-          RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD
+          releaseStoreFile=$PROJECT_ROOT/release-keystore.jks
+          releaseStorePassword=$RELEASE_KEYSTORE_PASSWORD
+          releaseKeyAlias=$RELEASE_KEY_ALIAS
+          releaseKeyPassword=$RELEASE_KEY_PASSWORD
           EOF
 
           echo "KEYSTORE RESTORE PASS"
+
+      # ============================================================
+      # RUN #63 में FAIL हुआ था
+      # वास्तविक app/build.gradle.kts के property names के अनुसार FIX
+      # ============================================================
 
       - name: Verify signing configuration
         shell: bash
@@ -318,11 +321,19 @@ jobs:
             app/build.gradle.kts
 
           grep -Fq \
-            'RELEASE_STORE_FILE' \
+            'releaseStoreFile' \
             app/build.gradle.kts
 
           grep -Fq \
-            'RELEASE_KEY_ALIAS' \
+            'releaseStorePassword' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'releaseKeyAlias' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'releaseKeyPassword' \
             app/build.gradle.kts
 
           echo "SIGNING CONFIG PASS"
