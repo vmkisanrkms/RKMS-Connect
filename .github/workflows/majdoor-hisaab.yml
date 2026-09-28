@@ -496,7 +496,158 @@ jobs:
           ./gradlew clean --no-daemon
 
       # ==============================================================
-      # FROM HERE: RELEASE BUILD SECTION AUDITED + CORRECTED
+      # ONLY NEW FIX:
+      # PREVIOUS RELEASE BUILD FAILED HERE BECAUSE
+      # navigation_bar_dark EXISTED ONLY IN values-night.
+      # NOTHING ABOVE THIS POINT HAS BEEN CHANGED.
+      # ==============================================================
+
+      - name: Fix release lint resources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          COLORS="app/src/main/res/values/colors.xml"
+          COLORS_NIGHT="app/src/main/res/values-night/colors.xml"
+
+          test -f "$COLORS" || {
+            echo "ERROR: Missing $COLORS"
+            exit 1
+          }
+
+          test -f "$COLORS_NIGHT" || {
+            echo "ERROR: Missing $COLORS_NIGHT"
+            exit 1
+          }
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          base = Path(
+              "app/src/main/res/values/colors.xml"
+          )
+
+          night = Path(
+              "app/src/main/res/values-night/colors.xml"
+          )
+
+          base_text = base.read_text(
+              encoding="utf-8"
+          )
+
+          night_text = night.read_text(
+              encoding="utf-8"
+          )
+
+          resource_pattern = re.compile(
+              r'<color\s+name=["\']navigation_bar_dark["\']\s*>(.*?)</color>',
+              re.DOTALL
+          )
+
+          # ------------------------------------------------------------
+          # Get the value already used by the night resource.
+          # ------------------------------------------------------------
+
+          night_match = resource_pattern.search(
+              night_text
+          )
+
+          if night_match:
+              value = night_match.group(1).strip()
+          else:
+              value = "#101412"
+
+          # ------------------------------------------------------------
+          # Add ONLY the missing base declaration.
+          # ------------------------------------------------------------
+
+          base_match = resource_pattern.search(
+              base_text
+          )
+
+          if not base_match:
+
+              resources_match = re.search(
+                  r'<resources\b[^>]*>\s*',
+                  base_text
+              )
+
+              if not resources_match:
+                  raise SystemExit(
+                      "ERROR: <resources> not found in colors.xml"
+                  )
+
+              insert_at = resources_match.end()
+
+              color_line = (
+                  f'    <color name="navigation_bar_dark">'
+                  f'{value}'
+                  f'</color>\n'
+              )
+
+              base_text = (
+                  base_text[:insert_at]
+                  + color_line
+                  + base_text[insert_at:]
+              )
+
+              base.write_text(
+                  base_text,
+                  encoding="utf-8"
+              )
+
+              print(
+                  "FIXED: navigation_bar_dark added to values/colors.xml"
+              )
+
+          else:
+
+              print(
+                  "PASS: navigation_bar_dark already exists in values/colors.xml"
+              )
+
+          # ------------------------------------------------------------
+          # Final verification.
+          # ------------------------------------------------------------
+
+          final_base = base.read_text(
+              encoding="utf-8"
+          )
+
+          final_night = night.read_text(
+              encoding="utf-8"
+          )
+
+          if not resource_pattern.search(
+              final_base
+          ):
+              raise SystemExit(
+                  "ERROR: navigation_bar_dark missing from base values"
+              )
+
+          if not resource_pattern.search(
+              final_night
+          ):
+              raise SystemExit(
+                  "ERROR: navigation_bar_dark missing from values-night"
+              )
+
+          print(
+              "RELEASE LINT RESOURCE FIX PASS"
+          )
+
+          print(
+              "navigation_bar_dark base value:",
+              value
+          )
+
+          PY
+
+      # ==============================================================
+      # EXISTING RELEASE BUILD SECTION
       # ==============================================================
 
       - name: Build FINAL Release APK
@@ -512,6 +663,7 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           path = Path(
               "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
@@ -522,8 +674,7 @@ jobs:
           )
 
           # ============================================================
-          # FIX 1
-          # android.os.Build import
+          # FIX 1: android.os.Build import
           # ============================================================
 
           if "import android.os.Build" not in text:
@@ -542,13 +693,7 @@ jobs:
               )
 
           # ============================================================
-          # FIX 2
-          # Known invalid literals from the audited ZIP
-          #
-          # ZIP contained:
-          # '/day' to '/दिन'
-          #
-          # Both are invalid Kotlin character literals.
+          # FIX 2: invalid /day and /दिन character literals
           # ============================================================
 
           text = text.replace(
@@ -562,8 +707,7 @@ jobs:
           )
 
           # ============================================================
-          # FIX 3
-          # renderFieldGrid rows: val -> var
+          # FIX 3: renderFieldGrid rows
           # ============================================================
 
           render_start = text.find(
@@ -602,24 +746,7 @@ jobs:
           )
 
           # ============================================================
-          # FIX 4
-          # Kotlin malformed character-literal scanner
-          #
-          # IMPORTANT:
-          # Valid Kotlin chars such as:
-          #
-          # ','
-          # '\n'
-          # '\t'
-          # '\\'
-          #
-          # are preserved.
-          #
-          # Only multi-character / malformed single-quoted literals
-          # are converted to String literals.
-          #
-          # Strings and SQL strings are protected because Kotlin SQL
-          # is inside normal double-quoted strings.
+          # FIX 4: Kotlin malformed character literals
           # ============================================================
 
           def fix_invalid_kotlin_char_literals(source):
@@ -634,79 +761,84 @@ jobs:
 
               while i < n:
 
-                  # ----------------------------------------------------
-                  # Line comment
-                  # ----------------------------------------------------
-
                   if source.startswith("//", i):
 
-                      end = source.find("\n", i)
+                      end = source.find(
+                          "\n",
+                          i
+                      )
 
                       if end == -1:
 
-                          result.append(source[i:])
+                          result.append(
+                              source[i:]
+                          )
 
                           i = n
-
                           break
 
-                      result.append(source[i:end])
+                      result.append(
+                          source[i:end]
+                      )
 
                       i = end
 
                       continue
 
-                  # ----------------------------------------------------
-                  # Block comment
-                  # ----------------------------------------------------
-
                   if source.startswith("/*", i):
 
-                      end = source.find("*/", i + 2)
+                      end = source.find(
+                          "*/",
+                          i + 2
+                      )
 
                       if end == -1:
 
-                          result.append(source[i:])
+                          result.append(
+                              source[i:]
+                          )
 
                           i = n
-
                           break
 
                       end += 2
 
-                      result.append(source[i:end])
+                      result.append(
+                          source[i:end]
+                      )
 
                       i = end
 
                       continue
 
-                  # ----------------------------------------------------
-                  # Kotlin raw string
-                  # ----------------------------------------------------
+                  if source.startswith(
+                      '"""',
+                      i
+                  ):
 
-                  if source.startswith('"""', i):
-
-                      end = source.find('"""', i + 3)
+                      end = source.find(
+                          '"""',
+                          i + 3
+                      )
 
                       if end == -1:
 
-                          result.append(source[i:])
+                          result.append(
+                              source[i:]
+                          )
 
                           i = n
-
                           break
 
                       end += 3
 
-                      result.append(source[i:end])
+                      result.append(
+                          source[i:end]
+                      )
 
                       i = end
 
                       continue
-
-                  # ----------------------------------------------------
-                  # Kotlin normal String
-                  # ----------------------------------------------------
 
                   if source[i] == '"':
 
@@ -736,10 +868,6 @@ jobs:
 
                       continue
 
-                  # ----------------------------------------------------
-                  # Kotlin Char literal
-                  # ----------------------------------------------------
-
                   if source[i] == "'":
 
                       start = i
@@ -754,11 +882,9 @@ jobs:
 
                           ch = source[j]
 
-                          # Char literals cannot cross a line.
                           if ch in "\r\n":
                               break
 
-                          # Escaped character.
                           if ch == "\\":
 
                               if j + 1 >= n:
@@ -776,7 +902,6 @@ jobs:
 
                               continue
 
-                          # Closing quote.
                           if ch == "'":
 
                               closed = True
@@ -789,24 +914,12 @@ jobs:
 
                           j += 1
 
-                      # ------------------------------------------------
-                      # Closed literal
-                      # ------------------------------------------------
-
                       if closed:
 
-                          raw_content = "".join(content)
+                          raw_content = "".join(
+                              content
+                          )
 
-                          # Valid Kotlin Char:
-                          #
-                          # 'a'
-                          # ','
-                          # '.'
-                          # '\n'
-                          # '\t'
-                          # '\\'
-                          # '\''
-                          #
                           valid = False
 
                           if len(raw_content) == 1:
@@ -828,13 +941,8 @@ jobs:
 
                           else:
 
-                              # Convert malformed Char literal
-                              # into a String.
-                              #
-                              # Preserve backslash escapes.
                               string_content = (
-                                  raw_content
-                                  .replace(
+                                  raw_content.replace(
                                       '"',
                                       '\\"'
                                   )
@@ -858,11 +966,6 @@ jobs:
 
                           continue
 
-                      # ------------------------------------------------
-                      # Unterminated literal.
-                      # Do not guess. Leave it for compiler.
-                      # ------------------------------------------------
-
                       result.append(
                           source[i]
                       )
@@ -870,10 +973,6 @@ jobs:
                       i += 1
 
                       continue
-
-                  # ----------------------------------------------------
-                  # Normal source
-                  # ----------------------------------------------------
 
                   result.append(
                       source[i]
@@ -898,11 +997,8 @@ jobs:
           text = fixed_text
 
           # ============================================================
-          # FIX 5
-          # Integer Hotspot coordinates -> Float
+          # FIX 5: Integer Hotspot coordinates -> Float
           # ============================================================
-
-          import re
 
           hotspot_pattern = re.compile(
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
@@ -927,31 +1023,25 @@ jobs:
               text
           )
 
-          # ============================================================
-          # WRITE
-          # ============================================================
-
           path.write_text(
               text,
               encoding="utf-8"
           )
 
           # ============================================================
-          # FINAL SOURCE VALIDATION
+          # FINAL VALIDATION
           # ============================================================
 
           final_text = path.read_text(
               encoding="utf-8"
           )
 
-          # Build import
           if "import android.os.Build" not in final_text:
 
               raise SystemExit(
                   "ERROR: android.os.Build import missing"
               )
 
-          # Known invalid literals
           if "'/day'" in final_text:
 
               raise SystemExit(
@@ -964,7 +1054,6 @@ jobs:
                   "ERROR: invalid '/दिन' literal remains"
               )
 
-          # renderFieldGrid
           render_start = final_text.find(
               "private fun renderFieldGrid(grid:LinearLayout,q:String)"
           )
@@ -1005,17 +1094,13 @@ jobs:
                   "ERROR: renderFieldGrid rows var missing"
               )
 
-          # Integer Hotspots
-          if hotspot_pattern.search(final_text):
+          if hotspot_pattern.search(
+              final_text
+          ):
 
               raise SystemExit(
                   "ERROR: Integer Hotspot coordinates remain"
               )
-
-          # ------------------------------------------------------------
-          # Second scanner pass.
-          # It must produce ZERO additional fixes.
-          # ------------------------------------------------------------
 
           (
               second_text,
@@ -1043,12 +1128,8 @@ jobs:
           if second_text != final_text:
 
               raise SystemExit(
-                  "ERROR: Source is still changing after validation"
+                  "ERROR: Source still contains malformed character literals"
               )
-
-          # ------------------------------------------------------------
-          # Print exact fixes
-          # ------------------------------------------------------------
 
           print(
               "BUILD SOURCE FIX PASS"
@@ -1077,10 +1158,6 @@ jobs:
 
           PY
 
-          # ============================================================
-          # FINAL RELEASE BUILD
-          # ============================================================
-
           ./gradlew :app:assembleRelease \
             --no-daemon \
             --stacktrace
@@ -1104,10 +1181,8 @@ jobs:
 
           test -s "$APK"
 
-          # APK must be a valid ZIP.
           unzip -t "$APK" >/dev/null
 
-          # No debug APK.
           if find app/build/outputs \
             -type f \
             -name "*debug*.apk" \
@@ -1122,7 +1197,6 @@ jobs:
             exit 1
           fi
 
-          # No Android App Bundle.
           if find app/build/outputs \
             -type f \
             -name "*.aab" \
