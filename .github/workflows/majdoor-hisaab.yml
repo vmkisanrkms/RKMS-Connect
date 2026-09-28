@@ -498,16 +498,23 @@ jobs:
       # ============================================================
       # ONLY FAILED STEP REPLACED
       #
-      # Run #67 failed inside this step at compileReleaseKotlin.
+      # Latest failure:
       #
-      # Exact fixes:
+      # MainActivity.kt:359:213
+      # Too many characters in a character literal.
       #
-      # 1. Missing android.os.Build import
-      # 2. Invalid Kotlin character literal '/day'
-      # 3. renderFieldGrid(): val rows -> var rows
-      # 4. Remaining integer Hotspot coordinates -> Float
+      # Previous fixes are retained:
+      # - android.os.Build import
+      # - '/day' -> "/day"
+      # - rows val -> var
+      # - integer Hotspot coordinates -> Float
       #
-      # No earlier successful step is changed.
+      # NEW FIX:
+      # Detect any invalid Kotlin single-quoted literal containing
+      # more than one normal character and convert only that literal
+      # to a String.
+      #
+      # Valid one-character literals remain unchanged.
       # ============================================================
 
       - name: Build FINAL Release APK
@@ -530,9 +537,7 @@ jobs:
           )
 
           # --------------------------------------------------------
-          # FIX 1
-          # MainActivity uses Build.VERSION but android.os.Build
-          # was not imported.
+          # FIX 1: android.os.Build
           # --------------------------------------------------------
 
           if "import android.os.Build" not in text:
@@ -551,92 +556,107 @@ jobs:
               )
 
           # --------------------------------------------------------
-          # FIX 2
-          # Invalid Kotlin character literal:
-          #
-          # '/day'
-          #
-          # Correct String:
-          #
-          # "/day"
+          # FIX 2: known invalid /day character literal
           # --------------------------------------------------------
 
-          if "'/day'" in text:
-              text = text.replace(
-                  "'/day'",
-                  '"/day"'
-              )
+          text = text.replace(
+              "'/day'",
+              '"/day"'
+          )
 
           # --------------------------------------------------------
-          # FIX 3
-          # renderFieldGrid() reassigns rows inside the loop.
-          #
-          # Original:
-          #
-          # val rows=LinearLayout(this)
-          #
-          # Correct:
-          #
-          # var rows=LinearLayout(this)
+          # FIX 3: renderFieldGrid rows must be var
           # --------------------------------------------------------
 
-          old_rows = (
+          render_start = text.find(
               "private fun renderFieldGrid(grid:LinearLayout,q:String)"
           )
 
-          start = text.find(old_rows)
-
-          if start == -1:
+          if render_start == -1:
               raise SystemExit(
                   "ERROR: renderFieldGrid() not found"
               )
 
-          end = text.find(
+          render_end = text.find(
               "\n    private fun fieldDialog",
-              start
+              render_start
           )
 
-          if end == -1:
+          if render_end == -1:
               raise SystemExit(
                   "ERROR: fieldDialog() marker not found"
               )
 
-          render_block = text[start:end]
+          render_block = text[
+              render_start:render_end
+          ]
 
-          render_block_fixed = render_block.replace(
+          render_block = render_block.replace(
               "val rows=LinearLayout(this);",
               "var rows=LinearLayout(this);",
               1
           )
 
-          if render_block == render_block_fixed:
-
-              if "rows=LinearLayout(this);" not in render_block:
-                  raise SystemExit(
-                      "ERROR: renderFieldGrid rows declaration not found"
-                  )
-
           text = (
-              text[:start]
-              + render_block_fixed
-              + text[end:]
+              text[:render_start]
+              + render_block
+              + text[render_end:]
           )
 
           # --------------------------------------------------------
-          # FIX 4
-          # Remaining integer Hotspot coordinates.
+          # FIX 4: invalid multi-character Kotlin character literals
           #
-          # Hotspot requires Float coordinates.
+          # Examples:
+          #
+          # 'abc'  -> "abc"
+          # '/day' -> "/day"
+          #
+          # Valid:
+          #
+          # '%'    stays '%'
+          # ':'    stays ':'
+          # ' '    stays ' '
+          # '\n'   stays '\n'
           # --------------------------------------------------------
 
-          pattern = re.compile(
+          invalid_char_literal = re.compile(
+              r"'([^'\\\r\n]{2,})'"
+          )
+
+          invalid_matches = list(
+              invalid_char_literal.finditer(text)
+          )
+
+          if invalid_matches:
+
+              for match in reversed(invalid_matches):
+
+                  value = match.group(1)
+
+                  start = match.start()
+                  end = match.end()
+
+                  text = (
+                      text[:start]
+                      + '"'
+                      + value
+                      + '"'
+                      + text[end:]
+                  )
+
+          # --------------------------------------------------------
+          # FIX 5: all integer Hotspot coordinates -> Float
+          # --------------------------------------------------------
+
+          hotspot_pattern = re.compile(
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
           )
 
-          count = [0]
+          hotspot_count = [0]
 
           def fix_hotspot(match):
-              count[0] += 1
+
+              hotspot_count[0] += 1
 
               return (
                   f"Hotspot({match.group(1)},"
@@ -646,31 +666,18 @@ jobs:
                   f"{match.group(5)}f"
               )
 
-          text = pattern.sub(
+          text = hotspot_pattern.sub(
               fix_hotspot,
               text
           )
-
-          # --------------------------------------------------------
-          # Write corrected source.
-          # --------------------------------------------------------
 
           path.write_text(
               text,
               encoding="utf-8"
           )
 
-          print("BUILD SOURCE FIX PASS")
-          print("Build fixes applied:")
-          print("- android.os.Build import")
-          print("- '/day' -> \"/day\"")
-          print("- renderFieldGrid rows: val -> var")
-          print(
-              f"- Integer Hotspot coordinate groups converted: {count[0]}"
-          )
-
           # --------------------------------------------------------
-          # Final checks before Gradle.
+          # FINAL SOURCE VALIDATION
           # --------------------------------------------------------
 
           final_text = path.read_text(
@@ -679,12 +686,12 @@ jobs:
 
           if "import android.os.Build" not in final_text:
               raise SystemExit(
-                  "ERROR: android.os.Build import still missing"
+                  "ERROR: android.os.Build import missing"
               )
 
           if "'/day'" in final_text:
               raise SystemExit(
-                  "ERROR: Invalid '/day' character literal remains"
+                  "ERROR: '/day' character literal remains"
               )
 
           render_start = final_text.find(
@@ -696,29 +703,52 @@ jobs:
               render_start
           )
 
-          if render_start == -1 or render_end == -1:
-              raise SystemExit(
-                  "ERROR: Cannot verify renderFieldGrid()"
-              )
-
-          render_text = final_text[
+          render_block = final_text[
               render_start:render_end
           ]
 
-          if "val rows=LinearLayout(this);" in render_text:
+          if "val rows=LinearLayout(this);" in render_block:
               raise SystemExit(
                   "ERROR: renderFieldGrid rows is still val"
               )
 
-          if "var rows=LinearLayout(this);" not in render_text:
+          if "var rows=LinearLayout(this);" not in render_block:
               raise SystemExit(
-                  "ERROR: renderFieldGrid rows var declaration missing"
+                  "ERROR: renderFieldGrid rows var missing"
               )
 
-          if pattern.search(final_text):
+          # No multi-character single quoted literal may remain.
+          remaining_invalid = invalid_char_literal.search(
+              final_text
+          )
+
+          if remaining_invalid:
+
+              raise SystemExit(
+                  "ERROR: Invalid multi-character character literal remains: "
+                  + remaining_invalid.group(0)
+              )
+
+          # No integer Hotspot coordinates may remain.
+          if hotspot_pattern.search(final_text):
+
               raise SystemExit(
                   "ERROR: Integer Hotspot coordinates remain"
               )
+
+          print(
+              "BUILD SOURCE FIX PASS"
+          )
+
+          print(
+              f"Invalid multi-character literals fixed: "
+              f"{len(invalid_matches)}"
+          )
+
+          print(
+              f"Integer Hotspot coordinate groups fixed: "
+              f"{hotspot_count[0]}"
+          )
 
           print(
               "BUILD SOURCE FINAL CHECK PASS"
