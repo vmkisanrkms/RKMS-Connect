@@ -495,6 +495,10 @@ jobs:
 
           ./gradlew clean --no-daemon
 
+      # ==============================================================
+      # FROM HERE: RELEASE BUILD SECTION AUDITED + CORRECTED
+      # ==============================================================
+
       - name: Build FINAL Release APK
         shell: bash
         run: |
@@ -502,9 +506,12 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          test -f "$FILE"
+
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           path = Path(
               "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
@@ -515,7 +522,8 @@ jobs:
           )
 
           # ============================================================
-          # FIX 1: android.os.Build
+          # FIX 1
+          # android.os.Build import
           # ============================================================
 
           if "import android.os.Build" not in text:
@@ -534,7 +542,13 @@ jobs:
               )
 
           # ============================================================
-          # FIX 2: invalid '/day' character literal
+          # FIX 2
+          # Known invalid literals from the audited ZIP
+          #
+          # ZIP contained:
+          # '/day' to '/दिन'
+          #
+          # Both are invalid Kotlin character literals.
           # ============================================================
 
           text = text.replace(
@@ -542,8 +556,14 @@ jobs:
               '"/day"'
           )
 
+          text = text.replace(
+              "'/दिन'",
+              '"/दिन"'
+          )
+
           # ============================================================
-          # FIX 3: renderFieldGrid rows
+          # FIX 3
+          # renderFieldGrid rows: val -> var
           # ============================================================
 
           render_start = text.find(
@@ -582,91 +602,307 @@ jobs:
           )
 
           # ============================================================
-          # FIX 4: ONLY CSV lines
+          # FIX 4
+          # Kotlin malformed character-literal scanner
           #
-          # Previous compiler error:
+          # IMPORTANT:
+          # Valid Kotlin chars such as:
           #
-          # MainActivity.kt:359:213
-          # Too many characters in a character literal
+          # ','
+          # '\n'
+          # '\t'
+          # '\\'
           #
-          # Do NOT globally modify Kotlin character literals.
-          # Only inspect lines which actually contain csv.getString(...).
+          # are preserved.
+          #
+          # Only multi-character / malformed single-quoted literals
+          # are converted to String literals.
+          #
+          # Strings and SQL strings are protected because Kotlin SQL
+          # is inside normal double-quoted strings.
           # ============================================================
 
-          lines = text.splitlines()
+          def fix_invalid_kotlin_char_literals(source):
 
-          csv_fixes = 0
+              result = []
 
-          # Invalid multi-character Kotlin character literal.
-          #
-          # Valid examples such as ',' or '\n' are NOT matched.
-          invalid_char_literal = re.compile(
-              r"'([^'\\\r\n]{2,})'"
-          )
+              i = 0
+              n = len(source)
 
-          for i, line in enumerate(lines):
+              replacements = 0
+              replacement_details = []
 
-              if "csv.getString(" not in line:
-                  continue
+              while i < n:
 
-              original = line
+                  # ----------------------------------------------------
+                  # Line comment
+                  # ----------------------------------------------------
 
-              # Convert invalid multi-character literals to strings.
-              #
-              # Example:
-              # append('","')
-              #
-              # becomes:
-              # append(",")
-              matches = list(
-                  invalid_char_literal.finditer(line)
-              )
+                  if source.startswith("//", i):
 
-              for match in reversed(matches):
+                      end = source.find("\n", i)
 
-                  value = match.group(1)
+                      if end == -1:
 
-                  start = match.start()
-                  end = match.end()
+                          result.append(source[i:])
 
-                  line = (
-                      line[:start]
-                      + '"'
-                      + value
-                      + '"'
-                      + line[end:]
+                          i = n
+
+                          break
+
+                      result.append(source[i:end])
+
+                      i = end
+
+                      continue
+
+                  # ----------------------------------------------------
+                  # Block comment
+                  # ----------------------------------------------------
+
+                  if source.startswith("/*", i):
+
+                      end = source.find("*/", i + 2)
+
+                      if end == -1:
+
+                          result.append(source[i:])
+
+                          i = n
+
+                          break
+
+                      end += 2
+
+                      result.append(source[i:end])
+
+                      i = end
+
+                      continue
+
+                  # ----------------------------------------------------
+                  # Kotlin raw string
+                  # ----------------------------------------------------
+
+                  if source.startswith('"""', i):
+
+                      end = source.find('"""', i + 3)
+
+                      if end == -1:
+
+                          result.append(source[i:])
+
+                          i = n
+
+                          break
+
+                      end += 3
+
+                      result.append(source[i:end])
+
+                      i = end
+
+                      continue
+
+                  # ----------------------------------------------------
+                  # Kotlin normal String
+                  # ----------------------------------------------------
+
+                  if source[i] == '"':
+
+                      start = i
+
+                      i += 1
+
+                      while i < n:
+
+                          if source[i] == '\\':
+
+                              i += 2
+
+                              continue
+
+                          if source[i] == '"':
+
+                              i += 1
+
+                              break
+
+                          i += 1
+
+                      result.append(
+                          source[start:i]
+                      )
+
+                      continue
+
+                  # ----------------------------------------------------
+                  # Kotlin Char literal
+                  # ----------------------------------------------------
+
+                  if source[i] == "'":
+
+                      start = i
+
+                      j = i + 1
+
+                      content = []
+
+                      closed = False
+
+                      while j < n:
+
+                          ch = source[j]
+
+                          # Char literals cannot cross a line.
+                          if ch in "\r\n":
+                              break
+
+                          # Escaped character.
+                          if ch == "\\":
+
+                              if j + 1 >= n:
+                                  break
+
+                              content.append(
+                                  source[j]
+                              )
+
+                              content.append(
+                                  source[j + 1]
+                              )
+
+                              j += 2
+
+                              continue
+
+                          # Closing quote.
+                          if ch == "'":
+
+                              closed = True
+
+                              j += 1
+
+                              break
+
+                          content.append(ch)
+
+                          j += 1
+
+                      # ------------------------------------------------
+                      # Closed literal
+                      # ------------------------------------------------
+
+                      if closed:
+
+                          raw_content = "".join(content)
+
+                          # Valid Kotlin Char:
+                          #
+                          # 'a'
+                          # ','
+                          # '.'
+                          # '\n'
+                          # '\t'
+                          # '\\'
+                          # '\''
+                          #
+                          valid = False
+
+                          if len(raw_content) == 1:
+
+                              valid = True
+
+                          elif (
+                              len(raw_content) == 2
+                              and raw_content[0] == "\\"
+                          ):
+
+                              valid = True
+
+                          if valid:
+
+                              result.append(
+                                  source[start:j]
+                              )
+
+                          else:
+
+                              # Convert malformed Char literal
+                              # into a String.
+                              #
+                              # Preserve backslash escapes.
+                              string_content = (
+                                  raw_content
+                                  .replace(
+                                      '"',
+                                      '\\"'
+                                  )
+                              )
+
+                              result.append(
+                                  '"'
+                                  + string_content
+                                  + '"'
+                              )
+
+                              replacements += 1
+
+                              replacement_details.append(
+                                  f"offset {start}: "
+                                  f"'{raw_content}' -> "
+                                  f'"{string_content}"'
+                              )
+
+                          i = j
+
+                          continue
+
+                      # ------------------------------------------------
+                      # Unterminated literal.
+                      # Do not guess. Leave it for compiler.
+                      # ------------------------------------------------
+
+                      result.append(
+                          source[i]
+                      )
+
+                      i += 1
+
+                      continue
+
+                  # ----------------------------------------------------
+                  # Normal source
+                  # ----------------------------------------------------
+
+                  result.append(
+                      source[i]
                   )
 
-              # Exact CSV separator protections.
-              line = line.replace(
-                  "append('\",\")",
-                  'append(",")'
+                  i += 1
+
+              return (
+                  "".join(result),
+                  replacements,
+                  replacement_details
               )
 
-              line = line.replace(
-                  "append('\",\"')",
-                  'append(",")'
-              )
+          (
+              fixed_text,
+              char_fixes,
+              char_details
+          ) = fix_invalid_kotlin_char_literals(
+              text
+          )
 
-              line = line.replace(
-                  "append('\",')",
-                  'append(",")'
-              )
-
-              line = line.replace(
-                  "append(',\"')",
-                  'append(",")'
-              )
-
-              if line != original:
-                  csv_fixes += 1
-                  lines[i] = line
-
-          text = "\n".join(lines) + "\n"
+          text = fixed_text
 
           # ============================================================
-          # FIX 5: Integer Hotspot coordinates -> Float
+          # FIX 5
+          # Integer Hotspot coordinates -> Float
           # ============================================================
+
+          import re
 
           hotspot_pattern = re.compile(
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
@@ -692,7 +928,7 @@ jobs:
           )
 
           # ============================================================
-          # WRITE SOURCE
+          # WRITE
           # ============================================================
 
           path.write_text(
@@ -701,27 +937,34 @@ jobs:
           )
 
           # ============================================================
-          # FINAL VALIDATION
+          # FINAL SOURCE VALIDATION
           # ============================================================
 
           final_text = path.read_text(
               encoding="utf-8"
           )
 
+          # Build import
           if "import android.os.Build" not in final_text:
+
               raise SystemExit(
                   "ERROR: android.os.Build import missing"
               )
 
+          # Known invalid literals
           if "'/day'" in final_text:
+
               raise SystemExit(
-                  "ERROR: '/day' remains"
+                  "ERROR: invalid '/day' literal remains"
               )
 
-          # ------------------------------------------------------------
-          # Validate renderFieldGrid
-          # ------------------------------------------------------------
+          if "'/दिन'" in final_text:
 
+              raise SystemExit(
+                  "ERROR: invalid '/दिन' literal remains"
+              )
+
+          # renderFieldGrid
           render_start = final_text.find(
               "private fun renderFieldGrid(grid:LinearLayout,q:String)"
           )
@@ -731,7 +974,11 @@ jobs:
               render_start
           )
 
-          if render_start == -1 or render_end == -1:
+          if (
+              render_start == -1
+              or render_end == -1
+          ):
+
               raise SystemExit(
                   "ERROR: renderFieldGrid validation failed"
               )
@@ -740,72 +987,84 @@ jobs:
               render_start:render_end
           ]
 
-          if "val rows=LinearLayout(this);" in final_render_block:
+          if (
+              "val rows=LinearLayout(this);"
+              in final_render_block
+          ):
+
               raise SystemExit(
                   "ERROR: renderFieldGrid rows is still val"
               )
 
-          if "var rows=LinearLayout(this);" not in final_render_block:
+          if (
+              "var rows=LinearLayout(this);"
+              not in final_render_block
+          ):
+
               raise SystemExit(
                   "ERROR: renderFieldGrid rows var missing"
               )
 
-          # ------------------------------------------------------------
-          # Validate integer Hotspots
-          # ------------------------------------------------------------
-
+          # Integer Hotspots
           if hotspot_pattern.search(final_text):
+
               raise SystemExit(
                   "ERROR: Integer Hotspot coordinates remain"
               )
 
           # ------------------------------------------------------------
-          # Re-check ONLY CSV lines
+          # Second scanner pass.
+          # It must produce ZERO additional fixes.
           # ------------------------------------------------------------
 
-          final_lines = final_text.splitlines()
+          (
+              second_text,
+              remaining_fixes,
+              remaining_details
+          ) = fix_invalid_kotlin_char_literals(
+              final_text
+          )
 
-          remaining_csv_invalid = []
+          if remaining_fixes != 0:
 
-          for index, line in enumerate(final_lines):
+              print(
+                  "ERROR: Invalid Kotlin character literals remain:"
+              )
 
-              if "csv.getString(" not in line:
-                  continue
-
-              matches = invalid_char_literal.findall(line)
-
-              for value in matches:
-
-                  remaining_csv_invalid.append(
-                      f"line {index + 1}: '{value}'"
+              for detail in remaining_details:
+                  print(
+                      detail
                   )
 
-          if remaining_csv_invalid:
-
-              echo_lines = "\n".join(
-                  remaining_csv_invalid
+              raise SystemExit(
+                  "ERROR: Kotlin character literal validation failed"
               )
 
-              print(
-                  "ERROR: Invalid CSV character literals remain:"
-              )
-
-              print(
-                  echo_lines
-              )
+          if second_text != final_text:
 
               raise SystemExit(
-                  "ERROR: CSV character literal validation failed"
+                  "ERROR: Source is still changing after validation"
               )
+
+          # ------------------------------------------------------------
+          # Print exact fixes
+          # ------------------------------------------------------------
 
           print(
               "BUILD SOURCE FIX PASS"
           )
 
           print(
-              "CSV lines fixed:",
-              csv_fixes
+              "Invalid Kotlin character literals fixed:",
+              char_fixes
           )
+
+          for detail in char_details:
+
+              print(
+                  "FIXED:",
+                  detail
+              )
 
           print(
               "Integer Hotspot coordinate groups fixed:",
@@ -819,7 +1078,7 @@ jobs:
           PY
 
           # ============================================================
-          # BUILD RELEASE APK
+          # FINAL RELEASE BUILD
           # ============================================================
 
           ./gradlew :app:assembleRelease \
@@ -828,7 +1087,7 @@ jobs:
 
           APK="app/build/outputs/apk/release/app-release.apk"
 
-          test -f "$APK"
+          test -s "$APK"
 
           echo "FINAL RELEASE APK CREATED"
 
@@ -841,17 +1100,39 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          test -f \
-            app/build/outputs/apk/release/app-release.apk
+          APK="app/build/outputs/apk/release/app-release.apk"
 
-          if find app/build/outputs -type f \
-            \( -name "*debug*.apk" -o -name "*.aab" \) \
+          test -s "$APK"
+
+          # APK must be a valid ZIP.
+          unzip -t "$APK" >/dev/null
+
+          # No debug APK.
+          if find app/build/outputs \
+            -type f \
+            -name "*debug*.apk" \
             | grep -q .; then
 
-            echo "ERROR: Debug APK or AAB found"
+            echo "ERROR: Debug APK found"
 
-            find app/build/outputs -type f \
-              \( -name "*debug*.apk" -o -name "*.aab" \)
+            find app/build/outputs \
+              -type f \
+              -name "*debug*.apk"
+
+            exit 1
+          fi
+
+          # No Android App Bundle.
+          if find app/build/outputs \
+            -type f \
+            -name "*.aab" \
+            | grep -q .; then
+
+            echo "ERROR: AAB found"
+
+            find app/build/outputs \
+              -type f \
+              -name "*.aab"
 
             exit 1
           fi
@@ -867,8 +1148,13 @@ jobs:
 
           APK="app/build/outputs/apk/release/app-release.apk"
 
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging "$APK" \
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+
+          test -x "$AAPT"
+
+          "$AAPT" \
+            dump badging \
+            "$APK" \
             | tee /tmp/aapt.txt
 
           grep -Fq \
@@ -892,12 +1178,34 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+
+          test -x "$APKSIGNER"
+
+          "$APKSIGNER" \
             verify \
             --verbose \
-            app/build/outputs/apk/release/app-release.apk
+            "$APK"
 
           echo "SIGNATURE PASS"
+
+      - name: Verify APK signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            --print-certs \
+            "$APK"
+
+          echo "SIGNING CERTIFICATE PASS"
 
       - name: Generate SHA256
         shell: bash
@@ -906,9 +1214,15 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
+          APK="app/build/outputs/apk/release/app-release.apk"
+
           sha256sum \
-            app/build/outputs/apk/release/app-release.apk \
+            "$APK" \
             | tee APK_SHA256.txt
+
+          test -s APK_SHA256.txt
+
+          echo "SHA256 PASS"
 
       - name: Prepare final APK
         shell: bash
@@ -917,16 +1231,58 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          test -s "$APK"
+
           cp \
-            app/build/outputs/apk/release/app-release.apk \
+            "$APK" \
             "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
 
           cp \
             APK_SHA256.txt \
             "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
 
+          test -s \
+            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
+
+          test -s \
+            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
+
           ls -lh \
             "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
+
+          ls -lh \
+            "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
+
+          echo "FINAL APK PREPARE PASS"
+
+      - name: Final release output audit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
+          SHA="$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
+
+          test -s "$APK"
+          test -s "$SHA"
+
+          case "$APK" in
+            *.apk)
+              ;;
+            *)
+              echo "ERROR: Final output is not APK"
+              exit 1
+              ;;
+          esac
+
+          if [ -f "$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.aab" ]; then
+            echo "ERROR: Final AAB must not exist"
+            exit 1
+          fi
+
+          echo "FINAL RELEASE OUTPUT AUDIT PASS"
 
       - name: Upload FINAL Release APK
         uses: actions/upload-artifact@v4
