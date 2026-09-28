@@ -498,14 +498,16 @@ jobs:
       # ============================================================
       # ONLY FAILED STEP REPLACED
       #
-      # Previous failure:
-      # SyntaxError: no binding for nonlocal 'count' found
+      # Run #67 failed inside this step at compileReleaseKotlin.
       #
-      # FIX:
-      # count is now a mutable list instead of using invalid
-      # "nonlocal" at module scope.
+      # Exact fixes:
       #
-      # No step before this has been changed.
+      # 1. Missing android.os.Build import
+      # 2. Invalid Kotlin character literal '/day'
+      # 3. renderFieldGrid(): val rows -> var rows
+      # 4. Remaining integer Hotspot coordinates -> Float
+      #
+      # No earlier successful step is changed.
       # ============================================================
 
       - name: Build FINAL Release APK
@@ -527,13 +529,113 @@ jobs:
               encoding="utf-8"
           )
 
+          # --------------------------------------------------------
+          # FIX 1
+          # MainActivity uses Build.VERSION but android.os.Build
+          # was not imported.
+          # --------------------------------------------------------
+
+          if "import android.os.Build" not in text:
+
+              marker = "import android.os.Bundle"
+
+              if marker not in text:
+                  raise SystemExit(
+                      "ERROR: android.os.Bundle import not found"
+                  )
+
+              text = text.replace(
+                  marker,
+                  "import android.os.Build\n" + marker,
+                  1
+              )
+
+          # --------------------------------------------------------
+          # FIX 2
+          # Invalid Kotlin character literal:
+          #
+          # '/day'
+          #
+          # Correct String:
+          #
+          # "/day"
+          # --------------------------------------------------------
+
+          if "'/day'" in text:
+              text = text.replace(
+                  "'/day'",
+                  '"/day"'
+              )
+
+          # --------------------------------------------------------
+          # FIX 3
+          # renderFieldGrid() reassigns rows inside the loop.
+          #
+          # Original:
+          #
+          # val rows=LinearLayout(this)
+          #
+          # Correct:
+          #
+          # var rows=LinearLayout(this)
+          # --------------------------------------------------------
+
+          old_rows = (
+              "private fun renderFieldGrid(grid:LinearLayout,q:String)"
+          )
+
+          start = text.find(old_rows)
+
+          if start == -1:
+              raise SystemExit(
+                  "ERROR: renderFieldGrid() not found"
+              )
+
+          end = text.find(
+              "\n    private fun fieldDialog",
+              start
+          )
+
+          if end == -1:
+              raise SystemExit(
+                  "ERROR: fieldDialog() marker not found"
+              )
+
+          render_block = text[start:end]
+
+          render_block_fixed = render_block.replace(
+              "val rows=LinearLayout(this);",
+              "var rows=LinearLayout(this);",
+              1
+          )
+
+          if render_block == render_block_fixed:
+
+              if "rows=LinearLayout(this);" not in render_block:
+                  raise SystemExit(
+                      "ERROR: renderFieldGrid rows declaration not found"
+                  )
+
+          text = (
+              text[:start]
+              + render_block_fixed
+              + text[end:]
+          )
+
+          # --------------------------------------------------------
+          # FIX 4
+          # Remaining integer Hotspot coordinates.
+          #
+          # Hotspot requires Float coordinates.
+          # --------------------------------------------------------
+
           pattern = re.compile(
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
           )
 
           count = [0]
 
-          def fix(match):
+          def fix_hotspot(match):
               count[0] += 1
 
               return (
@@ -544,32 +646,82 @@ jobs:
                   f"{match.group(5)}f"
               )
 
-          fixed_text = pattern.sub(
-              fix,
+          text = pattern.sub(
+              fix_hotspot,
               text
           )
 
+          # --------------------------------------------------------
+          # Write corrected source.
+          # --------------------------------------------------------
+
           path.write_text(
-              fixed_text,
+              text,
               encoding="utf-8"
           )
 
+          print("BUILD SOURCE FIX PASS")
+          print("Build fixes applied:")
+          print("- android.os.Build import")
+          print("- '/day' -> \"/day\"")
+          print("- renderFieldGrid rows: val -> var")
           print(
-              f"BUILD SOURCE CHECK: converted "
-              f"{count[0]} remaining integer Hotspot coordinate groups"
+              f"- Integer Hotspot coordinate groups converted: {count[0]}"
           )
 
-          remaining = pattern.search(
-              fixed_text
+          # --------------------------------------------------------
+          # Final checks before Gradle.
+          # --------------------------------------------------------
+
+          final_text = path.read_text(
+              encoding="utf-8"
           )
 
-          if remaining:
+          if "import android.os.Build" not in final_text:
               raise SystemExit(
-                  "ERROR: Integer Hotspot coordinates still remain before release build"
+                  "ERROR: android.os.Build import still missing"
+              )
+
+          if "'/day'" in final_text:
+              raise SystemExit(
+                  "ERROR: Invalid '/day' character literal remains"
+              )
+
+          render_start = final_text.find(
+              "private fun renderFieldGrid(grid:LinearLayout,q:String)"
+          )
+
+          render_end = final_text.find(
+              "\n    private fun fieldDialog",
+              render_start
+          )
+
+          if render_start == -1 or render_end == -1:
+              raise SystemExit(
+                  "ERROR: Cannot verify renderFieldGrid()"
+              )
+
+          render_text = final_text[
+              render_start:render_end
+          ]
+
+          if "val rows=LinearLayout(this);" in render_text:
+              raise SystemExit(
+                  "ERROR: renderFieldGrid rows is still val"
+              )
+
+          if "var rows=LinearLayout(this);" not in render_text:
+              raise SystemExit(
+                  "ERROR: renderFieldGrid rows var declaration missing"
+              )
+
+          if pattern.search(final_text):
+              raise SystemExit(
+                  "ERROR: Integer Hotspot coordinates remain"
               )
 
           print(
-              "BUILD SOURCE FLOAT CHECK PASS"
+              "BUILD SOURCE FINAL CHECK PASS"
           )
           PY
 
