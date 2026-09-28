@@ -132,11 +132,13 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          # ZIP में actual format:
-          # rootProject.name="MajdoorHisaab"
-          grep -Eq 'rootProject\.name[[:space:]]*=[[:space:]]*"MajdoorHisaab"' settings.gradle.kts
+          grep -Eq \
+            'rootProject\.name[[:space:]]*=[[:space:]]*"MajdoorHisaab"' \
+            settings.gradle.kts
 
-          grep -Fq 'include(":app")' settings.gradle.kts
+          grep -Fq \
+            'include(":app")' \
+            settings.gradle.kts
 
           echo "SETTINGS PASS"
 
@@ -151,6 +153,8 @@ jobs:
           grep -Fq '2.1.20' build.gradle.kts
           grep -Fq '8.11.1' gradle/wrapper/gradle-wrapper.properties
 
+          echo "GRADLE CONFIG PASS"
+
       - name: Verify app configuration
         shell: bash
         run: |
@@ -158,15 +162,43 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'namespace = "com.majdoor.hisaab"' app/build.gradle.kts
-          grep -Fq 'applicationId = "com.majdoor.hisaab"' app/build.gradle.kts
-          grep -Fq 'compileSdk = 35' app/build.gradle.kts
-          grep -Fq 'minSdk = 26' app/build.gradle.kts
-          grep -Fq 'targetSdk = 35' app/build.gradle.kts
-          grep -Fq 'versionCode = 30' app/build.gradle.kts
-          grep -Fq 'versionName = "2.10"' app/build.gradle.kts
-          grep -Fq 'JavaVersion.VERSION_17' app/build.gradle.kts
-          grep -Fq 'jvmTarget = "17"' app/build.gradle.kts
+          grep -Fq \
+            'namespace = "com.majdoor.hisaab"' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'applicationId = "com.majdoor.hisaab"' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'compileSdk = 35' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'minSdk = 26' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'targetSdk = 35' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'versionCode = 30' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'versionName = "2.10"' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'JavaVersion.VERSION_17' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'jvmTarget = "17"' \
+            app/build.gradle.kts
+
+          echo "APP CONFIG PASS"
 
       - name: Verify AndroidManifest
         shell: bash
@@ -175,11 +207,29 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'android:exported="true"' \
-            app/src/main/AndroidManifest.xml
+          MANIFEST="app/src/main/AndroidManifest.xml"
 
-          grep -Fq 'com.majdoor.hisaab.MainActivity' \
-            app/src/main/AndroidManifest.xml
+          test -f "$MANIFEST"
+
+          grep -Fq \
+            'android:exported="true"' \
+            "$MANIFEST"
+
+          # Actual ZIP uses:
+          # android:name=".MainActivity"
+          grep -Fq \
+            'android:name=".MainActivity"' \
+            "$MANIFEST"
+
+          grep -Fq \
+            'android.intent.action.MAIN' \
+            "$MANIFEST"
+
+          grep -Fq \
+            'android.intent.category.LAUNCHER' \
+            "$MANIFEST"
+
+          echo "ANDROID MANIFEST PASS"
 
       - name: Verify MainActivity package
         shell: bash
@@ -188,8 +238,11 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'package com.majdoor.hisaab' \
+          grep -Fq \
+            'package com.majdoor.hisaab' \
             app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          echo "MAIN ACTIVITY PACKAGE PASS"
 
       - name: Verify Gradle wrapper
         shell: bash
@@ -198,7 +251,8 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'gradle-8.11.1-bin.zip' \
+          grep -Fq \
+            'gradle-8.11.1-bin.zip' \
             gradle/wrapper/gradle-wrapper.properties
 
           chmod +x gradlew
@@ -219,6 +273,8 @@ jobs:
           test -n "$RELEASE_KEYSTORE_PASSWORD"
           test -n "$RELEASE_KEY_ALIAS"
           test -n "$RELEASE_KEY_PASSWORD"
+
+          echo "SIGNING SECRETS PASS"
 
       - name: Restore permanent release keystore
         shell: bash
@@ -244,6 +300,8 @@ jobs:
           RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD
           EOF
 
+          echo "KEYSTORE RESTORE PASS"
+
       - name: Verify signing configuration
         shell: bash
         run: |
@@ -251,13 +309,24 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          grep -Fq 'signingConfigs' app/build.gradle.kts
-          grep -Fq 'RELEASE_STORE_FILE' app/build.gradle.kts
-          grep -Fq 'RELEASE_KEY_ALIAS' app/build.gradle.kts
+          grep -Fq \
+            'signingConfigs' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'RELEASE_STORE_FILE' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'RELEASE_KEY_ALIAS' \
+            app/build.gradle.kts
+
+          echo "SIGNING CONFIG PASS"
 
       # ============================================================
-      # ONLY PREVIOUSLY FAILED MainActivity SOURCE AREAS
+      # ONLY PREVIOUSLY FAILED MAINACTIVITY AREAS
       # ============================================================
+
       - name: Fix only previously failed MainActivity source
         shell: bash
         run: |
@@ -272,7 +341,9 @@ jobs:
               "app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
           )
 
-          lines = path.read_text(encoding="utf-8").splitlines()
+          lines = path.read_text(
+              encoding="utf-8"
+          ).splitlines()
 
           replacements = {
 
@@ -369,7 +440,9 @@ jobs:
               encoding="utf-8"
           )
 
-          print("ONLY PREVIOUSLY FAILED SOURCE AREAS FIXED")
+          print(
+              "ONLY PREVIOUSLY FAILED SOURCE AREAS FIXED"
+          )
           PY
 
       - name: Verify exact source fixes
