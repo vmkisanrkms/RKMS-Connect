@@ -514,9 +514,9 @@ jobs:
               encoding="utf-8"
           )
 
-          # ------------------------------------------------------------
-          # Keep previous successful fixes
-          # ------------------------------------------------------------
+          # ============================================================
+          # FIX 1: android.os.Build
+          # ============================================================
 
           if "import android.os.Build" not in text:
 
@@ -533,10 +533,18 @@ jobs:
                   1
               )
 
+          # ============================================================
+          # FIX 2: invalid '/day' character literal
+          # ============================================================
+
           text = text.replace(
               "'/day'",
               '"/day"'
           )
+
+          # ============================================================
+          # FIX 3: renderFieldGrid rows
+          # ============================================================
 
           render_start = text.find(
               "private fun renderFieldGrid(grid:LinearLayout,q:String)"
@@ -573,23 +581,28 @@ jobs:
               + text[render_end:]
           )
 
-          # ------------------------------------------------------------
-          # ONLY TARGET THE PREVIOUSLY FAILED CSV CODE
+          # ============================================================
+          # FIX 4: ONLY CSV lines
           #
-          # The compiler reported:
+          # Previous compiler error:
           #
           # MainActivity.kt:359:213
           # Too many characters in a character literal
           #
-          # Do NOT scan the whole Kotlin file.
-          # Do NOT change valid strings elsewhere.
-          # Only CSV-builder lines containing csv.getString(...)
-          # are touched.
-          # ------------------------------------------------------------
+          # Do NOT globally modify Kotlin character literals.
+          # Only inspect lines which actually contain csv.getString(...).
+          # ============================================================
 
           lines = text.splitlines()
 
           csv_fixes = 0
+
+          # Invalid multi-character Kotlin character literal.
+          #
+          # Valid examples such as ',' or '\n' are NOT matched.
+          invalid_char_literal = re.compile(
+              r"'([^'\\\r\n]{2,})'"
+          )
 
           for i, line in enumerate(lines):
 
@@ -598,8 +611,33 @@ jobs:
 
               original = line
 
-              # Invalid multi-character Char literals commonly used
-              # as CSV separators.
+              # Convert invalid multi-character literals to strings.
+              #
+              # Example:
+              # append('","')
+              #
+              # becomes:
+              # append(",")
+              matches = list(
+                  invalid_char_literal.finditer(line)
+              )
+
+              for match in reversed(matches):
+
+                  value = match.group(1)
+
+                  start = match.start()
+                  end = match.end()
+
+                  line = (
+                      line[:start]
+                      + '"'
+                      + value
+                      + '"'
+                      + line[end:]
+                  )
+
+              # Exact CSV separator protections.
               line = line.replace(
                   "append('\",\")",
                   'append(",")'
@@ -607,11 +645,6 @@ jobs:
 
               line = line.replace(
                   "append('\",\"')",
-                  'append(",")'
-              )
-
-              line = line.replace(
-                  "append('\" , \"')",
                   'append(",")'
               )
 
@@ -625,66 +658,15 @@ jobs:
                   'append(",")'
               )
 
-              line = line.replace(
-                  "append('\",\"')",
-                  'append(",")'
-              )
-
-              line = line.replace(
-                  "append('\",')",
-                  'append(",")'
-              )
-
               if line != original:
                   csv_fixes += 1
                   lines[i] = line
 
           text = "\n".join(lines) + "\n"
 
-          # ------------------------------------------------------------
-          # Exact known /day validation
-          # ------------------------------------------------------------
-
-          if "'/day'" in text:
-              raise SystemExit(
-                  "ERROR: '/day' remains"
-              )
-
-          # ------------------------------------------------------------
-          # Exact renderFieldGrid validation
-          # ------------------------------------------------------------
-
-          render_start = text.find(
-              "private fun renderFieldGrid(grid:LinearLayout,q:String)"
-          )
-
-          render_end = text.find(
-              "\n    private fun fieldDialog",
-              render_start
-          )
-
-          if render_start == -1 or render_end == -1:
-              raise SystemExit(
-                  "ERROR: renderFieldGrid validation failed"
-              )
-
-          render_block = text[
-              render_start:render_end
-          ]
-
-          if "val rows=LinearLayout(this);" in render_block:
-              raise SystemExit(
-                  "ERROR: renderFieldGrid rows is still val"
-              )
-
-          if "var rows=LinearLayout(this);" not in render_block:
-              raise SystemExit(
-                  "ERROR: renderFieldGrid rows var missing"
-              )
-
-          # ------------------------------------------------------------
-          # Integer Hotspot coordinates
-          # ------------------------------------------------------------
+          # ============================================================
+          # FIX 5: Integer Hotspot coordinates -> Float
+          # ============================================================
 
           hotspot_pattern = re.compile(
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
@@ -709,14 +691,18 @@ jobs:
               text
           )
 
+          # ============================================================
+          # WRITE SOURCE
+          # ============================================================
+
           path.write_text(
               text,
               encoding="utf-8"
           )
 
-          # ------------------------------------------------------------
-          # Final validation
-          # ------------------------------------------------------------
+          # ============================================================
+          # FINAL VALIDATION
+          # ============================================================
 
           final_text = path.read_text(
               encoding="utf-8"
@@ -732,14 +718,84 @@ jobs:
                   "ERROR: '/day' remains"
               )
 
-          if "val rows=LinearLayout(this);" in render_block:
+          # ------------------------------------------------------------
+          # Validate renderFieldGrid
+          # ------------------------------------------------------------
+
+          render_start = final_text.find(
+              "private fun renderFieldGrid(grid:LinearLayout,q:String)"
+          )
+
+          render_end = final_text.find(
+              "\n    private fun fieldDialog",
+              render_start
+          )
+
+          if render_start == -1 or render_end == -1:
               raise SystemExit(
-                  "ERROR: rows remains val"
+                  "ERROR: renderFieldGrid validation failed"
               )
+
+          final_render_block = final_text[
+              render_start:render_end
+          ]
+
+          if "val rows=LinearLayout(this);" in final_render_block:
+              raise SystemExit(
+                  "ERROR: renderFieldGrid rows is still val"
+              )
+
+          if "var rows=LinearLayout(this);" not in final_render_block:
+              raise SystemExit(
+                  "ERROR: renderFieldGrid rows var missing"
+              )
+
+          # ------------------------------------------------------------
+          # Validate integer Hotspots
+          # ------------------------------------------------------------
 
           if hotspot_pattern.search(final_text):
               raise SystemExit(
                   "ERROR: Integer Hotspot coordinates remain"
+              )
+
+          # ------------------------------------------------------------
+          # Re-check ONLY CSV lines
+          # ------------------------------------------------------------
+
+          final_lines = final_text.splitlines()
+
+          remaining_csv_invalid = []
+
+          for index, line in enumerate(final_lines):
+
+              if "csv.getString(" not in line:
+                  continue
+
+              matches = invalid_char_literal.findall(line)
+
+              for value in matches:
+
+                  remaining_csv_invalid.append(
+                      f"line {index + 1}: '{value}'"
+                  )
+
+          if remaining_csv_invalid:
+
+              echo_lines = "\n".join(
+                  remaining_csv_invalid
+              )
+
+              print(
+                  "ERROR: Invalid CSV character literals remain:"
+              )
+
+              print(
+                  echo_lines
+              )
+
+              raise SystemExit(
+                  "ERROR: CSV character literal validation failed"
               )
 
           print(
@@ -759,7 +815,12 @@ jobs:
           print(
               "BUILD SOURCE FINAL CHECK PASS"
           )
+
           PY
+
+          # ============================================================
+          # BUILD RELEASE APK
+          # ============================================================
 
           ./gradlew :app:assembleRelease \
             --no-daemon \
