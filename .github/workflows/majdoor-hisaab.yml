@@ -496,22 +496,16 @@ jobs:
           ./gradlew clean --no-daemon
 
       # ============================================================
-      # ONLY THIS BUILD STEP IS CHANGED
+      # ONLY FAILED STEP REPLACED
       #
-      # Run #64 failed here at compileReleaseKotlin.
+      # Previous failure:
+      # SyntaxError: no binding for nonlocal 'count' found
       #
-      # The source contained Hotspot coordinates such as:
+      # FIX:
+      # count is now a mutable list instead of using invalid
+      # "nonlocal" at module scope.
       #
-      # Hotspot("...",0,0,12,10)
-      #
-      # Hotspot requires Float:
-      #
-      # Hotspot("...",0f,0f,12f,10f)
-      #
-      # We fix ONLY these coordinate types immediately before
-      # assembleRelease.
-      #
-      # Nothing before this step is changed.
+      # No step before this has been changed.
       # ============================================================
 
       - name: Build FINAL Release APK
@@ -537,12 +531,10 @@ jobs:
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
           )
 
-          count = 0
+          count = [0]
 
           def fix(match):
-              nonlocal count
-
-              count += 1
+              count[0] += 1
 
               return (
                   f"Hotspot({match.group(1)},"
@@ -563,11 +555,13 @@ jobs:
           )
 
           print(
-              f"BUILD SOURCE CHECK: converted {count} remaining integer Hotspot coordinate groups"
+              f"BUILD SOURCE CHECK: converted "
+              f"{count[0]} remaining integer Hotspot coordinate groups"
           )
 
-          # Verify that no integer Hotspot coordinate group remains.
-          remaining = pattern.search(fixed_text)
+          remaining = pattern.search(
+              fixed_text
+          )
 
           if remaining:
               raise SystemExit(
