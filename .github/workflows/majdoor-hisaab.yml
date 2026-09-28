@@ -41,7 +41,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           ZIP_NAME="Majdoor_Hisaab_PRO_V27_FULL_AUDITED_V5.zip"
 
           if [ ! -f "$ZIP_NAME" ]; then
@@ -496,10 +495,16 @@ jobs:
           ./gradlew clean --no-daemon
 
       # ==============================================================
-      # ONLY NEW FIX:
-      # PREVIOUS RELEASE BUILD FAILED HERE BECAUSE
-      # navigation_bar_dark EXISTED ONLY IN values-night.
-      # NOTHING ABOVE THIS POINT HAS BEEN CHANGED.
+      # ONLY FAILED LINT SECTION CHANGED
+      #
+      # Fixes:
+      # 1. navigation_bar_dark
+      # 2. status_bar_dark
+      #
+      # Also checks ALL colors defined in values-night/colors.xml
+      # and adds a missing default declaration to values/colors.xml.
+      #
+      # NOTHING BEFORE THIS STEP IS CHANGED.
       # ==============================================================
 
       - name: Fix release lint resources
@@ -526,49 +531,56 @@ jobs:
           from pathlib import Path
           import re
 
-          base = Path(
+          base_path = Path(
               "app/src/main/res/values/colors.xml"
           )
 
-          night = Path(
+          night_path = Path(
               "app/src/main/res/values-night/colors.xml"
           )
 
-          base_text = base.read_text(
+          base_text = base_path.read_text(
               encoding="utf-8"
           )
 
-          night_text = night.read_text(
+          night_text = night_path.read_text(
               encoding="utf-8"
           )
 
-          resource_pattern = re.compile(
-              r'<color\s+name=["\']navigation_bar_dark["\']\s*>(.*?)</color>',
+          color_pattern = re.compile(
+              r'<color\s+name=["\']([^"\']+)["\']\s*>(.*?)</color>',
               re.DOTALL
           )
 
-          # ------------------------------------------------------------
-          # Get the value already used by the night resource.
-          # ------------------------------------------------------------
+          base_colors = {}
 
-          night_match = resource_pattern.search(
-              night_text
-          )
-
-          if night_match:
-              value = night_match.group(1).strip()
-          else:
-              value = "#101412"
-
-          # ------------------------------------------------------------
-          # Add ONLY the missing base declaration.
-          # ------------------------------------------------------------
-
-          base_match = resource_pattern.search(
+          for match in color_pattern.finditer(
               base_text
-          )
+          ):
+              name = match.group(1)
+              value = match.group(2).strip()
+              base_colors[name] = value
 
-          if not base_match:
+          night_colors = {}
+
+          for match in color_pattern.finditer(
+              night_text
+          ):
+              name = match.group(1)
+              value = match.group(2).strip()
+              night_colors[name] = value
+
+          missing = []
+
+          for name, value in night_colors.items():
+
+              if name not in base_colors:
+
+                  missing.append(
+                      (name, value)
+                  )
+
+          if missing:
 
               resources_match = re.search(
                   r'<resources\b[^>]*>\s*',
@@ -577,78 +589,132 @@ jobs:
 
               if not resources_match:
                   raise SystemExit(
-                      "ERROR: <resources> not found in colors.xml"
+                      "ERROR: <resources> not found in values/colors.xml"
                   )
 
               insert_at = resources_match.end()
 
-              color_line = (
-                  f'    <color name="navigation_bar_dark">'
-                  f'{value}'
-                  f'</color>\n'
+              additions = []
+
+              for name, value in missing:
+
+                  additions.append(
+                      f'    <color name="{name}">{value}</color>'
+                  )
+
+              addition_text = (
+                  "\n"
+                  + "\n".join(additions)
+                  + "\n"
               )
 
               base_text = (
                   base_text[:insert_at]
-                  + color_line
+                  + addition_text
                   + base_text[insert_at:]
               )
 
-              base.write_text(
+              base_path.write_text(
                   base_text,
                   encoding="utf-8"
               )
 
               print(
-                  "FIXED: navigation_bar_dark added to values/colors.xml"
+                  "ADDED MISSING BASE COLOR RESOURCES:"
               )
+
+              for name, value in missing:
+
+                  print(
+                      f"  {name} = {value}"
+                  )
 
           else:
 
               print(
-                  "PASS: navigation_bar_dark already exists in values/colors.xml"
+                  "NO MISSING NIGHT COLOR RESOURCES"
               )
 
-          # ------------------------------------------------------------
-          # Final verification.
-          # ------------------------------------------------------------
+          # ----------------------------------------------------------
+          # Re-read after modification and verify.
+          # ----------------------------------------------------------
 
-          final_base = base.read_text(
+          final_base_text = base_path.read_text(
               encoding="utf-8"
           )
 
-          final_night = night.read_text(
-              encoding="utf-8"
-          )
+          final_base_colors = {}
 
-          if not resource_pattern.search(
-              final_base
+          for match in color_pattern.finditer(
+              final_base_text
           ):
-              raise SystemExit(
-                  "ERROR: navigation_bar_dark missing from base values"
+              final_base_colors[
+                  match.group(1)
+              ] = match.group(2).strip()
+
+          # ----------------------------------------------------------
+          # Every values-night color must now have a base declaration.
+          # ----------------------------------------------------------
+
+          still_missing = []
+
+          for name in night_colors:
+
+              if name not in final_base_colors:
+
+                  still_missing.append(
+                      name
+                  )
+
+          if still_missing:
+
+              print(
+                  "ERROR: These night resources are still missing in base:"
               )
 
-          if not resource_pattern.search(
-              final_night
-          ):
+              for name in still_missing:
+
+                  print(
+                      "  " + name
+                  )
+
               raise SystemExit(
-                  "ERROR: navigation_bar_dark missing from values-night"
+                  "ERROR: MissingDefaultResource validation failed"
+              )
+
+          # ----------------------------------------------------------
+          # Explicit verification of the resources from the failures.
+          # ----------------------------------------------------------
+
+          required_resources = [
+              "navigation_bar_dark",
+              "status_bar_dark",
+          ]
+
+          for name in required_resources:
+
+              if name not in final_base_colors:
+
+                  raise SystemExit(
+                      f"ERROR: Required base color missing: {name}"
+                  )
+
+              if name not in night_colors:
+
+                  raise SystemExit(
+                      f"ERROR: Required night color missing: {name}"
+                  )
+
+              print(
+                  f"PASS: {name} base={final_base_colors[name]} "
+                  f"night={night_colors[name]}"
               )
 
           print(
               "RELEASE LINT RESOURCE FIX PASS"
           )
 
-          print(
-              "navigation_bar_dark base value:",
-              value
-          )
-
           PY
-
-      # ==============================================================
-      # EXISTING RELEASE BUILD SECTION
-      # ==============================================================
 
       - name: Build FINAL Release APK
         shell: bash
@@ -673,10 +739,6 @@ jobs:
               encoding="utf-8"
           )
 
-          # ============================================================
-          # FIX 1: android.os.Build import
-          # ============================================================
-
           if "import android.os.Build" not in text:
 
               marker = "import android.os.Bundle"
@@ -692,10 +754,6 @@ jobs:
                   1
               )
 
-          # ============================================================
-          # FIX 2: invalid /day and /दिन character literals
-          # ============================================================
-
           text = text.replace(
               "'/day'",
               '"/day"'
@@ -705,10 +763,6 @@ jobs:
               "'/दिन'",
               '"/दिन"'
           )
-
-          # ============================================================
-          # FIX 3: renderFieldGrid rows
-          # ============================================================
 
           render_start = text.find(
               "private fun renderFieldGrid(grid:LinearLayout,q:String)"
@@ -744,10 +798,6 @@ jobs:
               + render_block
               + text[render_end:]
           )
-
-          # ============================================================
-          # FIX 4: Kotlin malformed character literals
-          # ============================================================
 
           def fix_invalid_kotlin_char_literals(source):
 
@@ -920,18 +970,13 @@ jobs:
                               content
                           )
 
-                          valid = False
-
-                          if len(raw_content) == 1:
-
-                              valid = True
-
-                          elif (
-                              len(raw_content) == 2
-                              and raw_content[0] == "\\"
-                          ):
-
-                              valid = True
+                          valid = (
+                              len(raw_content) == 1
+                              or (
+                                  len(raw_content) == 2
+                                  and raw_content[0] == "\\"
+                              )
+                          )
 
                           if valid:
 
@@ -996,10 +1041,6 @@ jobs:
 
           text = fixed_text
 
-          # ============================================================
-          # FIX 5: Integer Hotspot coordinates -> Float
-          # ============================================================
-
           hotspot_pattern = re.compile(
               r'Hotspot\((.*?),(-?\d+),(-?\d+),(-?\d+),(-?\d+)(?=\))'
           )
@@ -1027,10 +1068,6 @@ jobs:
               text,
               encoding="utf-8"
           )
-
-          # ============================================================
-          # FINAL VALIDATION
-          # ============================================================
 
           final_text = path.read_text(
               encoding="utf-8"
@@ -1117,6 +1154,7 @@ jobs:
               )
 
               for detail in remaining_details:
+
                   print(
                       detail
                   )
@@ -1337,6 +1375,7 @@ jobs:
           set -euo pipefail
 
           APK="$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE.apk"
+
           SHA="$GITHUB_WORKSPACE/Majdoor_Hisaab_PRO_V27_v2.10_FINAL_RELEASE_SHA256.txt"
 
           test -s "$APK"
