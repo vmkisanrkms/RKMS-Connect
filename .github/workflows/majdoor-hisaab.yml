@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: majdoor-hisaab-v27-release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -494,19 +494,6 @@ jobs:
 
           ./gradlew clean --no-daemon
 
-      # ==============================================================
-      # ONLY FAILED LINT SECTION CHANGED
-      #
-      # Fixes:
-      # 1. navigation_bar_dark
-      # 2. status_bar_dark
-      #
-      # Also checks ALL colors defined in values-night/colors.xml
-      # and adds a missing default declaration to values/colors.xml.
-      #
-      # NOTHING BEFORE THIS STEP IS CHANGED.
-      # ==============================================================
-
       - name: Fix release lint resources
         shell: bash
         run: |
@@ -554,18 +541,14 @@ jobs:
 
           base_colors = {}
 
-          for match in color_pattern.finditer(
-              base_text
-          ):
+          for match in color_pattern.finditer(base_text):
               name = match.group(1)
               value = match.group(2).strip()
               base_colors[name] = value
 
           night_colors = {}
 
-          for match in color_pattern.finditer(
-              night_text
-          ):
+          for match in color_pattern.finditer(night_text):
               name = match.group(1)
               value = match.group(2).strip()
               night_colors[name] = value
@@ -575,10 +558,7 @@ jobs:
           for name, value in night_colors.items():
 
               if name not in base_colors:
-
-                  missing.append(
-                      (name, value)
-                  )
+                  missing.append((name, value))
 
           if missing:
 
@@ -597,7 +577,6 @@ jobs:
               additions = []
 
               for name, value in missing:
-
                   additions.append(
                       f'    <color name="{name}">{value}</color>'
                   )
@@ -624,7 +603,6 @@ jobs:
               )
 
               for name, value in missing:
-
                   print(
                       f"  {name} = {value}"
                   )
@@ -634,10 +612,6 @@ jobs:
               print(
                   "NO MISSING NIGHT COLOR RESOURCES"
               )
-
-          # ----------------------------------------------------------
-          # Re-read after modification and verify.
-          # ----------------------------------------------------------
 
           final_base_text = base_path.read_text(
               encoding="utf-8"
@@ -652,19 +626,12 @@ jobs:
                   match.group(1)
               ] = match.group(2).strip()
 
-          # ----------------------------------------------------------
-          # Every values-night color must now have a base declaration.
-          # ----------------------------------------------------------
-
           still_missing = []
 
           for name in night_colors:
 
               if name not in final_base_colors:
-
-                  still_missing.append(
-                      name
-                  )
+                  still_missing.append(name)
 
           if still_missing:
 
@@ -673,18 +640,11 @@ jobs:
               )
 
               for name in still_missing:
-
-                  print(
-                      "  " + name
-                  )
+                  print("  " + name)
 
               raise SystemExit(
                   "ERROR: MissingDefaultResource validation failed"
               )
-
-          # ----------------------------------------------------------
-          # Explicit verification of the resources from the failures.
-          # ----------------------------------------------------------
 
           required_resources = [
               "navigation_bar_dark",
@@ -694,19 +654,18 @@ jobs:
           for name in required_resources:
 
               if name not in final_base_colors:
-
                   raise SystemExit(
                       f"ERROR: Required base color missing: {name}"
                   )
 
               if name not in night_colors:
-
                   raise SystemExit(
                       f"ERROR: Required night color missing: {name}"
                   )
 
               print(
-                  f"PASS: {name} base={final_base_colors[name]} "
+                  f"PASS: {name} "
+                  f"base={final_base_colors[name]} "
                   f"night={night_colors[name]}"
               )
 
@@ -1074,19 +1033,16 @@ jobs:
           )
 
           if "import android.os.Build" not in final_text:
-
               raise SystemExit(
                   "ERROR: android.os.Build import missing"
               )
 
           if "'/day'" in final_text:
-
               raise SystemExit(
                   "ERROR: invalid '/day' literal remains"
               )
 
           if "'/दिन'" in final_text:
-
               raise SystemExit(
                   "ERROR: invalid '/दिन' literal remains"
               )
@@ -1104,7 +1060,6 @@ jobs:
               render_start == -1
               or render_end == -1
           ):
-
               raise SystemExit(
                   "ERROR: renderFieldGrid validation failed"
               )
@@ -1117,7 +1072,6 @@ jobs:
               "val rows=LinearLayout(this);"
               in final_render_block
           ):
-
               raise SystemExit(
                   "ERROR: renderFieldGrid rows is still val"
               )
@@ -1126,15 +1080,11 @@ jobs:
               "var rows=LinearLayout(this);"
               not in final_render_block
           ):
-
               raise SystemExit(
                   "ERROR: renderFieldGrid rows var missing"
               )
 
-          if hotspot_pattern.search(
-              final_text
-          ):
-
+          if hotspot_pattern.search(final_text):
               raise SystemExit(
                   "ERROR: Integer Hotspot coordinates remain"
               )
@@ -1154,17 +1104,13 @@ jobs:
               )
 
               for detail in remaining_details:
-
-                  print(
-                      detail
-                  )
+                  print(detail)
 
               raise SystemExit(
                   "ERROR: Kotlin character literal validation failed"
               )
 
           if second_text != final_text:
-
               raise SystemExit(
                   "ERROR: Source still contains malformed character literals"
               )
@@ -1179,7 +1125,6 @@ jobs:
           )
 
           for detail in char_details:
-
               print(
                   "FIXED:",
                   detail
