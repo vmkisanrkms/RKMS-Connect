@@ -20,7 +20,7 @@ jobs:
 
     steps:
 
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -30,14 +30,18 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
 
       - name: Install Android SDK 35
         run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Verify SDK
+        run: |
+          sdkmanager --list_installed
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
@@ -51,7 +55,7 @@ jobs:
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
-          echo "Project structure OK"
+          echo "PROJECT STRUCTURE OK"
 
       - name: Check Android configuration
         run: |
@@ -59,20 +63,25 @@ jobs:
           grep -q 'minSdk = 26' app/build.gradle.kts
           grep -q 'targetSdk = 35' app/build.gradle.kts
           grep -q 'com.majdoor.hisaab' app/build.gradle.kts
-          echo "Android configuration OK"
+          echo "ANDROID CONFIGURATION OK"
 
       - name: Build Release APK
         run: |
-          gradle :app:assembleRelease --no-daemon --stacktrace
+          gradle :app:assembleRelease \
+            --no-daemon \
+            --stacktrace
 
       - name: Verify APK
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
 
-          test -f "$APK"
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: Release APK not found"
+            exit 1
+          fi
 
           echo "======================================"
-          echo "RELEASE APK CREATED"
+          echo "RELEASE APK CREATED SUCCESSFULLY"
           echo "======================================"
 
           ls -lh "$APK"
