@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
@@ -14,14 +15,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
   build:
+
     name: Majdoor Hisaab PRO Release APK
+
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # ============================================================
+      # 2. JAVA 17
+      # ============================================================
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -29,65 +42,393 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+
+      # ============================================================
+      # 3. ANDROID SDK
+      # ============================================================
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools"
 
+
+      # ============================================================
+      # 4. ANDROID SDK 35
+      # ============================================================
+
       - name: Install Android SDK 35
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          set -e
 
-      - name: Verify SDK
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+
+          echo "Android SDK 35 installed successfully"
+
+
+      # ============================================================
+      # 5. VERIFY SDK
+      # ============================================================
+
+      - name: Verify Android SDK
         run: |
-          sdkmanager --list_installed
+          set -e
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          sdkmanager --list_installed
+
+          test -d "$ANDROID_SDK_ROOT/platforms/android-35"
+          test -d "$ANDROID_SDK_ROOT/build-tools/35.0.0"
+
+          echo "ANDROID SDK CHECK PASSED"
+
+
+      # ============================================================
+      # 6. SETUP GRADLE
+      # ============================================================
 
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
 
+
+      # ============================================================
+      # 7. SHOW REPOSITORY CONTENT
+      # ============================================================
+
+      - name: Inspect repository
+        run: |
+          set -e
+
+          echo "===== REPOSITORY ROOT ====="
+
+          find . -maxdepth 3 -type f | sort | head -200
+
+
+      # ============================================================
+      # 8. FIND NEW PROJECT ZIP
+      # ============================================================
+
+      - name: Verify new project ZIP
+        run: |
+          set -e
+
+          ZIP="Majdoor_Hisaab_PRO_NEW_BUILD_READY.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: Project ZIP not found:"
+            echo "$ZIP"
+
+            echo ""
+            echo "Available ZIP files:"
+            find . -type f -name "*.zip" -print
+
+            exit 1
+          fi
+
+          echo "FOUND:"
+          ls -lh "$ZIP"
+
+
+      # ============================================================
+      # 9. EXTRACT NEW PROJECT
+      # ============================================================
+
+      - name: Extract new Majdoor Hisaab project
+        run: |
+          set -e
+
+          ZIP="Majdoor_Hisaab_PRO_NEW_BUILD_READY.zip"
+
+          rm -rf .majdoor_project
+
+          mkdir -p .majdoor_project
+
+          unzip -q "$ZIP" -d .majdoor_project
+
+          echo ""
+          echo "===== EXTRACTED PROJECT ====="
+
+          find .majdoor_project -maxdepth 4 -type f | sort
+
+
+      # ============================================================
+      # 10. LOCATE PROJECT ROOT
+      # ============================================================
+
+      - name: Locate Android project
+        run: |
+          set -e
+
+          PROJECT_DIR=""
+
+          if [ -f ".majdoor_project/settings.gradle.kts" ]; then
+            PROJECT_DIR=".majdoor_project"
+
+          elif [ -f ".majdoor_project/Majdoor_Hisaab_PRO_NEW/settings.gradle.kts" ]; then
+            PROJECT_DIR=".majdoor_project/Majdoor_Hisaab_PRO_NEW"
+
+          else
+
+            FOUND=$(find .majdoor_project \
+              -name "settings.gradle.kts" \
+              -type f \
+              -print -quit)
+
+            if [ -n "$FOUND" ]; then
+              PROJECT_DIR="$(dirname "$FOUND")"
+            fi
+
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project root not found"
+
+            echo ""
+            echo "Searching for Gradle files..."
+
+            find .majdoor_project \
+              -type f \
+              \( \
+                -name "settings.gradle" \
+                -o \
+                -name "settings.gradle.kts" \
+                -o \
+                -name "build.gradle" \
+                -o \
+                -name "build.gradle.kts" \
+              \) \
+              -print
+
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR"
+
+          echo "$PROJECT_DIR" > .project_dir
+
+
+      # ============================================================
+      # 11. COPY PROJECT TO ROOT
+      # ============================================================
+
+      - name: Prepare Android project
+        run: |
+          set -e
+
+          PROJECT_DIR="$(cat .project_dir)"
+
+          echo "Using project:"
+          echo "$PROJECT_DIR"
+
+          cp -R "$PROJECT_DIR"/. .
+
+          echo ""
+          echo "===== ANDROID PROJECT ROOT ====="
+
+          ls -la
+
+          echo ""
+          echo "===== PROJECT FILES ====="
+
+          find app -maxdepth 5 -type f | sort | head -200
+
+
+      # ============================================================
+      # 12. VERIFY PROJECT STRUCTURE
+      # ============================================================
+
       - name: Verify project structure
         run: |
+          set -e
+
+          echo "Checking required files..."
+
           test -f settings.gradle.kts
           test -f build.gradle.kts
+          test -f gradle.properties
+
           test -f app/build.gradle.kts
+
           test -f app/src/main/AndroidManifest.xml
+
           test -f app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          echo ""
           echo "PROJECT STRUCTURE OK"
+
+
+      # ============================================================
+      # 13. CHECK ANDROID CONFIGURATION
+      # ============================================================
 
       - name: Check Android configuration
         run: |
+          set -e
+
+          echo "Checking compile SDK..."
+
           grep -q 'compileSdk = 35' app/build.gradle.kts
+
+          echo "Checking minimum SDK..."
+
           grep -q 'minSdk = 26' app/build.gradle.kts
+
+          echo "Checking target SDK..."
+
           grep -q 'targetSdk = 35' app/build.gradle.kts
+
+          echo "Checking package..."
+
           grep -q 'com.majdoor.hisaab' app/build.gradle.kts
+
+          echo ""
           echo "ANDROID CONFIGURATION OK"
+
+
+      # ============================================================
+      # 14. CHECK NO DATABASE
+      # ============================================================
+
+      - name: Verify phone storage architecture
+        run: |
+          set -e
+
+          echo "Checking for forbidden database/cloud dependencies..."
+
+          if grep -RniE \
+            'Room|SQLiteDatabase|android.database.sqlite|Supabase|FirebaseFirestore|FirebaseDatabase' \
+            app/src/main/java \
+            app/src/main/res \
+            2>/dev/null; then
+
+            echo ""
+            echo "ERROR:"
+            echo "Database/cloud storage code detected."
+
+            exit 1
+          fi
+
+          echo "Checking LocalStore..."
+
+          grep -q 'class LocalStore' \
+            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          echo "Checking JSON storage..."
+
+          grep -q 'JSONArray' \
+            app/src/main/java/com/majdoor/hisaab/MainActivity.kt
+
+          echo ""
+          echo "PHONE STORAGE / JSON ARCHITECTURE OK"
+
+
+      # ============================================================
+      # 15. CHECK ATTENDANCE RULE
+      # ============================================================
+
+      - name: Verify critical attendance rule
+        run: |
+          set -e
+
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivity.kt"
+
+          grep -q \
+            'Selecting a worker does NOT set Full Day' \
+            "$FILE"
+
+          grep -q \
+            'Previous team copied; attendance was not copied' \
+            "$FILE"
+
+          echo ""
+          echo "ATTENDANCE RULE CHECK OK"
+
+
+      # ============================================================
+      # 16. BUILD RELEASE APK
+      # ============================================================
 
       - name: Build Release APK
         run: |
+          set -e
+
           gradle :app:assembleRelease \
             --no-daemon \
             --stacktrace
 
-      - name: Verify APK
+          echo ""
+          echo "RELEASE BUILD COMMAND COMPLETED"
+
+
+      # ============================================================
+      # 17. VERIFY APK
+      # ============================================================
+
+      - name: Verify Release APK
         run: |
+          set -e
+
           APK="app/build/outputs/apk/release/app-release.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERROR: Release APK not found"
+
+            echo "ERROR:"
+            echo "Release APK was not created."
+
+            echo ""
+            echo "Available APK files:"
+
+            find app/build \
+              -type f \
+              -name "*.apk" \
+              -print
+
             exit 1
           fi
 
+          echo ""
           echo "======================================"
           echo "RELEASE APK CREATED SUCCESSFULLY"
           echo "======================================"
 
+          echo ""
+          echo "APK SIZE:"
+
           ls -lh "$APK"
 
-          echo "SHA256:"
+          echo ""
+          echo "APK SHA256:"
+
           sha256sum "$APK"
+
+
+      # ============================================================
+      # 18. APK INFO
+      # ============================================================
+
+      - name: APK information
+        run: |
+          set -e
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          echo "APK path:"
+          echo "$APK"
+
+          echo ""
+
+          echo "APK size:"
+          du -h "$APK"
+
+
+      # ============================================================
+      # 19. UPLOAD APK
+      # ============================================================
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
@@ -95,3 +436,25 @@ jobs:
           name: Majdoor-Hisaab-PRO-Release-APK
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+
+      # ============================================================
+      # 20. BUILD SUMMARY
+      # ============================================================
+
+      - name: Build summary
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "MAJDOOR HISAAB PRO BUILD COMPLETE"
+          echo "=============================================="
+          echo ""
+          echo "Android SDK : 35"
+          echo "Java        : 17"
+          echo "Gradle      : 8.11.1"
+          echo "Package     : com.majdoor.hisaab"
+          echo "Storage     : Phone JSON Storage"
+          echo "Database    : NONE"
+          echo "APK         : Release"
+          echo ""
+          echo "APK artifact uploaded successfully."
