@@ -180,8 +180,6 @@ jobs:
 
           sudo ldconfig
 
-          echo "Checking required emulator libraries..."
-
           ldconfig -p | grep -F "libpulse.so.0"
 
           test -n "$(ldconfig -p | grep -F "libpulse.so.0" || true)"
@@ -402,47 +400,121 @@ jobs:
 
 
       # ============================================================
-      # 13. FIX DEPENDENCY HEALTH MODULE TARGET
+      # 13. DEPENDENCY HEALTH MODULE BRIDGE
       #
-      # FIX:
-      # Root project does NOT own Android's
-      # testRuntimeClasspath.
+      # Android variant configurations belong to :app.
       #
-      # Convert:
-      #   ./gradlew dependencies
+      # Example:
       #
-      # to:
-      #   ./gradlew :app:dependencies
+      # WRONG:
+      # ./gradlew dependencies --configuration debugRuntimeClasspath
       #
-      # This keeps the existing dependency-health script but makes
-      # its dependency report run against the Android :app module.
+      # CORRECT:
+      # ./gradlew :app:dependencies --configuration debugRuntimeClasspath
+      #
+      # The bridge changes only dependency-report commands for
+      # Android variant configurations.
       # ============================================================
 
-      - name: Normalize dependency health module target
+      - name: Install dependency health Gradle module bridge
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SCRIPT="scripts/dependency-health.sh"
+          test -x ./gradlew
 
-          test -s "$SCRIPT"
+          mv ./gradlew ./gradlew.real
 
-          cp "$SCRIPT" "${SCRIPT}.before-module-fix"
+          cat > ./gradlew <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
 
-          sed -E -i \
-            's#(^|[[:space:]])\./gradlew[[:space:]]+dependencies#\1./gradlew :app:dependencies#g' \
-            "$SCRIPT"
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          REAL="$ROOT/gradlew.real"
 
-          chmod +x "$SCRIPT"
+          test -x "$REAL"
 
-          echo "Checking dependency-health Gradle targets..."
+          args=("$@")
 
-          if grep -nE '\./gradlew[[:space:]]+dependencies' "$SCRIPT"; then
-            echo "ERROR: root-project dependency task invocation remains."
-            exit 1
+          has_dependencies=0
+          has_app_dependencies=0
+          configuration=""
+
+          for ((i=0; i<${#args[@]}; i++)); do
+            case "${args[$i]}" in
+              dependencies)
+                has_dependencies=1
+                ;;
+
+              :app:dependencies)
+                has_app_dependencies=1
+                ;;
+
+              --configuration)
+                if (( i + 1 < ${#args[@]} )); then
+                  configuration="${args[$((i + 1))]}"
+                fi
+                ;;
+
+              --configuration=*)
+                configuration="${args[$i]#--configuration=}"
+                ;;
+            esac
+          done
+
+          case "$configuration" in
+            debugRuntimeClasspath|\
+            testRuntimeClasspath|\
+            e2eReleaseRuntimeClasspath|\
+            releaseRuntimeClasspath)
+              ANDROID_VARIANT_CONFIGURATION=1
+              ;;
+
+            *)
+              ANDROID_VARIANT_CONFIGURATION=0
+              ;;
+          esac
+
+          if \
+            (( has_dependencies == 1 )) && \
+            (( has_app_dependencies == 0 )) && \
+            (( ANDROID_VARIANT_CONFIGURATION == 1 ))
+          then
+            rewritten=()
+
+            for arg in "${args[@]}"; do
+              if [[ "$arg" == "dependencies" ]]; then
+                rewritten+=(":app:dependencies")
+              else
+                rewritten+=("$arg")
+              fi
+            done
+
+            echo "DEPENDENCY_HEALTH_BRIDGE:"
+            echo "  configuration=${configuration}"
+            echo "  root task=dependencies"
+            echo "  rewritten task=:app:dependencies"
+
+            exec "$REAL" "${rewritten[@]}"
           fi
 
-          echo "DEPENDENCY_HEALTH_APP_TARGET=PASS"
+          exec "$REAL" "$@"
+          EOF
+
+          chmod +x ./gradlew
+
+          test -x ./gradlew
+          test -x ./gradlew.real
+
+          echo "Testing Android dependency configuration..."
+
+          ./gradlew \
+            --no-daemon \
+            :app:dependencies \
+            --configuration debugRuntimeClasspath \
+            >/dev/null
+
+          echo "DEPENDENCY_HEALTH_MODULE_BRIDGE=PASS"
 
 
       # ============================================================
@@ -454,7 +526,32 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          test -x ./gradlew
+          test -x ./gradlew.real
+          test -s ./scripts/dependency-health.sh
+
           ./scripts/dependency-health.sh
+
+
+      # ============================================================
+      # 14B. RESTORE NORMAL GRADLE LAUNCHER
+      # ============================================================
+
+      - name: Restore normal Gradle launcher
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [ -f ./gradlew.real ]; then
+            rm -f ./gradlew
+            mv ./gradlew.real ./gradlew
+            chmod +x ./gradlew
+          fi
+
+          test -x ./gradlew
+
+          echo "GRADLE_LAUNCHER_RESTORED=PASS"
 
 
       # ============================================================
