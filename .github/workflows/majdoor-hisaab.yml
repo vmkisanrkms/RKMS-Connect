@@ -327,13 +327,10 @@ jobs:
           test -x "$(command -v apksigner)"
 
           adb version
-
           sdkmanager --version
-
           emulator -version
 
           zipalign -h >/dev/null 2>&1 || true
-
           apksigner >/dev/null 2>&1 || true
 
           echo "ANDROID_SDK_TOOLS=PASS"
@@ -341,15 +338,6 @@ jobs:
 
       # ============================================================
       # 10. SETUP VERIFIED GRADLE 8.11.1
-      #
-      # FIX FOR RUN #100:
-      #
-      # The bundled Wrapper downloaded Gradle 8.11.1 but failed with:
-      #
-      #   Gradle distribution did not contain bin/gradle
-      #
-      # Therefore CI uses the official setup-gradle action to install
-      # Gradle 8.11.1 directly and put it on PATH.
       # ============================================================
 
       - name: Setup Gradle 8.11.1
@@ -362,10 +350,6 @@ jobs:
 
       # ============================================================
       # 11. PREPARE GRADLE LAUNCHER
-      #
-      # Keep all existing scripts which call ./gradlew working,
-      # while the actual executable comes from the verified Gradle
-      # 8.11.1 installation on PATH.
       # ============================================================
 
       - name: Prepare Gradle launcher
@@ -418,7 +402,51 @@ jobs:
 
 
       # ============================================================
-      # 13. DEPENDENCY HEALTH
+      # 13. FIX DEPENDENCY HEALTH MODULE TARGET
+      #
+      # FIX:
+      # Root project does NOT own Android's
+      # testRuntimeClasspath.
+      #
+      # Convert:
+      #   ./gradlew dependencies
+      #
+      # to:
+      #   ./gradlew :app:dependencies
+      #
+      # This keeps the existing dependency-health script but makes
+      # its dependency report run against the Android :app module.
+      # ============================================================
+
+      - name: Normalize dependency health module target
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SCRIPT="scripts/dependency-health.sh"
+
+          test -s "$SCRIPT"
+
+          cp "$SCRIPT" "${SCRIPT}.before-module-fix"
+
+          sed -E -i \
+            's#(^|[[:space:]])\./gradlew[[:space:]]+dependencies#\1./gradlew :app:dependencies#g' \
+            "$SCRIPT"
+
+          chmod +x "$SCRIPT"
+
+          echo "Checking dependency-health Gradle targets..."
+
+          if grep -nE '\./gradlew[[:space:]]+dependencies' "$SCRIPT"; then
+            echo "ERROR: root-project dependency task invocation remains."
+            exit 1
+          fi
+
+          echo "DEPENDENCY_HEALTH_APP_TARGET=PASS"
+
+
+      # ============================================================
+      # 14. DEPENDENCY HEALTH
       # ============================================================
 
       - name: Dependency health
@@ -430,7 +458,7 @@ jobs:
 
 
       # ============================================================
-      # 14. GRADLE KOTLIN COMPATIBILITY
+      # 15. GRADLE KOTLIN COMPATIBILITY
       # ============================================================
 
       - name: Gradle Kotlin compatibility
@@ -442,7 +470,7 @@ jobs:
 
 
       # ============================================================
-      # 15. GRADLE AGP COMPATIBILITY
+      # 16. GRADLE AGP COMPATIBILITY
       # ============================================================
 
       - name: Gradle AGP compatibility
@@ -454,7 +482,7 @@ jobs:
 
 
       # ============================================================
-      # 16. ARCHITECTURE GATE
+      # 17. ARCHITECTURE GATE
       # ============================================================
 
       - name: Architecture gate
@@ -466,7 +494,7 @@ jobs:
 
 
       # ============================================================
-      # 17. CONFIGURATION LIFECYCLE GATE
+      # 18. CONFIGURATION LIFECYCLE GATE
       # ============================================================
 
       - name: Configuration lifecycle gate
@@ -478,7 +506,7 @@ jobs:
 
 
       # ============================================================
-      # 18. OFFLINE FIRST GATE
+      # 19. OFFLINE FIRST GATE
       # ============================================================
 
       - name: Offline first gate
@@ -490,7 +518,7 @@ jobs:
 
 
       # ============================================================
-      # 19. SECURITY DATA GATE
+      # 20. SECURITY DATA GATE
       # ============================================================
 
       - name: Security data gate
@@ -502,7 +530,7 @@ jobs:
 
 
       # ============================================================
-      # 20. UI UX GATE
+      # 21. UI UX GATE
       # ============================================================
 
       - name: UI UX gate
@@ -514,7 +542,7 @@ jobs:
 
 
       # ============================================================
-      # 21. CLEAN DEPENDENCY RESOLUTION
+      # 22. CLEAN DEPENDENCY RESOLUTION
       # ============================================================
 
       - name: Clean dependency resolution
@@ -526,28 +554,28 @@ jobs:
             --no-daemon \
             --stacktrace \
             --refresh-dependencies \
-            dependencies \
+            :app:dependencies \
             --configuration debugRuntimeClasspath
 
           ./gradlew \
             --no-daemon \
             --stacktrace \
             --refresh-dependencies \
-            dependencies \
+            :app:dependencies \
             --configuration testRuntimeClasspath
 
           ./gradlew \
             --no-daemon \
             --stacktrace \
             --refresh-dependencies \
-            dependencies \
+            :app:dependencies \
             --configuration e2eReleaseRuntimeClasspath
 
           ./gradlew \
             --no-daemon \
             --stacktrace \
             --refresh-dependencies \
-            dependencies \
+            :app:dependencies \
             --configuration releaseRuntimeClasspath
 
           ./gradlew \
@@ -556,9 +584,11 @@ jobs:
             --refresh-dependencies \
             buildEnvironment
 
+          echo "CLEAN_DEPENDENCY_RESOLUTION=PASS"
+
 
       # ============================================================
-      # 22. UNIT TESTS
+      # 23. UNIT TESTS
       # ============================================================
 
       - name: Unit tests
@@ -570,7 +600,7 @@ jobs:
 
 
       # ============================================================
-      # 23. COMPILE ALL REQUIRED VARIANTS
+      # 24. COMPILE ALL REQUIRED VARIANTS
       # ============================================================
 
       - name: Compile all required variants
@@ -592,7 +622,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY DEBUG APK
+      # 25. VERIFY DEBUG APK
       # ============================================================
 
       - name: Verify Debug APK
@@ -623,7 +653,7 @@ jobs:
 
 
       # ============================================================
-      # 25. RELEASE BUILD GATE
+      # 26. RELEASE BUILD GATE
       # ============================================================
 
       - name: Release build gate
@@ -635,7 +665,7 @@ jobs:
 
 
       # ============================================================
-      # 26. VERIFY UNSIGNED RELEASE APK
+      # 27. VERIFY UNSIGNED RELEASE APK
       # ============================================================
 
       - name: Verify unsigned Release APK
@@ -665,7 +695,7 @@ jobs:
 
 
       # ============================================================
-      # 27. RESTORE PRODUCTION SIGNING KEY
+      # 28. RESTORE PRODUCTION SIGNING KEY
       # ============================================================
 
       - name: Restore production signing key
@@ -715,7 +745,7 @@ jobs:
 
 
       # ============================================================
-      # 28. SIGN PRODUCTION RELEASE APK
+      # 29. SIGN PRODUCTION RELEASE APK
       # ============================================================
 
       - name: Sign production Release APK
@@ -825,7 +855,7 @@ jobs:
 
 
       # ============================================================
-      # 29. PRODUCTION SIGNING GATE
+      # 30. PRODUCTION SIGNING GATE
       # ============================================================
 
       - name: Production signing gate
@@ -841,7 +871,7 @@ jobs:
 
 
       # ============================================================
-      # 30. VERIFY FINAL SIGNED APK
+      # 31. VERIFY FINAL SIGNED APK
       # ============================================================
 
       - name: Verify final signed APK and checksum
@@ -883,7 +913,7 @@ jobs:
 
 
       # ============================================================
-      # 31. PHASE 1 POINTS 18-25 GATE
+      # 32. PHASE 1 POINTS 18-25 GATE
       # ============================================================
 
       - name: Phase 1 points 18-25 gate
@@ -896,7 +926,7 @@ jobs:
 
 
       # ============================================================
-      # 32. DEBUG RUNTIME
+      # 33. DEBUG RUNTIME
       # ============================================================
 
       - name: Install and launch Debug APK
@@ -952,7 +982,7 @@ jobs:
 
 
       # ============================================================
-      # 33. ANDROID API 36 CORE E2E
+      # 34. ANDROID API 36 CORE E2E
       # ============================================================
 
       - name: Android API 36 Core E2E
@@ -982,7 +1012,7 @@ jobs:
 
 
       # ============================================================
-      # 34. PHASE 17 / 18 / 22 RUNTIME TESTS
+      # 35. PHASE 17 / 18 / 22 RUNTIME TESTS
       # ============================================================
 
       - name: Phase 17 18 and 22 runtime tests
@@ -1022,7 +1052,7 @@ jobs:
 
 
       # ============================================================
-      # 35. CLEAN INSTALL / BACKUP / RESTORE E2E
+      # 36. CLEAN INSTALL / BACKUP / RESTORE E2E
       # ============================================================
 
       - name: Clean install backup restore E2E
@@ -1058,7 +1088,7 @@ jobs:
 
 
       # ============================================================
-      # 36. SECURITY RUNTIME E2E
+      # 37. SECURITY RUNTIME E2E
       # ============================================================
 
       - name: Security runtime E2E
@@ -1094,7 +1124,7 @@ jobs:
 
 
       # ============================================================
-      # 37. PHASE 19 OFFLINE-FIRST E2E
+      # 38. PHASE 19 OFFLINE-FIRST E2E
       # ============================================================
 
       - name: Phase 19 offline-first E2E
@@ -1127,7 +1157,7 @@ jobs:
 
 
       # ============================================================
-      # 38. PHASE 22 RED-LIST GATE
+      # 39. PHASE 22 RED-LIST GATE
       # ============================================================
 
       - name: Phase 22 red-list gate
@@ -1139,7 +1169,7 @@ jobs:
 
 
       # ============================================================
-      # 39. SIGNED RELEASE RUNTIME
+      # 40. SIGNED RELEASE RUNTIME
       # ============================================================
 
       - name: Signed Release runtime
@@ -1198,7 +1228,7 @@ jobs:
 
 
       # ============================================================
-      # 40. SIGNED RELEASE TRUE REBOOT PERSISTENCE
+      # 41. SIGNED RELEASE TRUE REBOOT PERSISTENCE
       # ============================================================
 
       - name: Signed Release true reboot persistence
@@ -1227,7 +1257,7 @@ jobs:
 
 
       # ============================================================
-      # 41. FINAL RELEASE GATE 541-566
+      # 42. FINAL RELEASE GATE 541-566
       # ============================================================
 
       - name: FINAL RELEASE GATE 541-566
@@ -1239,7 +1269,7 @@ jobs:
 
 
       # ============================================================
-      # 42. FINAL ARTIFACT VERIFICATION
+      # 43. FINAL ARTIFACT VERIFICATION
       # ============================================================
 
       - name: Verify final artifacts
@@ -1265,7 +1295,7 @@ jobs:
 
 
       # ============================================================
-      # 43. UPLOAD FINAL ARTIFACTS
+      # 44. UPLOAD FINAL ARTIFACTS
       # ============================================================
 
       - name: Upload final artifacts
