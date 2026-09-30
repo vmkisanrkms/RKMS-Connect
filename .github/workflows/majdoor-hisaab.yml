@@ -21,7 +21,6 @@ env:
   VERSION_CODE: "77"
 
 jobs:
-
   build-test-sign-runtime:
     name: FINAL BUILD / TEST / SIGN / RUNTIME
     runs-on: ubuntu-latest
@@ -29,14 +28,43 @@ jobs:
 
     steps:
 
-      # =========================================================
-      # 1. CHECKOUT
-      # =========================================================
-
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Verify Android project root
+      - name: Extract locked project ZIP into repository root
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ZIP="Majdoor_Hisaab_PRO_FINAL_LOCKED.zip"
+
+          test -s "$ZIP"
+
+          rm -rf .mhp-extract
+          mkdir -p .mhp-extract
+
+          unzip -q "$ZIP" -d .mhp-extract
+
+          test -s .mhp-extract/settings.gradle.kts
+          test -s .mhp-extract/build.gradle.kts
+          test -s .mhp-extract/app/build.gradle.kts
+          test -s .mhp-extract/gradlew
+          test -s .mhp-extract/gradlew.bat
+          test -s .mhp-extract/gradle/wrapper/gradle-wrapper.properties
+          test -s .mhp-extract/gradle/wrapper/gradle-wrapper.jar
+
+          cp -a .mhp-extract/. .
+
+          rm -rf .mhp-extract
+
+          chmod +x ./gradlew
+          chmod +x scripts/*.sh
+
+          test -x ./gradlew
+
+          echo "ZIP_PROJECT_EXTRACTION=PASS"
+
+      - name: Verify Android project and pinned toolchain
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -45,18 +73,43 @@ jobs:
           test -f build.gradle.kts
           test -f app/build.gradle.kts
 
-          test -f gradlew
+          test -x gradlew
           test -f gradlew.bat
 
-          test -f gradle/wrapper/gradle-wrapper.properties
+          test -s gradle/wrapper/gradle-wrapper.properties
           test -s gradle/wrapper/gradle-wrapper.jar
 
-          echo "ANDROID_PROJECT_ROOT=PASS"
-          echo "GRADLE_WRAPPER_JAR=PASS"
+          grep -q 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
+            gradle/wrapper/gradle-wrapper.properties
 
-      # =========================================================
-      # 2. JAVA 17
-      # =========================================================
+          grep -q 'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
+            gradle/wrapper/gradle-wrapper.properties
+
+          grep -q 'id("com.android.application") version "8.9.1"' \
+            build.gradle.kts
+
+          grep -q 'id("org.jetbrains.kotlin.android") version "2.1.21"' \
+            build.gradle.kts
+
+          grep -q 'applicationId = "com.majdoor.hisaab"' \
+            app/build.gradle.kts
+
+          grep -q 'versionCode = 77' \
+            app/build.gradle.kts
+
+          grep -q 'versionName = "1.77.0"' \
+            app/build.gradle.kts
+
+          grep -q 'compileSdk = 36' \
+            app/build.gradle.kts
+
+          grep -q 'targetSdk = 36' \
+            app/build.gradle.kts
+
+          grep -q 'jvmTarget = "17"' \
+            app/build.gradle.kts
+
+          echo "ANDROID_PROJECT_AND_TOOLCHAIN=PASS"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -64,14 +117,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # =========================================================
-      # 3. ANDROID SDK 36
-      # =========================================================
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android API 36
+      - name: Install Android API 36 and build tools
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -83,63 +132,24 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # =========================================================
-      # 4. GRADLE WRAPPER
-      # =========================================================
-
-      - name: Prepare Gradle Wrapper
+      - name: Prepare Gradle wrapper
         shell: bash
         run: |
           set -Eeuo pipefail
 
           chmod +x ./gradlew
 
-          test -x ./gradlew
-          test -s gradle/wrapper/gradle-wrapper.jar
-
           ./gradlew --version
 
-          ./gradlew --version \
-            | grep -F "Gradle ${GRADLE_VERSION}"
+          ./gradlew --version |
+            grep -F "Gradle ${GRADLE_VERSION}"
 
-      # =========================================================
-      # 5. VERSION / PROJECT VALIDATION
-      # =========================================================
-
-      - name: Verify application version
+      - name: Static acceptance gates
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          grep -q 'versionCode = 77' \
-            app/build.gradle.kts
-
-          grep -q 'versionName = "1.77.0"' \
-            app/build.gradle.kts
-
-          grep -q 'applicationId = "com.majdoor.hisaab"' \
-            app/build.gradle.kts
-
-          grep -q 'compileSdk = 36' \
-            app/build.gradle.kts
-
-          grep -q 'targetSdk = 36' \
-            app/build.gradle.kts
-
-          echo "VERSION_AND_ANDROID_CONFIGURATION=PASS"
-
-      # =========================================================
-      # 6. STATIC ACCEPTANCE GATES
-      # =========================================================
-
-      - name: Run acceptance gates
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          chmod +x scripts/*.sh
-
-          test -x ./gradlew
+          echo "CLEAN_RUNNER=github-hosted-ubuntu-latest"
 
           ./scripts/acceptance-gates.sh
 
@@ -199,10 +209,6 @@ jobs:
 
           ./scripts/phase21-ui-ux-gate.sh
 
-      # =========================================================
-      # 7. CLEAN DEPENDENCY RESOLUTION
-      # =========================================================
-
       - name: Clean dependency resolution
         shell: bash
         run: |
@@ -242,11 +248,14 @@ jobs:
             --refresh-dependencies \
             buildEnvironment
 
-      # =========================================================
-      # 8. BUILD + UNIT TEST
-      # =========================================================
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-      - name: Build and run unit tests
+          ./gradlew --no-daemon test
+
+      - name: Compile all required variants
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -254,7 +263,6 @@ jobs:
           ./gradlew \
             --no-daemon \
             --stacktrace \
-            test \
             compileDebugKotlin \
             compileDebugJavaWithJavac \
             assembleDebug \
@@ -263,10 +271,6 @@ jobs:
             compileReleaseKotlin \
             assembleRelease \
             assembleReleaseAndroidTest
-
-      # =========================================================
-      # 9. DEBUG APK GATE
-      # =========================================================
 
       - name: Verify Debug APK
         shell: bash
@@ -277,26 +281,22 @@ jobs:
 
           test -s "$APK"
 
-          apkanalyzer manifest application-id "$APK" \
-            | grep -Fx "$PACKAGE_NAME"
+          apkanalyzer manifest application-id "$APK" |
+            grep -Fx "$PACKAGE_NAME"
 
-          apkanalyzer manifest version-name "$APK" \
-            | grep -Fx "$VERSION_NAME"
+          apkanalyzer manifest version-name "$APK" |
+            grep -Fx "$VERSION_NAME"
 
-          apkanalyzer manifest version-code "$APK" \
-            | grep -Fx "$VERSION_CODE"
+          apkanalyzer manifest version-code "$APK" |
+            grep -Fx "$VERSION_CODE"
 
           mkdir -p artifacts/debug
 
           cp "$APK" \
             artifacts/debug/Majdoor-Hisaab-PRO-debug.apk
 
-          sha256sum "$APK" \
-            | tee artifacts/debug/Majdoor-Hisaab-PRO-debug.sha256
-
-      # =========================================================
-      # 10. RELEASE BUILD GATE
-      # =========================================================
+          sha256sum "$APK" |
+            tee artifacts/debug/Majdoor-Hisaab-PRO-debug.sha256
 
       - name: Release build gate
         shell: bash
@@ -314,23 +314,21 @@ jobs:
 
           test -s "$APK"
 
-          apkanalyzer manifest application-id "$APK" \
-            | grep -Fx "$PACKAGE_NAME"
+          apkanalyzer manifest application-id "$APK" |
+            grep -Fx "$PACKAGE_NAME"
 
-          apkanalyzer manifest version-name "$APK" \
-            | grep -Fx "$VERSION_NAME"
+          apkanalyzer manifest version-name "$APK" |
+            grep -Fx "$VERSION_NAME"
 
-          apkanalyzer manifest version-code "$APK" \
-            | grep -Fx "$VERSION_CODE"
+          apkanalyzer manifest version-code "$APK" |
+            grep -Fx "$VERSION_CODE"
 
           mkdir -p artifacts
 
           cp "$APK" \
             artifacts/app-release-unsigned.apk
 
-      # =========================================================
-      # 11. PRODUCTION KEYSTORE
-      # =========================================================
+          unzip -t "$APK" >/dev/null
 
       - name: Restore production signing key
         env:
@@ -350,41 +348,32 @@ jobs:
           test -n "$KEY_ALIAS"
           test -n "$EXPECTED_CERT"
 
-          printf '%s' "$KEYSTORE_B64" \
-            | base64 --decode > release.keystore
+          printf '%s' "$KEYSTORE_B64" |
+            base64 --decode > release.keystore
 
           test -s release.keystore
 
-          keytool \
-            -list \
-            -v \
+          keytool -list -v \
             -keystore release.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
-            > cert.txt
+            -alias "$KEY_ALIAS" > cert.txt
 
           ACTUAL_CERT="$(
-            awk -F': ' \
-              '/SHA256:/{print $2; exit}' \
-              cert.txt \
-              | tr -d ' ' \
-              | tr '[:lower:]' '[:upper:]'
+            awk -F': ' '/SHA256:/{print $2; exit}' cert.txt |
+            tr -d ' ' |
+            tr '[:lower:]' '[:upper:]'
           )"
 
           EXPECTED_CERT="$(
-            printf '%s' "$EXPECTED_CERT" \
-              | tr -d ' ' \
-              | tr '[:lower:]' '[:upper:]'
+            printf '%s' "$EXPECTED_CERT" |
+            tr -d ' ' |
+            tr '[:lower:]' '[:upper:]'
           )"
 
           test -n "$ACTUAL_CERT"
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
           echo "PRODUCTION_CERTIFICATE=PASS"
-
-      # =========================================================
-      # 12. SIGN RELEASE + RELEASE TEST APK
-      # =========================================================
 
       - name: Sign production Release APK
         env:
@@ -401,17 +390,24 @@ jobs:
           ALIGNED="app-release-aligned.apk"
           SIGNED="artifacts/Majdoor-Hisaab-PRO-release.apk"
 
+          TEST_UNSIGNED="app/build/outputs/apk/androidTest/release/app-release-androidTest.apk"
+          TEST_ALIGNED="app-release-androidTest-aligned.apk"
+          TEST_SIGNED="artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk"
+
           test -s "$UNSIGNED"
+          test -s "$TEST_UNSIGNED"
           test -s release.keystore
 
           zipalign \
             -f \
-            -p \
-            4 \
+            -p 4 \
             "$UNSIGNED" \
             "$ALIGNED"
 
-          zipalign -c -v 4 "$ALIGNED"
+          zipalign \
+            -c \
+            -v 4 \
+            "$ALIGNED"
 
           apksigner sign \
             --ks release.keystore \
@@ -426,21 +422,23 @@ jobs:
           apksigner verify \
             --verbose \
             --print-certs \
-            "$SIGNED" \
-            | tee artifacts/release-signature.txt
+            "$SIGNED" |
+            tee artifacts/release-signature.txt
 
           ACTUAL_SIGNED_CERT="$(
-            apksigner verify --print-certs "$SIGNED" \
-              | awk -F': ' \
-                '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' \
-              | tr -d ' ' \
-              | tr '[:lower:]' '[:upper:]'
+            apksigner verify \
+              --print-certs \
+              "$SIGNED" |
+            awk -F': ' \
+              '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' |
+            tr -d ' ' |
+            tr '[:lower:]' '[:upper:]'
           )"
 
           EXPECTED_SIGNED_CERT="$(
-            printf '%s' "$EXPECTED_CERT" \
-              | tr -d ' ' \
-              | tr '[:lower:]' '[:upper:]'
+            printf '%s' "$EXPECTED_CERT" |
+            tr -d ' ' |
+            tr '[:lower:]' '[:upper:]'
           )"
 
           test -n "$ACTUAL_SIGNED_CERT"
@@ -448,22 +446,14 @@ jobs:
 
           unzip -t "$SIGNED" >/dev/null
 
-          zipalign -c -v 4 "$SIGNED"
-
-          # -----------------------------------------------------
-          # Sign instrumentation APK BEFORE deleting keystore
-          # -----------------------------------------------------
-
-          TEST_UNSIGNED="app/build/outputs/apk/androidTest/release/app-release-androidTest.apk"
-          TEST_ALIGNED="app-release-androidTest-aligned.apk"
-          TEST_SIGNED="artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk"
-
-          test -s "$TEST_UNSIGNED"
+          zipalign \
+            -c \
+            -v 4 \
+            "$SIGNED"
 
           zipalign \
             -f \
-            -p \
-            4 \
+            -p 4 \
             "$TEST_UNSIGNED" \
             "$TEST_ALIGNED"
 
@@ -482,16 +472,13 @@ jobs:
             --print-certs \
             "$TEST_SIGNED" >/dev/null
 
-          rm -f "$ALIGNED"
-          rm -f "$TEST_ALIGNED"
-          rm -f cert.txt
-          rm -f release.keystore
+          rm -f \
+            "$ALIGNED" \
+            "$TEST_ALIGNED" \
+            cert.txt \
+            release.keystore
 
           echo "PRODUCTION_SIGNING=PASS"
-
-      # =========================================================
-      # 13. SIGNING GATE
-      # =========================================================
 
       - name: Production signing gate
         env:
@@ -504,44 +491,42 @@ jobs:
           ./scripts/production-signing-gate.sh \
             artifacts/Majdoor-Hisaab-PRO-release.apk
 
-      # =========================================================
-      # 14. FINAL APK METADATA
-      # =========================================================
-
-      - name: Verify signed APK metadata
+      - name: Verify final signed APK and checksum
         shell: bash
         run: |
           set -Eeuo pipefail
 
           APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
 
-          apkanalyzer manifest application-id "$APK" \
-            | grep -Fx "$PACKAGE_NAME"
+          test -s "$APK"
 
-          apkanalyzer manifest version-name "$APK" \
-            | grep -Fx "$VERSION_NAME"
+          apkanalyzer manifest application-id "$APK" |
+            grep -Fx "$PACKAGE_NAME"
 
-          apkanalyzer manifest version-code "$APK" \
-            | grep -Fx "$VERSION_CODE"
+          apkanalyzer manifest version-name "$APK" |
+            grep -Fx "$VERSION_NAME"
+
+          apkanalyzer manifest version-code "$APK" |
+            grep -Fx "$VERSION_CODE"
 
           unzip -t "$APK" >/dev/null
 
-          zipalign -c -v 4 "$APK"
+          zipalign \
+            -c \
+            -v 4 \
+            "$APK"
 
           apksigner verify \
             --verbose \
             --print-certs \
-            "$APK" \
-            | tee artifacts/release-signature-final.txt
+            "$APK" |
+            tee artifacts/release-signature-final.txt
 
-          sha256sum "$APK" \
-            | tee artifacts/Majdoor-Hisaab-PRO-release.sha256
+          sha256sum \
+            artifacts/Majdoor-Hisaab-PRO-release.apk |
+            tee artifacts/Majdoor-Hisaab-PRO-release.sha256
 
           test -s artifacts/Majdoor-Hisaab-PRO-release.sha256
-
-      # =========================================================
-      # 15. POINTS 18-25
-      # =========================================================
 
       - name: Phase 1 points 18-25 gate
         shell: bash
@@ -550,10 +535,6 @@ jobs:
 
           ./scripts/phase1-points-18-25-gate.sh \
             artifacts/Majdoor-Hisaab-PRO-release.apk
-
-      # =========================================================
-      # 16. DEBUG API 36 RUNTIME
-      # =========================================================
 
       - name: Install and launch Debug APK
         uses: reactivecircus/android-emulator-runner@v2
@@ -576,40 +557,35 @@ jobs:
             done
 
             adb install -r \
-              "${GITHUB_WORKSPACE}/app/build/outputs/apk/debug/app-debug.apk"
+              app/build/outputs/apk/debug/app-debug.apk
 
             adb shell am force-stop "$PACKAGE_NAME"
 
             adb shell am start -W \
-              -n "${PACKAGE_NAME}/com.majdoor.hisaab.MainActivity"
+              -n "$PACKAGE_NAME/com.majdoor.hisaab.MainActivity"
 
             sleep 2
 
-            adb shell pidof "$PACKAGE_NAME" \
-              | grep -Eq '[0-9]+'
+            adb shell pidof "$PACKAGE_NAME" |
+              grep -Eq '[0-9]+'
 
             adb shell cmd package resolve-activity \
               --brief \
               -a android.intent.action.MAIN \
               -c android.intent.category.LAUNCHER \
-              "$PACKAGE_NAME" \
-              | grep -q "$PACKAGE_NAME"
+              "$PACKAGE_NAME" |
+              grep -q "$PACKAGE_NAME"
 
             mkdir -p artifacts/debug
 
-            adb logcat -d -t 10000 \
-              > artifacts/debug/debug-logcat.txt
+            adb logcat -d -t 10000 >
+              artifacts/debug/debug-logcat.txt
 
             if grep -E \
               'FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com\.majdoor\.hisaab.*FATAL' \
-              artifacts/debug/debug-logcat.txt
-            then
+              artifacts/debug/debug-logcat.txt; then
               exit 1
             fi
-
-      # =========================================================
-      # 17. CORE E2E
-      # =========================================================
 
       - name: Android API 36 Core E2E
         uses: reactivecircus/android-emulator-runner@v2
@@ -636,11 +612,7 @@ jobs:
               --stacktrace \
               connectedE2eReleaseAndroidTest
 
-      # =========================================================
-      # 18. PHASE 17 / 18
-      # =========================================================
-
-      - name: Phase 17 and 18 runtime tests
+      - name: Phase 17 18 and 22 runtime tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -665,7 +637,8 @@ jobs:
               --stacktrace \
               connectedE2eReleaseAndroidTest \
               --tests com.majdoor.hisaab.Phase17RealAndroidRuntimeE2ETest \
-              --tests com.majdoor.hisaab.Phase18ConfigurationLifecycleE2ETest
+              --tests com.majdoor.hisaab.Phase18ConfigurationLifecycleE2ETest \
+              --tests com.majdoor.hisaab.Phase22FinalRedListE2ETest
 
             ./scripts/phase18-device-reboot-gate.sh
 
@@ -673,10 +646,6 @@ jobs:
 
             touch \
               artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
-
-      # =========================================================
-      # 19. BACKUP / RESTORE
-      # =========================================================
 
       - name: Clean install backup restore E2E
         uses: reactivecircus/android-emulator-runner@v2
@@ -709,10 +678,6 @@ jobs:
             touch \
               artifacts/release-e2e/markers/552_553_clean_install_restore_totals.pass
 
-      # =========================================================
-      # 20. SECURITY RUNTIME
-      # =========================================================
-
       - name: Security runtime E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -744,10 +709,6 @@ jobs:
             touch \
               artifacts/release-e2e/markers/554_security_runtime.pass
 
-      # =========================================================
-      # 21. PHASE 19 OFFLINE
-      # =========================================================
-
       - name: Phase 19 offline-first E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -776,10 +737,6 @@ jobs:
 
             ./scripts/phase19-offline-first-gate.sh
 
-      # =========================================================
-      # 22. PHASE 22 STATIC
-      # =========================================================
-
       - name: Phase 22 red-list gate
         shell: bash
         run: |
@@ -787,11 +744,7 @@ jobs:
 
           ./scripts/phase22-final-red-list-gate.sh
 
-      # =========================================================
-      # 23. SIGNED RELEASE API 36
-      # =========================================================
-
-      - name: Signed Release APK runtime
+      - name: Signed Release runtime
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -816,7 +769,7 @@ jobs:
             adb shell settings put global animator_duration_scale 0
 
             ./scripts/release-e2e.sh \
-              "${GITHUB_WORKSPACE}/artifacts/Majdoor-Hisaab-PRO-release.apk"
+              "$GITHUB_WORKSPACE/artifacts/Majdoor-Hisaab-PRO-release.apk"
 
             adb shell svc wifi disable || true
             adb shell svc data disable || true
@@ -824,31 +777,26 @@ jobs:
             adb shell am force-stop "$PACKAGE_NAME"
 
             adb shell am start -W \
-              -n "${PACKAGE_NAME}/com.majdoor.hisaab.MainActivity"
+              -n "$PACKAGE_NAME/com.majdoor.hisaab.MainActivity"
 
             sleep 2
 
-            adb shell pidof "$PACKAGE_NAME" \
-              | grep -Eq '[0-9]+'
+            adb shell pidof "$PACKAGE_NAME" |
+              grep -Eq '[0-9]+'
 
             mkdir -p artifacts/release-e2e/markers
 
-            adb logcat -d -t 10000 \
-              > artifacts/release-e2e/offline-logcat.txt
+            adb logcat -d -t 10000 >
+              artifacts/release-e2e/offline-logcat.txt
 
             if grep -E \
               'FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com\.majdoor\.hisaab.*FATAL' \
-              artifacts/release-e2e/offline-logcat.txt
-            then
+              artifacts/release-e2e/offline-logcat.txt; then
               exit 1
             fi
 
             touch \
               artifacts/release-e2e/markers/550_offline_runtime.pass
-
-      # =========================================================
-      # 24. TRUE REBOOT + PERSISTENCE
-      # =========================================================
 
       - name: Signed Release true reboot persistence
         uses: reactivecircus/android-emulator-runner@v2
@@ -871,12 +819,8 @@ jobs:
             done
 
             ./scripts/signed-release-reboot-gate.sh \
-              "${GITHUB_WORKSPACE}/artifacts/Majdoor-Hisaab-PRO-release.apk" \
-              "${GITHUB_WORKSPACE}/artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk"
-
-      # =========================================================
-      # 25. FINAL 541-566 GATE
-      # =========================================================
+              "$GITHUB_WORKSPACE/artifacts/Majdoor-Hisaab-PRO-release.apk" \
+              "$GITHUB_WORKSPACE/artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk"
 
       - name: FINAL RELEASE GATE 541-566
         shell: bash
@@ -884,10 +828,6 @@ jobs:
           set -Eeuo pipefail
 
           ./scripts/final-release-gate.sh
-
-      # =========================================================
-      # 26. FINAL ARTIFACT CHECK
-      # =========================================================
 
       - name: Verify final artifacts
         shell: bash
@@ -902,16 +842,13 @@ jobs:
             --verbose \
             artifacts/Majdoor-Hisaab-PRO-release.apk
 
-          sha256sum -c \
+          sha256sum \
+            -c \
             artifacts/Majdoor-Hisaab-PRO-release.sha256
 
           echo "========================================"
           echo "MAJDOOR HISAAB PRO FINAL RELEASE PASS"
           echo "========================================"
-
-      # =========================================================
-      # 27. ARTIFACT UPLOAD
-      # =========================================================
 
       - name: Upload final artifacts
         if: ${{ always() }}
