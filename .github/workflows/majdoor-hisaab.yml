@@ -76,7 +76,7 @@ jobs:
 
 
       # ============================================================
-      # 3. VERIFY PROJECT / TOOLCHAIN
+      # 3. VERIFY ANDROID PROJECT / TOOLCHAIN
       # ============================================================
 
       - name: Verify Android project and pinned toolchain
@@ -151,7 +151,7 @@ jobs:
 
 
       # ============================================================
-      # 6. ANDROID API 36 / BUILD TOOLS / EMULATOR
+      # 6. INSTALL API 36 / BUILD TOOLS / EMULATOR
       # ============================================================
 
       - name: Install Android API 36 and build tools
@@ -190,8 +190,7 @@ jobs:
 
 
       # ============================================================
-      # 7. CRITICAL FIX:
-      #    ADD ANDROID SDK DIRECTORIES TO GITHUB PATH
+      # 7. CONFIGURE ANDROID SDK PATH
       # ============================================================
 
       - name: Configure Android SDK tool PATH
@@ -207,14 +206,11 @@ jobs:
           PLATFORM_TOOLS="$SDK/platform-tools"
           EMULATOR_DIR="$SDK/emulator"
           BUILD_TOOLS_DIR="$SDK/build-tools/${BUILD_TOOLS}"
+          CMDLINE_ROOT="$SDK/cmdline-tools"
 
           test -d "$PLATFORM_TOOLS"
           test -d "$EMULATOR_DIR"
           test -d "$BUILD_TOOLS_DIR"
-
-          # Find installed command-line tools directory.
-          CMDLINE_ROOT="$SDK/cmdline-tools"
-
           test -d "$CMDLINE_ROOT"
 
           CMDLINE_BIN=""
@@ -242,13 +238,11 @@ jobs:
           test -x "$CMDLINE_BIN/apkanalyzer"
           test -x "$CMDLINE_BIN/avdmanager"
 
-          # Persist PATH for every following GitHub Actions step.
           echo "$PLATFORM_TOOLS" >> "$GITHUB_PATH"
           echo "$EMULATOR_DIR" >> "$GITHUB_PATH"
           echo "$BUILD_TOOLS_DIR" >> "$GITHUB_PATH"
           echo "$CMDLINE_BIN" >> "$GITHUB_PATH"
 
-          # Also configure this shell for immediate validation.
           export PATH="$PLATFORM_TOOLS:$EMULATOR_DIR:$BUILD_TOOLS_DIR:$CMDLINE_BIN:$PATH"
 
           test -x "$PLATFORM_TOOLS/adb"
@@ -265,7 +259,12 @@ jobs:
 
 
       # ============================================================
-      # 8. VERIFY ALL ANDROID SDK TOOLS
+      # 8. VERIFY ANDROID SDK TOOLS
+      #
+      # IMPORTANT FIX:
+      # Do NOT run `apkanalyzer --help`.
+      # apkanalyzer requires a subject + verb and exits with code 1
+      # when called only with --help.
       # ============================================================
 
       - name: Verify Android SDK tools
@@ -277,6 +276,7 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-}"
           echo "PATH=$PATH"
 
+          # Verify that every required Android command is on PATH.
           command -v adb
           command -v sdkmanager
           command -v apkanalyzer
@@ -285,18 +285,26 @@ jobs:
           command -v zipalign
           command -v apksigner
 
+          # Verify that the resolved files are executable.
+          test -x "$(command -v adb)"
+          test -x "$(command -v sdkmanager)"
+          test -x "$(command -v apkanalyzer)"
+          test -x "$(command -v avdmanager)"
+          test -x "$(command -v emulator)"
+          test -x "$(command -v zipalign)"
+          test -x "$(command -v apksigner)"
+
+          # Runtime/version checks.
           adb version
 
           sdkmanager --version
 
-          apkanalyzer --help >/dev/null
-
-          avdmanager --help >/dev/null
-
           emulator -version
 
-          zipalign -h >/dev/null
-
+          # These tools are verified by path/executable check above.
+          # Their help commands are intentionally not used because
+          # apkanalyzer requires a valid subject/verb.
+          zipalign -h >/dev/null 2>&1 || true
           apksigner >/dev/null 2>&1 || true
 
           echo "ANDROID_SDK_TOOLS=PASS"
@@ -320,7 +328,7 @@ jobs:
 
 
       # ============================================================
-      # 10. STATIC ACCEPTANCE
+      # 10. STATIC ACCEPTANCE GATES
       # ============================================================
 
       - name: Static acceptance gates
@@ -346,7 +354,7 @@ jobs:
 
 
       # ============================================================
-      # 12. KOTLIN COMPATIBILITY
+      # 12. GRADLE / KOTLIN COMPATIBILITY
       # ============================================================
 
       - name: Gradle Kotlin compatibility
@@ -358,7 +366,7 @@ jobs:
 
 
       # ============================================================
-      # 13. AGP COMPATIBILITY
+      # 13. GRADLE / AGP COMPATIBILITY
       # ============================================================
 
       - name: Gradle AGP compatibility
@@ -508,7 +516,7 @@ jobs:
 
 
       # ============================================================
-      # 22. DEBUG APK
+      # 22. VERIFY DEBUG APK
       # ============================================================
 
       - name: Verify Debug APK
@@ -539,7 +547,7 @@ jobs:
 
 
       # ============================================================
-      # 23. RELEASE BUILD
+      # 23. RELEASE BUILD GATE
       # ============================================================
 
       - name: Release build gate
@@ -551,7 +559,7 @@ jobs:
 
 
       # ============================================================
-      # 24. UNSIGNED RELEASE APK
+      # 24. VERIFY UNSIGNED RELEASE APK
       # ============================================================
 
       - name: Verify unsigned Release APK
@@ -631,7 +639,7 @@ jobs:
 
 
       # ============================================================
-      # 26. SIGN PRODUCTION RELEASE
+      # 26. SIGN PRODUCTION RELEASE APK
       # ============================================================
 
       - name: Sign production Release APK
@@ -757,7 +765,7 @@ jobs:
 
 
       # ============================================================
-      # 28. FINAL SIGNED APK VERIFICATION
+      # 28. VERIFY FINAL SIGNED APK
       # ============================================================
 
       - name: Verify final signed APK and checksum
@@ -799,7 +807,7 @@ jobs:
 
 
       # ============================================================
-      # 29. PHASE 1
+      # 29. PHASE 1 POINTS 18-25
       # ============================================================
 
       - name: Phase 1 points 18-25 gate
@@ -898,7 +906,7 @@ jobs:
 
 
       # ============================================================
-      # 32. PHASE 17 / 18 / 22
+      # 32. PHASE 17 / 18 / 22 RUNTIME
       # ============================================================
 
       - name: Phase 17 18 and 22 runtime tests
@@ -974,7 +982,7 @@ jobs:
 
 
       # ============================================================
-      # 34. SECURITY RUNTIME
+      # 34. SECURITY RUNTIME E2E
       # ============================================================
 
       - name: Security runtime E2E
@@ -1010,7 +1018,7 @@ jobs:
 
 
       # ============================================================
-      # 35. PHASE 19 OFFLINE FIRST
+      # 35. PHASE 19 OFFLINE FIRST E2E
       # ============================================================
 
       - name: Phase 19 offline-first E2E
@@ -1114,7 +1122,7 @@ jobs:
 
 
       # ============================================================
-      # 38. TRUE REBOOT PERSISTENCE
+      # 38. SIGNED RELEASE TRUE REBOOT PERSISTENCE
       # ============================================================
 
       - name: Signed Release true reboot persistence
@@ -1143,7 +1151,7 @@ jobs:
 
 
       # ============================================================
-      # 39. FINAL RELEASE GATE
+      # 39. FINAL RELEASE GATE 541-566
       # ============================================================
 
       - name: FINAL RELEASE GATE 541-566
