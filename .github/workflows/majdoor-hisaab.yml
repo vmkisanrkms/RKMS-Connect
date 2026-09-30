@@ -38,7 +38,7 @@ jobs:
 
 
       # ============================================================
-      # 2. EXTRACT LOCKED PROJECT
+      # 2. EXTRACT LOCKED PROJECT ZIP
       # ============================================================
 
       - name: Extract locked project ZIP into repository root
@@ -76,7 +76,7 @@ jobs:
 
 
       # ============================================================
-      # 3. VERIFY ANDROID PROJECT / TOOLCHAIN
+      # 3. VERIFY ANDROID PROJECT / PINNED TOOLCHAIN
       # ============================================================
 
       - name: Verify Android project and pinned toolchain
@@ -151,7 +151,50 @@ jobs:
 
 
       # ============================================================
-      # 6. INSTALL API 36 / BUILD TOOLS / EMULATOR
+      # 6. ANDROID EMULATOR LINUX DEPENDENCIES
+      #
+      # FIX:
+      # Android Emulator/QEMU requires libpulse.so.0.
+      # Ubuntu runner may not have it available.
+      # ============================================================
+
+      - name: Install Android Emulator Linux dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            libpulse0 \
+            libx11-6 \
+            libxcb1 \
+            libxdamage1 \
+            libnss3 \
+            libxcomposite1 \
+            libxcursor1 \
+            libxi6 \
+            libxtst6 \
+            libxrandr2 \
+            libgl1 \
+            libglu1-mesa \
+            libfontconfig1 \
+            libdbus-1-3 \
+            libasound2t64
+
+          sudo ldconfig
+
+          echo "Checking required emulator libraries..."
+
+          ldconfig -p | grep -F "libpulse.so.0"
+
+          test -n "$(ldconfig -p | grep -F "libpulse.so.0" || true)"
+
+          echo "ANDROID_EMULATOR_LINUX_DEPS=PASS"
+
+
+      # ============================================================
+      # 7. INSTALL ANDROID API 36 / BUILD TOOLS / EMULATOR
       # ============================================================
 
       - name: Install Android API 36 and build tools
@@ -190,7 +233,7 @@ jobs:
 
 
       # ============================================================
-      # 7. CONFIGURE ANDROID SDK PATH
+      # 8. CONFIGURE ANDROID SDK PATH
       # ============================================================
 
       - name: Configure Android SDK tool PATH
@@ -259,12 +302,14 @@ jobs:
 
 
       # ============================================================
-      # 8. VERIFY ANDROID SDK TOOLS
+      # 9. VERIFY ANDROID SDK TOOLS
       #
-      # IMPORTANT FIX:
-      # Do NOT run `apkanalyzer --help`.
-      # apkanalyzer requires a subject + verb and exits with code 1
-      # when called only with --help.
+      # IMPORTANT:
+      # DO NOT run:
+      #     apkanalyzer --help
+      #
+      # apkanalyzer requires a valid subject/verb and returns
+      # exit code 1 when called only with --help.
       # ============================================================
 
       - name: Verify Android SDK tools
@@ -276,7 +321,6 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-}"
           echo "PATH=$PATH"
 
-          # Verify that every required Android command is on PATH.
           command -v adb
           command -v sdkmanager
           command -v apkanalyzer
@@ -285,7 +329,6 @@ jobs:
           command -v zipalign
           command -v apksigner
 
-          # Verify that the resolved files are executable.
           test -x "$(command -v adb)"
           test -x "$(command -v sdkmanager)"
           test -x "$(command -v apkanalyzer)"
@@ -294,24 +337,21 @@ jobs:
           test -x "$(command -v zipalign)"
           test -x "$(command -v apksigner)"
 
-          # Runtime/version checks.
           adb version
 
           sdkmanager --version
 
           emulator -version
 
-          # These tools are verified by path/executable check above.
-          # Their help commands are intentionally not used because
-          # apkanalyzer requires a valid subject/verb.
           zipalign -h >/dev/null 2>&1 || true
+
           apksigner >/dev/null 2>&1 || true
 
           echo "ANDROID_SDK_TOOLS=PASS"
 
 
       # ============================================================
-      # 9. GRADLE WRAPPER
+      # 10. PREPARE GRADLE WRAPPER
       # ============================================================
 
       - name: Prepare Gradle wrapper
@@ -328,7 +368,7 @@ jobs:
 
 
       # ============================================================
-      # 10. STATIC ACCEPTANCE GATES
+      # 11. STATIC ACCEPTANCE GATES
       # ============================================================
 
       - name: Static acceptance gates
@@ -342,7 +382,7 @@ jobs:
 
 
       # ============================================================
-      # 11. DEPENDENCY HEALTH
+      # 12. DEPENDENCY HEALTH
       # ============================================================
 
       - name: Dependency health
@@ -354,7 +394,7 @@ jobs:
 
 
       # ============================================================
-      # 12. GRADLE / KOTLIN COMPATIBILITY
+      # 13. GRADLE KOTLIN COMPATIBILITY
       # ============================================================
 
       - name: Gradle Kotlin compatibility
@@ -366,7 +406,7 @@ jobs:
 
 
       # ============================================================
-      # 13. GRADLE / AGP COMPATIBILITY
+      # 14. GRADLE AGP COMPATIBILITY
       # ============================================================
 
       - name: Gradle AGP compatibility
@@ -378,7 +418,7 @@ jobs:
 
 
       # ============================================================
-      # 14. ARCHITECTURE
+      # 15. ARCHITECTURE GATE
       # ============================================================
 
       - name: Architecture gate
@@ -390,7 +430,7 @@ jobs:
 
 
       # ============================================================
-      # 15. CONFIGURATION LIFECYCLE
+      # 16. CONFIGURATION LIFECYCLE GATE
       # ============================================================
 
       - name: Configuration lifecycle gate
@@ -402,7 +442,7 @@ jobs:
 
 
       # ============================================================
-      # 16. OFFLINE FIRST
+      # 17. OFFLINE FIRST GATE
       # ============================================================
 
       - name: Offline first gate
@@ -414,7 +454,7 @@ jobs:
 
 
       # ============================================================
-      # 17. SECURITY DATA
+      # 18. SECURITY DATA GATE
       # ============================================================
 
       - name: Security data gate
@@ -426,7 +466,7 @@ jobs:
 
 
       # ============================================================
-      # 18. UI / UX
+      # 19. UI UX GATE
       # ============================================================
 
       - name: UI UX gate
@@ -438,7 +478,7 @@ jobs:
 
 
       # ============================================================
-      # 19. CLEAN DEPENDENCY RESOLUTION
+      # 20. CLEAN DEPENDENCY RESOLUTION
       # ============================================================
 
       - name: Clean dependency resolution
@@ -482,7 +522,7 @@ jobs:
 
 
       # ============================================================
-      # 20. UNIT TESTS
+      # 21. UNIT TESTS
       # ============================================================
 
       - name: Unit tests
@@ -494,7 +534,7 @@ jobs:
 
 
       # ============================================================
-      # 21. COMPILE REQUIRED VARIANTS
+      # 22. COMPILE ALL REQUIRED VARIANTS
       # ============================================================
 
       - name: Compile all required variants
@@ -516,7 +556,7 @@ jobs:
 
 
       # ============================================================
-      # 22. VERIFY DEBUG APK
+      # 23. VERIFY DEBUG APK
       # ============================================================
 
       - name: Verify Debug APK
@@ -547,7 +587,7 @@ jobs:
 
 
       # ============================================================
-      # 23. RELEASE BUILD GATE
+      # 24. RELEASE BUILD GATE
       # ============================================================
 
       - name: Release build gate
@@ -559,7 +599,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY UNSIGNED RELEASE APK
+      # 25. VERIFY UNSIGNED RELEASE APK
       # ============================================================
 
       - name: Verify unsigned Release APK
@@ -589,7 +629,7 @@ jobs:
 
 
       # ============================================================
-      # 25. RESTORE PRODUCTION SIGNING KEY
+      # 26. RESTORE PRODUCTION SIGNING KEY
       # ============================================================
 
       - name: Restore production signing key
@@ -639,7 +679,7 @@ jobs:
 
 
       # ============================================================
-      # 26. SIGN PRODUCTION RELEASE APK
+      # 27. SIGN PRODUCTION RELEASE APK
       # ============================================================
 
       - name: Sign production Release APK
@@ -749,7 +789,7 @@ jobs:
 
 
       # ============================================================
-      # 27. PRODUCTION SIGNING GATE
+      # 28. PRODUCTION SIGNING GATE
       # ============================================================
 
       - name: Production signing gate
@@ -765,7 +805,7 @@ jobs:
 
 
       # ============================================================
-      # 28. VERIFY FINAL SIGNED APK
+      # 29. VERIFY FINAL SIGNED APK
       # ============================================================
 
       - name: Verify final signed APK and checksum
@@ -807,7 +847,7 @@ jobs:
 
 
       # ============================================================
-      # 29. PHASE 1 POINTS 18-25
+      # 30. PHASE 1 POINTS 18-25 GATE
       # ============================================================
 
       - name: Phase 1 points 18-25 gate
@@ -820,7 +860,7 @@ jobs:
 
 
       # ============================================================
-      # 30. DEBUG RUNTIME
+      # 31. DEBUG RUNTIME
       # ============================================================
 
       - name: Install and launch Debug APK
@@ -876,7 +916,7 @@ jobs:
 
 
       # ============================================================
-      # 31. ANDROID API 36 CORE E2E
+      # 32. ANDROID API 36 CORE E2E
       # ============================================================
 
       - name: Android API 36 Core E2E
@@ -906,7 +946,7 @@ jobs:
 
 
       # ============================================================
-      # 32. PHASE 17 / 18 / 22 RUNTIME
+      # 33. PHASE 17 / 18 / 22 RUNTIME TESTS
       # ============================================================
 
       - name: Phase 17 18 and 22 runtime tests
@@ -946,7 +986,7 @@ jobs:
 
 
       # ============================================================
-      # 33. CLEAN INSTALL / BACKUP / RESTORE
+      # 34. CLEAN INSTALL / BACKUP / RESTORE E2E
       # ============================================================
 
       - name: Clean install backup restore E2E
@@ -982,7 +1022,7 @@ jobs:
 
 
       # ============================================================
-      # 34. SECURITY RUNTIME E2E
+      # 35. SECURITY RUNTIME E2E
       # ============================================================
 
       - name: Security runtime E2E
@@ -1018,7 +1058,7 @@ jobs:
 
 
       # ============================================================
-      # 35. PHASE 19 OFFLINE FIRST E2E
+      # 36. PHASE 19 OFFLINE-FIRST E2E
       # ============================================================
 
       - name: Phase 19 offline-first E2E
@@ -1051,7 +1091,7 @@ jobs:
 
 
       # ============================================================
-      # 36. PHASE 22 RED LIST
+      # 37. PHASE 22 RED-LIST GATE
       # ============================================================
 
       - name: Phase 22 red-list gate
@@ -1063,7 +1103,7 @@ jobs:
 
 
       # ============================================================
-      # 37. SIGNED RELEASE RUNTIME
+      # 38. SIGNED RELEASE RUNTIME
       # ============================================================
 
       - name: Signed Release runtime
@@ -1122,7 +1162,7 @@ jobs:
 
 
       # ============================================================
-      # 38. SIGNED RELEASE TRUE REBOOT PERSISTENCE
+      # 39. SIGNED RELEASE TRUE REBOOT PERSISTENCE
       # ============================================================
 
       - name: Signed Release true reboot persistence
@@ -1151,7 +1191,7 @@ jobs:
 
 
       # ============================================================
-      # 39. FINAL RELEASE GATE 541-566
+      # 40. FINAL RELEASE GATE 541-566
       # ============================================================
 
       - name: FINAL RELEASE GATE 541-566
@@ -1163,7 +1203,7 @@ jobs:
 
 
       # ============================================================
-      # 40. FINAL ARTIFACT VERIFICATION
+      # 41. FINAL ARTIFACT VERIFICATION
       # ============================================================
 
       - name: Verify final artifacts
@@ -1189,7 +1229,7 @@ jobs:
 
 
       # ============================================================
-      # 41. UPLOAD FINAL ARTIFACTS
+      # 42. UPLOAD FINAL ARTIFACTS
       # ============================================================
 
       - name: Upload final artifacts
