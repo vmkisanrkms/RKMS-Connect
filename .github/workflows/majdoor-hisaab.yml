@@ -24,12 +24,22 @@ jobs:
   build-test-sign-runtime:
     name: FINAL BUILD / TEST / SIGN / RUNTIME
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
 
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      # ============================================================
+      # 2. EXTRACT LOCKED PROJECT
+      # ============================================================
 
       - name: Extract locked project ZIP into repository root
         shell: bash
@@ -64,6 +74,10 @@ jobs:
 
           echo "ZIP_PROJECT_EXTRACTION=PASS"
 
+      # ============================================================
+      # 3. PROJECT / TOOLCHAIN VERIFICATION
+      # ============================================================
+
       - name: Verify Android project and pinned toolchain
         shell: bash
         run: |
@@ -79,37 +93,51 @@ jobs:
           test -s gradle/wrapper/gradle-wrapper.properties
           test -s gradle/wrapper/gradle-wrapper.jar
 
-          grep -q 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
+          grep -q \
+            'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
             gradle/wrapper/gradle-wrapper.properties
 
-          grep -q 'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
+          grep -q \
+            'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
             gradle/wrapper/gradle-wrapper.properties
 
-          grep -q 'id("com.android.application") version "8.9.1"' \
+          grep -q \
+            'id("com.android.application") version "8.9.1"' \
             build.gradle.kts
 
-          grep -q 'id("org.jetbrains.kotlin.android") version "2.1.21"' \
+          grep -q \
+            'id("org.jetbrains.kotlin.android") version "2.1.21"' \
             build.gradle.kts
 
-          grep -q 'applicationId = "com.majdoor.hisaab"' \
+          grep -q \
+            'applicationId = "com.majdoor.hisaab"' \
             app/build.gradle.kts
 
-          grep -q 'versionCode = 77' \
+          grep -q \
+            'versionCode = 77' \
             app/build.gradle.kts
 
-          grep -q 'versionName = "1.77.0"' \
+          grep -q \
+            'versionName = "1.77.0"' \
             app/build.gradle.kts
 
-          grep -q 'compileSdk = 36' \
+          grep -q \
+            'compileSdk = 36' \
             app/build.gradle.kts
 
-          grep -q 'targetSdk = 36' \
+          grep -q \
+            'targetSdk = 36' \
             app/build.gradle.kts
 
-          grep -q 'jvmTarget = "17"' \
+          grep -q \
+            'jvmTarget = "17"' \
             app/build.gradle.kts
 
           echo "ANDROID_PROJECT_AND_TOOLCHAIN=PASS"
+
+      # ============================================================
+      # 4. JAVA 17
+      # ============================================================
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -117,20 +145,65 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # ============================================================
+      # 5. ANDROID SDK
+      #
+      # IMPORTANT:
+      # Do NOT allow android-actions/setup-android to install
+      # the obsolete "tools" package.
+      # This was the exact failure in Run #93.
+      # ============================================================
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      # ============================================================
+      # 6. INSTALL REQUIRED API 36 COMPONENTS
+      # ============================================================
 
       - name: Install Android API 36 and build tools
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          yes | sdkmanager --licenses >/dev/null || true
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
-          sdkmanager \
+          test -n "$ANDROID_SDK_ROOT"
+          test -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            || test -x "$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
+
+          SDKMANAGER="$(command -v sdkmanager || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+              SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+            else
+              SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
+            fi
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
+
+          test -d "$ANDROID_SDK_ROOT/platforms/android-36"
+          test -d "$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          test -x "$ANDROID_SDK_ROOT/platform-tools/adb"
+
+          echo "ANDROID_API_36=PASS"
+          echo "BUILD_TOOLS_36=PASS"
+          echo "PLATFORM_TOOLS=PASS"
+
+      # ============================================================
+      # 7. GRADLE WRAPPER
+      # ============================================================
 
       - name: Prepare Gradle wrapper
         shell: bash
@@ -139,10 +212,19 @@ jobs:
 
           chmod +x ./gradlew
 
+          test -x ./gradlew
+          test -s gradle/wrapper/gradle-wrapper.jar
+
           ./gradlew --version
 
           ./gradlew --version |
             grep -F "Gradle ${GRADLE_VERSION}"
+
+          echo "GRADLE_WRAPPER=PASS"
+
+      # ============================================================
+      # 8. STATIC ACCEPTANCE
+      # ============================================================
 
       - name: Static acceptance gates
         shell: bash
@@ -209,6 +291,10 @@ jobs:
 
           ./scripts/phase21-ui-ux-gate.sh
 
+      # ============================================================
+      # 9. DEPENDENCY RESOLUTION
+      # ============================================================
+
       - name: Clean dependency resolution
         shell: bash
         run: |
@@ -248,12 +334,23 @@ jobs:
             --refresh-dependencies \
             buildEnvironment
 
+      # ============================================================
+      # 10. UNIT TESTS
+      # ============================================================
+
       - name: Unit tests
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ./gradlew --no-daemon test
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            test
+
+      # ============================================================
+      # 11. COMPILE ALL REQUIRED VARIANTS
+      # ============================================================
 
       - name: Compile all required variants
         shell: bash
@@ -271,6 +368,10 @@ jobs:
             compileReleaseKotlin \
             assembleRelease \
             assembleReleaseAndroidTest
+
+      # ============================================================
+      # 12. DEBUG APK
+      # ============================================================
 
       - name: Verify Debug APK
         shell: bash
@@ -298,12 +399,22 @@ jobs:
           sha256sum "$APK" |
             tee artifacts/debug/Majdoor-Hisaab-PRO-debug.sha256
 
+          echo "DEBUG_APK=PASS"
+
+      # ============================================================
+      # 13. RELEASE BUILD
+      # ============================================================
+
       - name: Release build gate
         shell: bash
         run: |
           set -Eeuo pipefail
 
           ./scripts/release-build-gate.sh
+
+      # ============================================================
+      # 14. UNSIGNED RELEASE APK
+      # ============================================================
 
       - name: Verify unsigned Release APK
         shell: bash
@@ -330,6 +441,12 @@ jobs:
 
           unzip -t "$APK" >/dev/null
 
+          echo "UNSIGNED_RELEASE_APK=PASS"
+
+      # ============================================================
+      # 15. PRODUCTION KEY
+      # ============================================================
+
       - name: Restore production signing key
         env:
           KEYSTORE_B64: ${{ secrets.MH_RELEASE_KEYSTORE_BASE64 }}
@@ -353,7 +470,9 @@ jobs:
 
           test -s release.keystore
 
-          keytool -list -v \
+          keytool \
+            -list \
+            -v \
             -keystore release.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS" > cert.txt
@@ -374,6 +493,10 @@ jobs:
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
           echo "PRODUCTION_CERTIFICATE=PASS"
+
+      # ============================================================
+      # 16. SIGN RELEASE APK + ANDROID TEST APK
+      # ============================================================
 
       - name: Sign production Release APK
         env:
@@ -397,6 +520,8 @@ jobs:
           test -s "$UNSIGNED"
           test -s "$TEST_UNSIGNED"
           test -s release.keystore
+
+          mkdir -p artifacts
 
           zipalign \
             -f \
@@ -470,7 +595,7 @@ jobs:
           apksigner verify \
             --verbose \
             --print-certs \
-            "$TEST_SIGNED" >/dev/null
+            "$TEST_SIGNED"
 
           rm -f \
             "$ALIGNED" \
@@ -479,6 +604,10 @@ jobs:
             release.keystore
 
           echo "PRODUCTION_SIGNING=PASS"
+
+      # ============================================================
+      # 17. SIGNING GATE
+      # ============================================================
 
       - name: Production signing gate
         env:
@@ -490,6 +619,10 @@ jobs:
 
           ./scripts/production-signing-gate.sh \
             artifacts/Majdoor-Hisaab-PRO-release.apk
+
+      # ============================================================
+      # 18. FINAL APK VERIFICATION
+      # ============================================================
 
       - name: Verify final signed APK and checksum
         shell: bash
@@ -523,10 +656,16 @@ jobs:
             tee artifacts/release-signature-final.txt
 
           sha256sum \
-            artifacts/Majdoor-Hisaab-PRO-release.apk |
+            "$APK" |
             tee artifacts/Majdoor-Hisaab-PRO-release.sha256
 
           test -s artifacts/Majdoor-Hisaab-PRO-release.sha256
+
+          echo "FINAL_APK_VERIFICATION=PASS"
+
+      # ============================================================
+      # 19. PHASE 1
+      # ============================================================
 
       - name: Phase 1 points 18-25 gate
         shell: bash
@@ -535,6 +674,10 @@ jobs:
 
           ./scripts/phase1-points-18-25-gate.sh \
             artifacts/Majdoor-Hisaab-PRO-release.apk
+
+      # ============================================================
+      # 20. DEBUG APK RUNTIME
+      # ============================================================
 
       - name: Install and launch Debug APK
         uses: reactivecircus/android-emulator-runner@v2
@@ -587,6 +730,12 @@ jobs:
               exit 1
             fi
 
+            echo "DEBUG_RUNTIME=PASS"
+
+      # ============================================================
+      # 21. CORE E2E
+      # ============================================================
+
       - name: Android API 36 Core E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -611,6 +760,10 @@ jobs:
               --no-daemon \
               --stacktrace \
               connectedE2eReleaseAndroidTest
+
+      # ============================================================
+      # 22. PHASE 17 / 18 / 22 RUNTIME
+      # ============================================================
 
       - name: Phase 17 18 and 22 runtime tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -647,6 +800,10 @@ jobs:
             touch \
               artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
 
+      # ============================================================
+      # 23. CLEAN INSTALL / BACKUP / RESTORE
+      # ============================================================
+
       - name: Clean install backup restore E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -677,6 +834,10 @@ jobs:
 
             touch \
               artifacts/release-e2e/markers/552_553_clean_install_restore_totals.pass
+
+      # ============================================================
+      # 24. SECURITY RUNTIME
+      # ============================================================
 
       - name: Security runtime E2E
         uses: reactivecircus/android-emulator-runner@v2
@@ -709,6 +870,10 @@ jobs:
             touch \
               artifacts/release-e2e/markers/554_security_runtime.pass
 
+      # ============================================================
+      # 25. OFFLINE FIRST
+      # ============================================================
+
       - name: Phase 19 offline-first E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -737,12 +902,20 @@ jobs:
 
             ./scripts/phase19-offline-first-gate.sh
 
+      # ============================================================
+      # 26. PHASE 22 RED LIST
+      # ============================================================
+
       - name: Phase 22 red-list gate
         shell: bash
         run: |
           set -Eeuo pipefail
 
           ./scripts/phase22-final-red-list-gate.sh
+
+      # ============================================================
+      # 27. SIGNED RELEASE RUNTIME
+      # ============================================================
 
       - name: Signed Release runtime
         uses: reactivecircus/android-emulator-runner@v2
@@ -798,6 +971,10 @@ jobs:
             touch \
               artifacts/release-e2e/markers/550_offline_runtime.pass
 
+      # ============================================================
+      # 28. TRUE REBOOT PERSISTENCE
+      # ============================================================
+
       - name: Signed Release true reboot persistence
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -822,12 +999,20 @@ jobs:
               "$GITHUB_WORKSPACE/artifacts/Majdoor-Hisaab-PRO-release.apk" \
               "$GITHUB_WORKSPACE/artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk"
 
+      # ============================================================
+      # 29. FINAL RELEASE GATE
+      # ============================================================
+
       - name: FINAL RELEASE GATE 541-566
         shell: bash
         run: |
           set -Eeuo pipefail
 
           ./scripts/final-release-gate.sh
+
+      # ============================================================
+      # 30. FINAL ARTIFACT CHECK
+      # ============================================================
 
       - name: Verify final artifacts
         shell: bash
@@ -849,6 +1034,10 @@ jobs:
           echo "========================================"
           echo "MAJDOOR HISAAB PRO FINAL RELEASE PASS"
           echo "========================================"
+
+      # ============================================================
+      # 31. UPLOAD ARTIFACTS
+      # ============================================================
 
       - name: Upload final artifacts
         if: ${{ always() }}
