@@ -152,10 +152,6 @@ jobs:
 
       # ============================================================
       # 6. ANDROID EMULATOR LINUX DEPENDENCIES
-      #
-      # FIX:
-      # Android Emulator/QEMU requires libpulse.so.0.
-      # Ubuntu runner may not have it available.
       # ============================================================
 
       - name: Install Android Emulator Linux dependencies
@@ -303,13 +299,6 @@ jobs:
 
       # ============================================================
       # 9. VERIFY ANDROID SDK TOOLS
-      #
-      # IMPORTANT:
-      # DO NOT run:
-      #     apkanalyzer --help
-      #
-      # apkanalyzer requires a valid subject/verb and returns
-      # exit code 1 when called only with --help.
       # ============================================================
 
       - name: Verify Android SDK tools
@@ -351,24 +340,71 @@ jobs:
 
 
       # ============================================================
-      # 10. PREPARE GRADLE WRAPPER
+      # 10. SETUP VERIFIED GRADLE 8.11.1
+      #
+      # FIX FOR RUN #100:
+      #
+      # The bundled Wrapper downloaded Gradle 8.11.1 but failed with:
+      #
+      #   Gradle distribution did not contain bin/gradle
+      #
+      # Therefore CI uses the official setup-gradle action to install
+      # Gradle 8.11.1 directly and put it on PATH.
       # ============================================================
 
-      - name: Prepare Gradle wrapper
+      - name: Setup Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+          cache-provider: basic
+          validate-wrappers: true
+
+
+      # ============================================================
+      # 11. PREPARE GRADLE LAUNCHER
+      #
+      # Keep all existing scripts which call ./gradlew working,
+      # while the actual executable comes from the verified Gradle
+      # 8.11.1 installation on PATH.
+      # ============================================================
+
+      - name: Prepare Gradle launcher
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          chmod +x ./gradlew
+          command -v gradle
 
-          ./gradlew --version
+          gradle --version
+
+          gradle --version |
+            grep -F "Gradle ${GRADLE_VERSION}"
+
+          test -x "$(command -v gradle)"
+
+          if [ -f gradlew ]; then
+            mv gradlew gradlew.locked
+          fi
+
+          cat > gradlew <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          exec gradle "$@"
+          EOF
+
+          chmod +x gradlew
+
+          test -x ./gradlew
 
           ./gradlew --version |
             grep -F "Gradle ${GRADLE_VERSION}"
 
+          echo "GRADLE_8_11_1=PASS"
+          echo "GRADLE_LAUNCHER=PASS"
+
 
       # ============================================================
-      # 11. STATIC ACCEPTANCE GATES
+      # 12. STATIC ACCEPTANCE GATES
       # ============================================================
 
       - name: Static acceptance gates
@@ -382,7 +418,7 @@ jobs:
 
 
       # ============================================================
-      # 12. DEPENDENCY HEALTH
+      # 13. DEPENDENCY HEALTH
       # ============================================================
 
       - name: Dependency health
@@ -394,7 +430,7 @@ jobs:
 
 
       # ============================================================
-      # 13. GRADLE KOTLIN COMPATIBILITY
+      # 14. GRADLE KOTLIN COMPATIBILITY
       # ============================================================
 
       - name: Gradle Kotlin compatibility
@@ -406,7 +442,7 @@ jobs:
 
 
       # ============================================================
-      # 14. GRADLE AGP COMPATIBILITY
+      # 15. GRADLE AGP COMPATIBILITY
       # ============================================================
 
       - name: Gradle AGP compatibility
@@ -418,7 +454,7 @@ jobs:
 
 
       # ============================================================
-      # 15. ARCHITECTURE GATE
+      # 16. ARCHITECTURE GATE
       # ============================================================
 
       - name: Architecture gate
@@ -430,7 +466,7 @@ jobs:
 
 
       # ============================================================
-      # 16. CONFIGURATION LIFECYCLE GATE
+      # 17. CONFIGURATION LIFECYCLE GATE
       # ============================================================
 
       - name: Configuration lifecycle gate
@@ -442,7 +478,7 @@ jobs:
 
 
       # ============================================================
-      # 17. OFFLINE FIRST GATE
+      # 18. OFFLINE FIRST GATE
       # ============================================================
 
       - name: Offline first gate
@@ -454,7 +490,7 @@ jobs:
 
 
       # ============================================================
-      # 18. SECURITY DATA GATE
+      # 19. SECURITY DATA GATE
       # ============================================================
 
       - name: Security data gate
@@ -466,7 +502,7 @@ jobs:
 
 
       # ============================================================
-      # 19. UI UX GATE
+      # 20. UI UX GATE
       # ============================================================
 
       - name: UI UX gate
@@ -478,7 +514,7 @@ jobs:
 
 
       # ============================================================
-      # 20. CLEAN DEPENDENCY RESOLUTION
+      # 21. CLEAN DEPENDENCY RESOLUTION
       # ============================================================
 
       - name: Clean dependency resolution
@@ -522,7 +558,7 @@ jobs:
 
 
       # ============================================================
-      # 21. UNIT TESTS
+      # 22. UNIT TESTS
       # ============================================================
 
       - name: Unit tests
@@ -534,7 +570,7 @@ jobs:
 
 
       # ============================================================
-      # 22. COMPILE ALL REQUIRED VARIANTS
+      # 23. COMPILE ALL REQUIRED VARIANTS
       # ============================================================
 
       - name: Compile all required variants
@@ -556,7 +592,7 @@ jobs:
 
 
       # ============================================================
-      # 23. VERIFY DEBUG APK
+      # 24. VERIFY DEBUG APK
       # ============================================================
 
       - name: Verify Debug APK
@@ -587,7 +623,7 @@ jobs:
 
 
       # ============================================================
-      # 24. RELEASE BUILD GATE
+      # 25. RELEASE BUILD GATE
       # ============================================================
 
       - name: Release build gate
@@ -599,7 +635,7 @@ jobs:
 
 
       # ============================================================
-      # 25. VERIFY UNSIGNED RELEASE APK
+      # 26. VERIFY UNSIGNED RELEASE APK
       # ============================================================
 
       - name: Verify unsigned Release APK
@@ -629,7 +665,7 @@ jobs:
 
 
       # ============================================================
-      # 26. RESTORE PRODUCTION SIGNING KEY
+      # 27. RESTORE PRODUCTION SIGNING KEY
       # ============================================================
 
       - name: Restore production signing key
@@ -679,7 +715,7 @@ jobs:
 
 
       # ============================================================
-      # 27. SIGN PRODUCTION RELEASE APK
+      # 28. SIGN PRODUCTION RELEASE APK
       # ============================================================
 
       - name: Sign production Release APK
@@ -789,7 +825,7 @@ jobs:
 
 
       # ============================================================
-      # 28. PRODUCTION SIGNING GATE
+      # 29. PRODUCTION SIGNING GATE
       # ============================================================
 
       - name: Production signing gate
@@ -805,7 +841,7 @@ jobs:
 
 
       # ============================================================
-      # 29. VERIFY FINAL SIGNED APK
+      # 30. VERIFY FINAL SIGNED APK
       # ============================================================
 
       - name: Verify final signed APK and checksum
@@ -847,7 +883,7 @@ jobs:
 
 
       # ============================================================
-      # 30. PHASE 1 POINTS 18-25 GATE
+      # 31. PHASE 1 POINTS 18-25 GATE
       # ============================================================
 
       - name: Phase 1 points 18-25 gate
@@ -860,7 +896,7 @@ jobs:
 
 
       # ============================================================
-      # 31. DEBUG RUNTIME
+      # 32. DEBUG RUNTIME
       # ============================================================
 
       - name: Install and launch Debug APK
@@ -916,7 +952,7 @@ jobs:
 
 
       # ============================================================
-      # 32. ANDROID API 36 CORE E2E
+      # 33. ANDROID API 36 CORE E2E
       # ============================================================
 
       - name: Android API 36 Core E2E
@@ -946,7 +982,7 @@ jobs:
 
 
       # ============================================================
-      # 33. PHASE 17 / 18 / 22 RUNTIME TESTS
+      # 34. PHASE 17 / 18 / 22 RUNTIME TESTS
       # ============================================================
 
       - name: Phase 17 18 and 22 runtime tests
@@ -986,7 +1022,7 @@ jobs:
 
 
       # ============================================================
-      # 34. CLEAN INSTALL / BACKUP / RESTORE E2E
+      # 35. CLEAN INSTALL / BACKUP / RESTORE E2E
       # ============================================================
 
       - name: Clean install backup restore E2E
@@ -1022,7 +1058,7 @@ jobs:
 
 
       # ============================================================
-      # 35. SECURITY RUNTIME E2E
+      # 36. SECURITY RUNTIME E2E
       # ============================================================
 
       - name: Security runtime E2E
@@ -1058,7 +1094,7 @@ jobs:
 
 
       # ============================================================
-      # 36. PHASE 19 OFFLINE-FIRST E2E
+      # 37. PHASE 19 OFFLINE-FIRST E2E
       # ============================================================
 
       - name: Phase 19 offline-first E2E
@@ -1091,7 +1127,7 @@ jobs:
 
 
       # ============================================================
-      # 37. PHASE 22 RED-LIST GATE
+      # 38. PHASE 22 RED-LIST GATE
       # ============================================================
 
       - name: Phase 22 red-list gate
@@ -1103,7 +1139,7 @@ jobs:
 
 
       # ============================================================
-      # 38. SIGNED RELEASE RUNTIME
+      # 39. SIGNED RELEASE RUNTIME
       # ============================================================
 
       - name: Signed Release runtime
@@ -1162,7 +1198,7 @@ jobs:
 
 
       # ============================================================
-      # 39. SIGNED RELEASE TRUE REBOOT PERSISTENCE
+      # 40. SIGNED RELEASE TRUE REBOOT PERSISTENCE
       # ============================================================
 
       - name: Signed Release true reboot persistence
@@ -1191,7 +1227,7 @@ jobs:
 
 
       # ============================================================
-      # 40. FINAL RELEASE GATE 541-566
+      # 41. FINAL RELEASE GATE 541-566
       # ============================================================
 
       - name: FINAL RELEASE GATE 541-566
@@ -1203,7 +1239,7 @@ jobs:
 
 
       # ============================================================
-      # 41. FINAL ARTIFACT VERIFICATION
+      # 42. FINAL ARTIFACT VERIFICATION
       # ============================================================
 
       - name: Verify final artifacts
@@ -1229,7 +1265,7 @@ jobs:
 
 
       # ============================================================
-      # 42. UPLOAD FINAL ARTIFACTS
+      # 43. UPLOAD FINAL ARTIFACTS
       # ============================================================
 
       - name: Upload final artifacts
