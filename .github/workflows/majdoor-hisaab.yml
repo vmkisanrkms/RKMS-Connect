@@ -2,7 +2,8 @@ name: MAJDOOR HISAAB PRO — V101 FINAL RELEASE
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -13,10 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GRADLE_VERSION: 8.11.1
-  ANDROID_API: 36
-  BUILD_TOOLS: 36.0.0
-  PACKAGE_NAME: com.majdoor.hisaab
+  GRADLE_VERSION: "8.11.1"
+  ANDROID_API: "36"
+  BUILD_TOOLS: "36.0.0"
+  PACKAGE_NAME: "com.majdoor.hisaab"
 
 jobs:
   build-test-sign-runtime:
@@ -34,7 +35,7 @@ jobs:
         uses: actions/checkout@v7
 
       # ============================================================
-      # 2. VERIFY CLEAN GITHUB RUNNER
+      # 2. VERIFY GITHUB RUNNER
       # ============================================================
 
       - name: Confirm GitHub hosted runner
@@ -56,7 +57,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Verify Java
         shell: bash
@@ -73,7 +74,7 @@ jobs:
       - name: Set up Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '8.11.1'
+          gradle-version: "8.11.1"
           cache-disabled: true
           validate-wrappers: false
 
@@ -192,18 +193,16 @@ jobs:
           echo "PROJECT_STRUCTURE_GATE=PASS"
 
       # ============================================================
-      # 9. PREPARE GRADLE LAUNCHER
+      # 9. PREPARE PINNED GRADLE LAUNCHER
       # ============================================================
       #
       # IMPORTANT:
       # Do NOT run `gradle :wrapper`.
       #
-      # The audited project already contains:
-      #   gradle/wrapper/gradle-wrapper.jar
-      #   gradle/wrapper/gradle-wrapper.properties
+      # The repository already contains the audited wrapper files.
+      # GitHub Actions provides the verified Gradle 8.11.1 binary.
       #
-      # GitHub Actions has the exact pinned Gradle 8.11.1 installed.
-      # We keep all project build commands going through ./gradlew.
+      # No heredoc is used here, avoiding YAML parser problems.
       # ============================================================
 
       - name: Prepare pinned Gradle 8.11.1 launcher
@@ -238,11 +237,11 @@ jobs:
 
           cp ./gradlew ./gradlew.repository.original
 
-          cat > ./gradlew <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-exec gradle "$@"
-EOF
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -Eeuo pipefail' \
+            'exec gradle "$@"' \
+            > ./gradlew
 
           chmod +x ./gradlew
 
@@ -295,10 +294,6 @@ EOF
             echo "=================================================="
           ' ERR
 
-          # --------------------------------------------------------
-          # BASIC PROJECT CHECK
-          # --------------------------------------------------------
-
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f app/build.gradle.kts
@@ -329,7 +324,7 @@ EOF
             | grep -F "Gradle ${GRADLE_VERSION}"
 
           # --------------------------------------------------------
-          # FRESH DEPENDENCY RESOLUTION
+          # DEPENDENCY RESOLUTION
           # --------------------------------------------------------
 
           ./gradlew \
@@ -380,15 +375,12 @@ EOF
           ./scripts/gradle-kotlin-compatibility.sh
 
           # --------------------------------------------------------
-          # SECURITY / OFFLINE / RUNTIME CONTRACTS
+          # RUNTIME CONTRACTS
           # --------------------------------------------------------
 
           ./scripts/phase17-real-android-runtime-gate.sh
-
           ./scripts/phase18-configuration-lifecycle-gate.sh
-
           ./scripts/phase19-offline-first-gate.sh
-
           ./scripts/phase20-security-data-gate.sh
 
           # --------------------------------------------------------
@@ -458,7 +450,7 @@ EOF
           echo "BUILD_AND_STATIC_GATE=PASS"
 
       # ============================================================
-      # 12. DEBUG APK REAL DEVICE/EMULATOR TEST
+      # 12. DEBUG APK RUNTIME
       # ============================================================
 
       - name: Install and launch Debug APK on API 36 emulator
@@ -551,10 +543,10 @@ EOF
               connectedE2eReleaseAndroidTest
 
       # ============================================================
-      # 14. REPORT / SETTINGS / DATE / SEARCH EVIDENCE
+      # 14. PHASE 17 / 18 RUNTIME EVIDENCE
       # ============================================================
 
-      - name: Run reports settings date search runtime evidence
+      - name: Run Phase 17 and Phase 18 runtime evidence
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -887,7 +879,6 @@ EOF
           )
 
           test -n "$ACTUAL_SIGNED_CERT"
-
           test "$ACTUAL_SIGNED_CERT" = "$EXPECTED_SIGNED_CERT"
 
           unzip -t "$SIGNED" >/dev/null
@@ -1190,7 +1181,7 @@ EOF
             artifacts/Majdoor-Hisaab-PRO-release.sha256
 
       # ============================================================
-      # 31. UPLOAD ONLY WHEN ALL PREVIOUS STEPS PASSED
+      # 31. UPLOAD ONLY AFTER ALL GATES PASS
       # ============================================================
 
       - name: Upload Release artifacts
