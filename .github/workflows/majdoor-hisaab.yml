@@ -53,10 +53,9 @@ jobs:
           validate-wrappers: false
 
       # ============================================================
-      # FIX:
-      # v3 was requesting obsolete SDK package "tools".
-      # v4 is used and only platform-tools is requested here.
-      # API 36 and Build Tools 36 are installed explicitly below.
+      # ANDROID SDK
+      # FIXED: setup-android v4
+      # No obsolete "tools" package is requested.
       # ============================================================
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -78,32 +77,47 @@ jobs:
           echo "BUILD_TOOLS=${BUILD_TOOLS}"
           echo "ANDROID SDK INSTALLATION=PASS"
 
-      - name: Bootstrap repository Gradle Wrapper on clean checkout
+      # ============================================================
+      # GRADLE WRAPPER
+      # FIXED:
+      # Do NOT regenerate the wrapper on the clean GitHub runner.
+      # Validate the wrapper already present in the repository.
+      # ============================================================
+      - name: Validate existing Gradle Wrapper
         run: |
           set -Eeuo pipefail
+
+          echo "=============================================="
+          echo "VALIDATING EXISTING GRADLE WRAPPER"
+          echo "=============================================="
 
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f app/build.gradle.kts
           test -f gradlew
 
-          command -v gradle
-
-          echo "Gradle executable: $(command -v gradle)"
-
-          gradle --version | grep -F "Gradle ${GRADLE_VERSION}"
+          echo "PASS: Gradle project files found"
 
           chmod +x ./gradlew
 
-          GRADLE_BOOTSTRAP_BIN=gradle
-
-          "$GRADLE_BOOTSTRAP_BIN" :wrapper \
-            --gradle-version "${GRADLE_VERSION}" \
-            --gradle-distribution-sha256-sum f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6
-
           test -s gradle/wrapper/gradle-wrapper.jar
+          test -s gradle/wrapper/gradle-wrapper.properties
 
-          ./gradlew --version | grep -F "Gradle ${GRADLE_VERSION}"
+          echo "PASS: Gradle wrapper files found"
+
+          echo ""
+          echo "System Gradle:"
+          gradle --version
+
+          echo ""
+          echo "Repository Gradle Wrapper:"
+          ./gradlew --version
+
+          ./gradlew --version \
+            | grep -F "Gradle ${GRADLE_VERSION}"
+
+          echo ""
+          echo "GRADLE WRAPPER VALIDATION=PASS"
 
       - name: Build project with explicit failure diagnostics
         run: |
