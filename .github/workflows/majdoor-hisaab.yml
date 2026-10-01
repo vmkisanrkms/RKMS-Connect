@@ -342,7 +342,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
-          cache-provider: basic
           validate-wrappers: true
 
 
@@ -402,18 +401,25 @@ jobs:
       # ============================================================
       # 13. DEPENDENCY HEALTH MODULE BRIDGE
       #
-      # Android variant configurations belong to :app.
+      # Android configurations:
       #
-      # Example:
+      # debugRuntimeClasspath
+      # releaseRuntimeClasspath
+      # e2eReleaseRuntimeClasspath
+      # debugUnitTestRuntimeClasspath
       #
-      # WRONG:
-      # ./gradlew dependencies --configuration debugRuntimeClasspath
+      # The old generic:
       #
-      # CORRECT:
-      # ./gradlew :app:dependencies --configuration debugRuntimeClasspath
+      # testRuntimeClasspath
       #
-      # The bridge changes only dependency-report commands for
-      # Android variant configurations.
+      # does NOT exist in this Android :app project.
+      #
+      # Therefore:
+      #
+      # testRuntimeClasspath
+      #        ->
+      # debugUnitTestRuntimeClasspath
+      #
       # ============================================================
 
       - name: Install dependency health Gradle module bridge
@@ -442,6 +448,7 @@ jobs:
 
           for ((i=0; i<${#args[@]}; i++)); do
             case "${args[$i]}" in
+
               dependencies)
                 has_dependencies=1
                 ;;
@@ -459,20 +466,34 @@ jobs:
               --configuration=*)
                 configuration="${args[$i]#--configuration=}"
                 ;;
+
             esac
           done
 
+          # ----------------------------------------------------------
+          # Android mapping for legacy generic test configuration
+          # ----------------------------------------------------------
+
+          if [[ "$configuration" == "testRuntimeClasspath" ]]; then
+            configuration="debugUnitTestRuntimeClasspath"
+          fi
+
           case "$configuration" in
+
             debugRuntimeClasspath|\
+            debugUnitTestRuntimeClasspath|\
             testRuntimeClasspath|\
             e2eReleaseRuntimeClasspath|\
             releaseRuntimeClasspath)
+
               ANDROID_VARIANT_CONFIGURATION=1
               ;;
 
             *)
+
               ANDROID_VARIANT_CONFIGURATION=0
               ;;
+
           esac
 
           if \
@@ -480,20 +501,36 @@ jobs:
             (( has_app_dependencies == 0 )) && \
             (( ANDROID_VARIANT_CONFIGURATION == 1 ))
           then
+
             rewritten=()
 
             for arg in "${args[@]}"; do
+
               if [[ "$arg" == "dependencies" ]]; then
+
                 rewritten+=(":app:dependencies")
+
+              elif [[ "$arg" == "testRuntimeClasspath" ]]; then
+
+                rewritten+=("debugUnitTestRuntimeClasspath")
+
+              elif [[ "$arg" == "--configuration=testRuntimeClasspath" ]]; then
+
+                rewritten+=("--configuration=debugUnitTestRuntimeClasspath")
+
               else
+
                 rewritten+=("$arg")
+
               fi
+
             done
 
             echo "DEPENDENCY_HEALTH_BRIDGE:"
             echo "  configuration=${configuration}"
             echo "  root task=dependencies"
-            echo "  rewritten task=:app:dependencies"
+            echo "  module=:app"
+            echo "  effective configuration=${configuration}"
 
             exec "$REAL" "${rewritten[@]}"
           fi
@@ -512,6 +549,14 @@ jobs:
             --no-daemon \
             :app:dependencies \
             --configuration debugRuntimeClasspath \
+            >/dev/null
+
+          echo "Testing Android unit-test dependency configuration..."
+
+          ./gradlew \
+            --no-daemon \
+            :app:dependencies \
+            --configuration debugUnitTestRuntimeClasspath \
             >/dev/null
 
           echo "DEPENDENCY_HEALTH_MODULE_BRIDGE=PASS"
@@ -659,7 +704,7 @@ jobs:
             --stacktrace \
             --refresh-dependencies \
             :app:dependencies \
-            --configuration testRuntimeClasspath
+            --configuration debugUnitTestRuntimeClasspath
 
           ./gradlew \
             --no-daemon \
