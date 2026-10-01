@@ -61,11 +61,7 @@ jobs:
           java-version: '17'
 
       # ============================================================
-      # 4. GRADLE 8.11.1
-      #
-      # IMPORTANT:
-      # setup-gradle v6 installs the requested Gradle version
-      # and exposes "gradle" on PATH.
+      # 4. GRADLE SETUP
       # ============================================================
 
       - name: Set up Gradle distribution
@@ -77,34 +73,101 @@ jobs:
           validate-wrappers: false
 
       # ============================================================
-      # 5. VERIFY GRADLE INSTALLATION
+      # 5. ENSURE GRADLE 8.11.1 IS AVAILABLE
+      #
+      # Primary:
+      #   gradle/actions/setup-gradle@v6
+      #
+      # Fallback:
+      #   Direct official Gradle distribution download
+      #
+      # This specifically fixes the observed:
+      # "command -v gradle" exit code 1
       # ============================================================
 
-      - name: Verify Gradle distribution
+      - name: Ensure Gradle 8.11.1 is available
+        shell: bash
         run: |
           set -Eeuo pipefail
 
+          echo "=============================================="
+          echo "ENSURING GRADLE ${GRADLE_VERSION}"
+          echo "=============================================="
+
+          echo "JAVA_HOME=${JAVA_HOME}"
           echo "PATH=${PATH}"
 
-          echo "Checking Gradle executable..."
+          if command -v gradle >/dev/null 2>&1; then
+            echo "Gradle command found from setup-gradle."
 
-          GRADLE_BIN="$(command -v gradle || true)"
+            GRADLE_BIN="$(command -v gradle)"
 
-          if [ -z "${GRADLE_BIN}" ]; then
-            echo "ERROR: Gradle executable was not added to PATH."
-            echo "PATH=${PATH}"
-            echo "Gradle setup action output:"
-            echo "setup-gradle version=${{ steps.setup-gradle.outputs.gradle-version }}"
-            exit 1
+            echo "GRADLE_BIN=${GRADLE_BIN}"
+
+            gradle --version
+
+            gradle --version | grep -F "Gradle ${GRADLE_VERSION}"
+
+            echo "GRADLE_SETUP=PASS"
+          else
+            echo "Gradle command was not exposed by setup-gradle."
+            echo "Starting official Gradle distribution fallback."
+
+            TEMP_GRADLE_ROOT="${RUNNER_TEMP}/gradle-${GRADLE_VERSION}"
+
+            rm -rf "${TEMP_GRADLE_ROOT}"
+
+            mkdir -p "${TEMP_GRADLE_ROOT}"
+
+            GRADLE_ZIP="${RUNNER_TEMP}/gradle-${GRADLE_VERSION}-bin.zip"
+
+            GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+
+            echo "Downloading:"
+            echo "${GRADLE_URL}"
+
+            curl \
+              --fail \
+              --location \
+              --retry 5 \
+              --retry-delay 3 \
+              --retry-all-errors \
+              --connect-timeout 30 \
+              --max-time 300 \
+              "${GRADLE_URL}" \
+              --output "${GRADLE_ZIP}"
+
+            test -s "${GRADLE_ZIP}"
+
+            echo "Gradle ZIP downloaded."
+
+            unzip -q "${GRADLE_ZIP}" -d "${TEMP_GRADLE_ROOT}"
+
+            GRADLE_HOME="${TEMP_GRADLE_ROOT}/gradle-${GRADLE_VERSION}"
+
+            test -d "${GRADLE_HOME}"
+
+            test -x "${GRADLE_HOME}/bin/gradle"
+
+            echo "${GRADLE_HOME}/bin" >> "${GITHUB_PATH}"
+
+            export PATH="${GRADLE_HOME}/bin:${PATH}"
+
+            echo "Fallback Gradle installed:"
+            echo "${GRADLE_HOME}"
+
+            command -v gradle
+
+            gradle --version
+
+            gradle --version | grep -F "Gradle ${GRADLE_VERSION}"
+
+            echo "GRADLE_FALLBACK_INSTALLATION=PASS"
           fi
 
-          echo "Gradle executable=${GRADLE_BIN}"
-
-          gradle --version
-
-          gradle --version | grep -F "Gradle ${GRADLE_VERSION}"
-
-          echo "GRADLE_INSTALLATION=PASS"
+          echo "=============================================="
+          echo "GRADLE AVAILABLE=PASS"
+          echo "=============================================="
 
       # ============================================================
       # 6. ANDROID SDK
@@ -136,12 +199,10 @@ jobs:
 
       # ============================================================
       # 8. PREPARE GRADLE WRAPPER
-      #
-      # Clean checkout does not contain a usable wrapper JAR.
-      # Generate it using the verified Gradle 8.11.1 installation.
       # ============================================================
 
       - name: Prepare Gradle Wrapper
+        shell: bash
         run: |
           set -Eeuo pipefail
 
@@ -158,8 +219,9 @@ jobs:
           GRADLE_BIN="$(command -v gradle || true)"
 
           if [ -z "${GRADLE_BIN}" ]; then
-            echo "ERROR: gradle command is unavailable after setup-gradle."
+            echo "ERROR: Gradle is still unavailable."
             echo "PATH=${PATH}"
+            echo "GRADLE_VERSION=${GRADLE_VERSION}"
             exit 1
           fi
 
@@ -189,7 +251,7 @@ jobs:
           echo "GRADLE WRAPPER PREPARATION=PASS"
 
       # ============================================================
-      # 9. BUILD + TEST + VALIDATION
+      # 9. BUILD PROJECT
       # ============================================================
 
       - name: Build project with explicit failure diagnostics
@@ -206,10 +268,9 @@ jobs:
           grep -q 'versionName = "1.77.0"' app/build.gradle.kts
 
           chmod +x scripts/*.sh
+          chmod +x ./gradlew
 
           bash scripts/acceptance-gates.sh
-
-          chmod +x ./gradlew
 
           ./gradlew --version | grep -F 'Gradle 8.11.1'
 
@@ -298,7 +359,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             adb install -r \
@@ -331,7 +391,7 @@ jobs:
             fi
 
       # ============================================================
-      # 11. REAL ANDROID ROTATION + ERROR E2E
+      # 11. ROTATION + ERROR E2E
       # ============================================================
 
       - name: Run real Android rotation + error-state E2E tests
@@ -348,7 +408,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -373,7 +432,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -387,7 +445,7 @@ jobs:
               artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
 
       # ============================================================
-      # 13. CLEAN INSTALL BACKUP / RESTORE
+      # 13. CLEAN INSTALL BACKUP RESTORE
       # ============================================================
 
       - name: Run real clean-install backup/restore E2E
@@ -404,7 +462,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -435,7 +492,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -466,7 +522,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -492,7 +547,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -503,7 +557,7 @@ jobs:
             ./scripts/phase19-offline-first-gate.sh
 
       # ============================================================
-      # 17. VERIFY UNSIGNED RELEASE APK
+      # 17. UNSIGNED RELEASE APK
       # ============================================================
 
       - name: Verify unsigned Release APK
@@ -528,7 +582,7 @@ jobs:
           cp "$APK" artifacts/app-release-unsigned.apk
 
       # ============================================================
-      # 18. RESTORE PRODUCTION SIGNING KEY
+      # 18. SIGNING KEY
       # ============================================================
 
       - name: Restore production signing key
@@ -574,7 +628,7 @@ jobs:
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
       # ============================================================
-      # 19. ZIPALIGN + SIGN RELEASE APK
+      # 19. ZIPALIGN + SIGN
       # ============================================================
 
       - name: Zipalign and sign Release APK
@@ -628,7 +682,6 @@ jobs:
           )
 
           test -n "$ACTUAL_SIGNED_CERT"
-
           test "$ACTUAL_SIGNED_CERT" = "$EXPECTED_SIGNED_CERT"
 
           unzip -t "$SIGNED" >/dev/null
@@ -677,7 +730,7 @@ jobs:
             artifacts/Majdoor-Hisaab-PRO-release.apk
 
       # ============================================================
-      # 21. FINAL SIGNED APK METADATA
+      # 21. SIGNED APK VERIFICATION
       # ============================================================
 
       - name: Verify signed APK metadata and checksum
@@ -713,7 +766,7 @@ jobs:
           test -s artifacts/Majdoor-Hisaab-PRO-release.sha256
 
       # ============================================================
-      # 22. PHASE 1 ARTIFACT GATE
+      # 22. PHASE 1
       # ============================================================
 
       - name: Phase 1 Points 18-25 artifact gate
@@ -724,7 +777,7 @@ jobs:
             artifacts/Majdoor-Hisaab-PRO-release.apk
 
       # ============================================================
-      # 23. PHASE 22 STRUCTURAL RED LIST
+      # 23. PHASE 22 STRUCTURAL
       # ============================================================
 
       - name: Phase 22 red-list structural gate
@@ -734,7 +787,7 @@ jobs:
           ./scripts/phase22-final-red-list-gate.sh
 
       # ============================================================
-      # 24. PHASE 22 FINAL RED LIST E2E
+      # 24. PHASE 22 E2E
       # ============================================================
 
       - name: Phase 22 final red-list Android E2E
@@ -751,7 +804,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             ./gradlew --no-daemon \
@@ -760,7 +812,7 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.class=com.majdoor.hisaab.Phase22FinalRedListE2ETest
 
       # ============================================================
-      # 25. SIGNED RELEASE APK RUNTIME
+      # 25. SIGNED RELEASE RUNTIME
       # ============================================================
 
       - name: Run signed Release APK on API 36 emulator
@@ -777,7 +829,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             adb shell settings put global window_animation_scale 0
@@ -832,7 +883,6 @@ jobs:
             set -Eeuo pipefail
 
             adb wait-for-device
-
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
             adb uninstall "${PACKAGE_NAME}" \
@@ -856,7 +906,7 @@ jobs:
           ./scripts/final-release-gate.sh
 
       # ============================================================
-      # 28. FINAL DOWNLOADABLE ARTIFACT CHECK
+      # 28. FINAL ARTIFACT CHECK
       # ============================================================
 
       - name: Verify downloadable Release artifact set
@@ -864,9 +914,7 @@ jobs:
           set -Eeuo pipefail
 
           test -s artifacts/Majdoor-Hisaab-PRO-release.apk
-
           test -s artifacts/Majdoor-Hisaab-PRO-release.sha256
-
           test -s artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk
 
           echo "DOWNLOADABLE_RELEASE_ARTIFACT=PASS"
@@ -877,7 +925,7 @@ jobs:
             artifacts/Majdoor-Hisaab-PRO-release.sha256
 
       # ============================================================
-      # 29. UPLOAD FINAL RELEASE ARTIFACTS
+      # 29. UPLOAD
       # ============================================================
 
       - name: Upload Release artifacts
