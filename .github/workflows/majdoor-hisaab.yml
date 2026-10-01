@@ -496,8 +496,14 @@ jobs:
             compileE2eReleaseKotlin \
             assembleE2eRelease \
             compileReleaseKotlin \
-            assembleRelease \
-            assembleReleaseAndroidTest
+            assembleRelease
+
+          # IMPORTANT:
+          # assembleReleaseAndroidTest has been removed because
+          # this project does not expose that Gradle task.
+          #
+          # Instrumentation tests are executed later through:
+          # connectedE2eReleaseAndroidTest
 
           # --------------------------------------------------------
           # RELEASE BUILD GATE
