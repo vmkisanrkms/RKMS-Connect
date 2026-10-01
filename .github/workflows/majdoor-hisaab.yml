@@ -111,28 +111,15 @@ jobs:
             "emulator"
 
       # ============================================================
-      # 6. ANDROID SDK PATH
+      # 6. EMULATOR LINUX DEPENDENCIES
       # ============================================================
-
-      - name: Configure Android SDK PATH
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "${ANDROID_HOME}/platform-tools" >> "$GITHUB_PATH"
-          echo "${ANDROID_HOME}/emulator" >> "$GITHUB_PATH"
-          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "${ANDROID_HOME}/build-tools/${BUILD_TOOLS}" >> "$GITHUB_PATH"
-
-          export PATH="${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/${BUILD_TOOLS}:${PATH}"
-
-          adb version
-          emulator -version
-          sdkmanager --version
-          apksigner version
-
-      # ============================================================
-      # 7. EMULATOR LINUX DEPENDENCIES
+      #
+      # IMPORTANT:
+      # These libraries MUST be installed before `emulator -version`.
+      # Otherwise ubuntu runner can fail with:
+      #
+      # libpulse.so.0: cannot open shared object file
+      #
       # ============================================================
 
       - name: Install Android emulator Linux dependencies
@@ -160,6 +147,37 @@ jobs:
             libasound2t64
 
           sudo ldconfig
+
+          echo "ANDROID_EMULATOR_LINUX_DEPS=PASS"
+
+      # ============================================================
+      # 7. ANDROID SDK PATH
+      # ============================================================
+
+      - name: Configure Android SDK PATH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          echo "${ANDROID_HOME}/platform-tools" >> "$GITHUB_PATH"
+          echo "${ANDROID_HOME}/emulator" >> "$GITHUB_PATH"
+          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "${ANDROID_HOME}/build-tools/${BUILD_TOOLS}" >> "$GITHUB_PATH"
+
+          export PATH="${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/${BUILD_TOOLS}:${PATH}"
+
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
+
+          adb version
+
+          emulator -version
+
+          sdkmanager --version
+
+          apksigner version
+
+          echo "ANDROID_SDK_PATH_GATE=PASS"
 
       # ============================================================
       # 8. PROJECT STRUCTURE
@@ -193,16 +211,7 @@ jobs:
           echo "PROJECT_STRUCTURE_GATE=PASS"
 
       # ============================================================
-      # 9. PREPARE PINNED GRADLE LAUNCHER
-      # ============================================================
-      #
-      # IMPORTANT:
-      # Do NOT run `gradle :wrapper`.
-      #
-      # The repository already contains the audited wrapper files.
-      # GitHub Actions provides the verified Gradle 8.11.1 binary.
-      #
-      # No heredoc is used here, avoiding YAML parser problems.
+      # 9. PREPARE PINNED GRADLE 8.11.1 LAUNCHER
       # ============================================================
 
       - name: Prepare pinned Gradle 8.11.1 launcher
@@ -310,22 +319,10 @@ jobs:
           chmod +x ./gradlew
           chmod +x scripts/*.sh
 
-          # --------------------------------------------------------
-          # STATIC ACCEPTANCE
-          # --------------------------------------------------------
-
           ./scripts/acceptance-gates.sh
-
-          # --------------------------------------------------------
-          # GRADLE VERSION
-          # --------------------------------------------------------
 
           ./gradlew --version \
             | grep -F "Gradle ${GRADLE_VERSION}"
-
-          # --------------------------------------------------------
-          # DEPENDENCY RESOLUTION
-          # --------------------------------------------------------
 
           ./gradlew \
             --no-daemon \
@@ -361,40 +358,20 @@ jobs:
             --refresh-dependencies \
             buildEnvironment
 
-          # --------------------------------------------------------
-          # DEPENDENCY HEALTH
-          # --------------------------------------------------------
-
           ./scripts/dependency-health.sh
-
-          # --------------------------------------------------------
-          # COMPATIBILITY
-          # --------------------------------------------------------
 
           ./scripts/gradle-agp-compatibility.sh
           ./scripts/gradle-kotlin-compatibility.sh
-
-          # --------------------------------------------------------
-          # RUNTIME CONTRACTS
-          # --------------------------------------------------------
 
           ./scripts/phase17-real-android-runtime-gate.sh
           ./scripts/phase18-configuration-lifecycle-gate.sh
           ./scripts/phase19-offline-first-gate.sh
           ./scripts/phase20-security-data-gate.sh
 
-          # --------------------------------------------------------
-          # CLEAN BUILD
-          # --------------------------------------------------------
-
           ./gradlew \
             --no-daemon \
             --stacktrace \
             clean
-
-          # --------------------------------------------------------
-          # UNIT TEST + DEBUG + E2E + RELEASE
-          # --------------------------------------------------------
 
           ./gradlew \
             --no-daemon \
@@ -408,15 +385,7 @@ jobs:
             assembleRelease \
             assembleReleaseAndroidTest
 
-          # --------------------------------------------------------
-          # RELEASE BUILD GATE
-          # --------------------------------------------------------
-
           ./scripts/release-build-gate.sh
-
-          # --------------------------------------------------------
-          # DEBUG APK VERIFICATION
-          # --------------------------------------------------------
 
           DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
 
@@ -889,10 +858,6 @@ jobs:
             4 \
             "$SIGNED"
 
-          # --------------------------------------------------------
-          # SIGN RELEASE ANDROID TEST APK
-          # --------------------------------------------------------
-
           TEST_UNSIGNED="app/build/outputs/apk/androidTest/release/app-release-androidTest.apk"
           TEST_ALIGNED="app/build/outputs/apk/androidTest/release/app-release-androidTest-aligned.apk"
           TEST_SIGNED="artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk"
@@ -1078,10 +1043,6 @@ jobs:
 
             ./scripts/release-e2e.sh \
               "${GITHUB_WORKSPACE}/artifacts/Majdoor-Hisaab-PRO-release.apk"
-
-            # --------------------------------------------------------
-            # OFFLINE SMOKE TEST
-            # --------------------------------------------------------
 
             adb shell svc wifi disable || true
             adb shell svc data disable || true
