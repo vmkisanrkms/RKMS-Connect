@@ -315,7 +315,6 @@ jobs:
 
       # ==========================================================
       # 9. AGP + GRADLE COMPATIBILITY
-      # FIXED ONLY AT FAILURE POINT
       # ==========================================================
 
       - name: Run AGP and Gradle compatibility gate
@@ -328,19 +327,6 @@ jobs:
           echo "AGP + GRADLE COMPATIBILITY GATE"
           echo "=========================================="
 
-          # ------------------------------------------------------
-          # STEP 8 में direct Gradle 8.11.1 already verified है।
-          #
-          # पुराने ./gradlew wrapper में:
-          #
-          # Gradle distribution did not contain bin/gradle
-          #
-          # failure हो रहा था।
-          #
-          # इसलिए AGP compatibility test direct verified Gradle
-          # 8.11.1 से चलेगा।
-          # ------------------------------------------------------
-
           command -v gradle
 
           gradle --version
@@ -349,10 +335,6 @@ jobs:
 
           echo "GRADLE_VERSION=8.11.1"
           echo "GRADLE_VERSION_CHECK=PASS"
-
-          # ------------------------------------------------------
-          # REPOSITORY WRAPPER CONFIGURATION AUDIT
-          # ------------------------------------------------------
 
           test -s gradlew
           test -s gradle/wrapper/gradle-wrapper.jar
@@ -368,20 +350,12 @@ jobs:
 
           echo "GRADLE_WRAPPER_CONFIGURATION=PASS"
 
-          # ------------------------------------------------------
-          # AGP VERSION
-          # ------------------------------------------------------
-
           grep -Fq \
             'id("com.android.application") version "8.9.1"' \
             build.gradle.kts
 
           echo "AGP_VERSION=8.9.1"
           echo "AGP_VERSION_CHECK=PASS"
-
-          # ------------------------------------------------------
-          # KOTLIN VERSION
-          # ------------------------------------------------------
 
           grep -Fq \
             'id("org.jetbrains.kotlin.android") version "2.1.21"' \
@@ -390,18 +364,10 @@ jobs:
           echo "KOTLIN_VERSION=2.1.21"
           echo "KOTLIN_VERSION_CHECK=PASS"
 
-          # ------------------------------------------------------
-          # JAVA VERSION
-          # ------------------------------------------------------
-
           java -version 2>&1 | grep -Fq 'version "17'
 
           echo "JAVA_VERSION=17"
           echo "JAVA_VERSION_CHECK=PASS"
-
-          # ------------------------------------------------------
-          # ACTUAL AGP LOAD
-          # ------------------------------------------------------
 
           gradle \
             --no-daemon \
@@ -409,10 +375,6 @@ jobs:
             help
 
           echo "AGP_PLUGIN_LOAD=PASS"
-
-          # ------------------------------------------------------
-          # ACTUAL APP GRADLE CONFIGURATION
-          # ------------------------------------------------------
 
           gradle \
             --no-daemon \
@@ -433,10 +395,6 @@ jobs:
             /tmp/majdoor-hisaab-gradle-tasks.log
 
           echo "APP_GRADLE_CONFIGURATION=PASS"
-
-          # ------------------------------------------------------
-          # FINAL COMPATIBILITY RESULT
-          # ------------------------------------------------------
 
           echo "=========================================="
           echo "AGP=8.9.1"
@@ -461,6 +419,7 @@ jobs:
 
       # ==========================================================
       # 11. STABLE SOURCE AUDIT
+      # ONLY THIS SECTION CHANGED
       # ==========================================================
 
       - name: Run stable source audit gates
@@ -469,20 +428,112 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          ./scripts/phase2-security-startup-gate.sh
-          ./scripts/phase5-attendance-gate.sh
-          ./scripts/phase6-work-gate.sh
-          ./scripts/phase8-field-gate.sh
-          ./scripts/phase11-reports-gate.sh
-          ./scripts/phase12-backup-gate.sh
-          ./scripts/phase13-settings-gate.sh
-          ./scripts/phase14-data-model-gate.sh
-          ./scripts/phase15-architecture-gate.sh
-          ./scripts/phase16-automated-testing-gate.sh
-          ./scripts/phase17-real-android-runtime-gate.sh
-          ./scripts/phase18-configuration-lifecycle-gate.sh
-          ./scripts/phase20-security-data-gate.sh
-          ./scripts/phase21-ui-ux-gate.sh
+          echo "=========================================="
+          echo "STABLE SOURCE AUDIT GATES"
+          echo "=========================================="
+
+          run_gate() {
+            local name="$1"
+            local script="$2"
+
+            echo ""
+            echo "------------------------------------------"
+            echo "RUNNING: ${name}"
+            echo "SCRIPT:  ${script}"
+            echo "------------------------------------------"
+
+            test -f "$script"
+            test -x "$script"
+
+            if "$script"; then
+              echo "${name}=PASS"
+            else
+              status=$?
+
+              echo ""
+              echo "=========================================="
+              echo "FAILED GATE: ${name}"
+              echo "EXIT CODE: ${status}"
+              echo "SCRIPT: ${script}"
+              echo "=========================================="
+
+              echo ""
+              echo "SCRIPT DEBUG OUTPUT:"
+              echo "------------------------------------------"
+
+              bash -x "$script" 2>&1 || true
+
+              echo ""
+              echo "=========================================="
+              echo "STABLE_SOURCE_AUDIT=FAIL"
+              echo "FAILED_GATE=${name}"
+              echo "FAILED_SCRIPT=${script}"
+              echo "=========================================="
+
+              exit "$status"
+            fi
+          }
+
+          run_gate \
+            "PHASE2_SECURITY_STARTUP_GATE" \
+            "./scripts/phase2-security-startup-gate.sh"
+
+          run_gate \
+            "PHASE5_ATTENDANCE_GATE" \
+            "./scripts/phase5-attendance-gate.sh"
+
+          run_gate \
+            "PHASE6_WORK_GATE" \
+            "./scripts/phase6-work-gate.sh"
+
+          run_gate \
+            "PHASE8_FIELD_GATE" \
+            "./scripts/phase8-field-gate.sh"
+
+          run_gate \
+            "PHASE11_REPORTS_GATE" \
+            "./scripts/phase11-reports-gate.sh"
+
+          run_gate \
+            "PHASE12_BACKUP_GATE" \
+            "./scripts/phase12-backup-gate.sh"
+
+          run_gate \
+            "PHASE13_SETTINGS_GATE" \
+            "./scripts/phase13-settings-gate.sh"
+
+          run_gate \
+            "PHASE14_DATA_MODEL_GATE" \
+            "./scripts/phase14-data-model-gate.sh"
+
+          run_gate \
+            "PHASE15_ARCHITECTURE_GATE" \
+            "./scripts/phase15-architecture-gate.sh"
+
+          run_gate \
+            "PHASE16_AUTOMATED_TESTING_GATE" \
+            "./scripts/phase16-automated-testing-gate.sh"
+
+          run_gate \
+            "PHASE17_REAL_ANDROID_RUNTIME_GATE" \
+            "./scripts/phase17-real-android-runtime-gate.sh"
+
+          run_gate \
+            "PHASE18_CONFIGURATION_LIFECYCLE_GATE" \
+            "./scripts/phase18-configuration-lifecycle-gate.sh"
+
+          run_gate \
+            "PHASE20_SECURITY_DATA_GATE" \
+            "./scripts/phase20-security-data-gate.sh"
+
+          run_gate \
+            "PHASE21_UI_UX_GATE" \
+            "./scripts/phase21-ui-ux-gate.sh"
+
+          echo ""
+          echo "=========================================="
+          echo "ALL STABLE SOURCE AUDIT GATES PASSED"
+          echo "=========================================="
 
           echo "STABLE_STATIC_GATES=PASS"
 
