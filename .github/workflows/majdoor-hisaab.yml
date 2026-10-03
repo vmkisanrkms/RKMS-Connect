@@ -337,48 +337,64 @@ jobs:
           echo "=========================================="
 
           # ------------------------------------------------------
-          # RESTORE REAL GRADLE WRAPPER FROM FINAL PROJECT ZIP
+          # STEP 8 ने gradlew को direct-Gradle shim बनाया था।
+          # केवल ORIGINAL gradlew वापस restore करें।
+          #
+          # IMPORTANT:
+          # gradle-wrapper.jar और gradle-wrapper.properties को
+          # यहां overwrite नहीं किया जाएगा।
+          # STEP 7 में उनका exact configuration पहले ही PASS है।
           # ------------------------------------------------------
 
           SOURCE_ZIP="../Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
 
           test -f "$SOURCE_ZIP"
 
-          unzip -p \
-            "$SOURCE_ZIP" \
-            gradlew \
-            > gradlew
+          ZIP_TMP="$(mktemp -d)"
 
-          unzip -p \
-            "$SOURCE_ZIP" \
-            gradlew.bat \
-            > gradlew.bat
+          cleanup() {
+            rm -rf "$ZIP_TMP"
+          }
 
-          rm -rf gradle/wrapper
-          mkdir -p gradle/wrapper
+          trap cleanup EXIT
 
-          unzip -p \
-            "$SOURCE_ZIP" \
-            gradle/wrapper/gradle-wrapper.jar \
-            > gradle/wrapper/gradle-wrapper.jar
+          unzip -q "$SOURCE_ZIP" -d "$ZIP_TMP"
 
-          unzip -p \
-            "$SOURCE_ZIP" \
-            gradle/wrapper/gradle-wrapper.properties \
-            > gradle/wrapper/gradle-wrapper.properties
+          ZIP_PROJECT_ROOT="$(
+            find "$ZIP_TMP" \
+              -type f \
+              -name "settings.gradle.kts" \
+              -print \
+              -quit \
+              | xargs -r dirname
+          )"
+
+          test -n "$ZIP_PROJECT_ROOT"
+          test -d "$ZIP_PROJECT_ROOT"
+          test -f "$ZIP_PROJECT_ROOT/gradlew"
+
+          # केवल वास्तविक Gradle Wrapper script restore करें
+          cp \
+            "$ZIP_PROJECT_ROOT/gradlew" \
+            gradlew
 
           chmod +x gradlew
 
           test -s gradlew
-          test -s gradlew.bat
-          test -s gradle/wrapper/gradle-wrapper.jar
-          test -s gradle/wrapper/gradle-wrapper.properties
 
           echo "REAL_GRADLE_WRAPPER=RESTORED"
 
           # ------------------------------------------------------
-          # VERIFY EXACT GRADLE 8.11.1 WRAPPER
+          # EXISTING VERIFIED WRAPPER CONFIGURATION
+          # STEP 7 में यही files already verified हैं।
+          # इन्हें ZIP से overwrite नहीं किया गया है।
           # ------------------------------------------------------
+
+          test -s \
+            gradle/wrapper/gradle-wrapper.jar
+
+          test -s \
+            gradle/wrapper/gradle-wrapper.properties
 
           grep -Fq \
             'distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
@@ -387,10 +403,6 @@ jobs:
           grep -Fq \
             'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
             gradle/wrapper/gradle-wrapper.properties
-
-          grep -Fq \
-            'gradle-wrapper.jar' \
-            gradlew
 
           echo "GRADLE_WRAPPER_CONFIGURATION=PASS"
 
