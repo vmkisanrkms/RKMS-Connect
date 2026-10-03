@@ -69,12 +69,6 @@ jobs:
 
       # ==========================================================
       # 3. PREPARE AND FIND PROJECT
-      #
-      # IMPORTANT:
-      # The old workflow failed because it expected the ZIP only
-      # at repository root.
-      #
-      # This version searches the complete repository.
       # ==========================================================
 
       - name: Prepare Android project
@@ -92,11 +86,6 @@ jobs:
           echo "SEARCHING FOR ANDROID PROJECT"
           echo "=========================================="
 
-          # ------------------------------------------------------
-          # CASE 1:
-          # Android project already exists directly in repository
-          # ------------------------------------------------------
-
           if [ -f "settings.gradle.kts" ] &&
              [ -f "app/build.gradle.kts" ]; then
 
@@ -111,10 +100,6 @@ jobs:
             echo "ANDROID_PROJECT_NOT_FOUND_AT_ROOT"
             echo "SEARCHING FOR PROJECT ZIP..."
 
-            # ----------------------------------------------------
-            # Search exact requested ZIP anywhere in repository
-            # ----------------------------------------------------
-
             ZIP_PATH="$(
               find . \
                 -type f \
@@ -124,10 +109,6 @@ jobs:
                 -print \
                 | head -n 1
             )"
-
-            # ----------------------------------------------------
-            # Search fixed ZIP if exact original is not present
-            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -143,10 +124,6 @@ jobs:
 
             fi
 
-            # ----------------------------------------------------
-            # Search any Majdoor Hisaab ZIP
-            # ----------------------------------------------------
-
             if [ -z "$ZIP_PATH" ]; then
 
               ZIP_PATH="$(
@@ -161,10 +138,6 @@ jobs:
 
             fi
 
-            # ----------------------------------------------------
-            # ZIP MUST EXIST
-            # ----------------------------------------------------
-
             if [ -z "$ZIP_PATH" ]; then
 
               echo ""
@@ -175,34 +148,23 @@ jobs:
               echo "Expected:"
               echo "${ZIP_NAME}"
               echo ""
-              echo "Upload the project ZIP into the GitHub"
-              echo "repository and run the workflow again."
-              echo ""
-              echo "ZIP FILES FOUND IN REPOSITORY:"
+
               find . \
                 -type f \
                 -iname "*.zip" \
                 -not -path "./.git/*" \
                 -print \
                 | head -n 30 || true
-              echo ""
+
               exit 1
 
             fi
 
             echo "PROJECT_ZIP_FOUND=${ZIP_PATH}"
 
-            # ----------------------------------------------------
-            # Extract
-            # ----------------------------------------------------
-
             unzip -q "$ZIP_PATH" -d extracted
 
             echo "ZIP_EXTRACTED=PASS"
-
-            # ----------------------------------------------------
-            # ZIP project directly at root
-            # ----------------------------------------------------
 
             if [ -f "extracted/settings.gradle.kts" ] &&
                [ -f "extracted/app/build.gradle.kts" ]; then
@@ -212,10 +174,6 @@ jobs:
               cp -a extracted/. project/
 
             else
-
-              # --------------------------------------------------
-              # Find settings.gradle.kts inside ZIP
-              # --------------------------------------------------
 
               PROJECT_ROOT_FILE="$(
                 find extracted \
@@ -254,10 +212,6 @@ jobs:
 
           fi
 
-          # ------------------------------------------------------
-          # Final project verification
-          # ------------------------------------------------------
-
           test -f project/settings.gradle.kts
           test -f project/build.gradle.kts
           test -f project/app/build.gradle.kts
@@ -286,7 +240,6 @@ jobs:
           cp "$FILE" \
             "${FILE}.original-ci"
 
-
           python3 - <<'PY'
           from pathlib import Path
 
@@ -296,30 +249,15 @@ jobs:
 
           text = file.read_text(encoding="utf-8")
 
-          # ------------------------------------------------------
-          # FIX 1
-          # AuditUseCase uses list()
-          # ------------------------------------------------------
-
           text = text.replace(
               "app.audit.auditLog()",
               "app.audit.list()"
           )
 
-          # ------------------------------------------------------
-          # FIX 2
-          # AuditUseCase uses clear()
-          # ------------------------------------------------------
-
           text = text.replace(
               "app.audit.clearAuditLog()",
               "app.audit.clear()"
           )
-
-          # ------------------------------------------------------
-          # FIX 3
-          # Android Context constant
-          # ------------------------------------------------------
 
           text = text.replace(
               "getSystemService(ALARM_SERVICE)",
@@ -332,58 +270,40 @@ jobs:
           )
 
           print("SOURCE_FIXES_APPLIED")
-
           PY
-
-
-          # ------------------------------------------------------
-          # Verify old references are gone
-          # ------------------------------------------------------
 
           if grep -Fq \
             "app.audit.auditLog()" \
             "$FILE"; then
-
             echo "ERROR: old auditLog() reference remains"
             exit 1
-
           fi
-
 
           if grep -Fq \
             "app.audit.clearAuditLog()" \
             "$FILE"; then
-
             echo "ERROR: old clearAuditLog() reference remains"
             exit 1
-
           fi
-
 
           if grep -Fq \
             "getSystemService(ALARM_SERVICE)" \
             "$FILE"; then
-
             echo "ERROR: old ALARM_SERVICE reference remains"
             exit 1
-
           fi
-
 
           grep -Fq \
             "app.audit.list()" \
             "$FILE"
 
-
           grep -Fq \
             "app.audit.clear()" \
             "$FILE"
 
-
           grep -Fq \
             "Context.ALARM_SERVICE" \
             "$FILE"
-
 
           echo "SOURCE_FIXES_VERIFICATION=PASS"
 
@@ -483,50 +403,39 @@ jobs:
           test -f build.gradle.kts
           test -f app/build.gradle.kts
 
-
           grep -Fq \
             'id("com.android.application") version "8.9.1"' \
             build.gradle.kts
-
 
           grep -Fq \
             'id("org.jetbrains.kotlin.android") version "2.1.21"' \
             build.gradle.kts
 
-
           grep -Fq \
             'compileSdk = 36' \
             app/build.gradle.kts
-
 
           grep -Fq \
             'targetSdk = 36' \
             app/build.gradle.kts
 
-
           grep -Fq \
             'applicationId = "com.majdoor.hisaab"' \
             app/build.gradle.kts
-
 
           grep -Fq \
             'versionCode = 77' \
             app/build.gradle.kts
 
-
           grep -Fq \
             'versionName = "1.77.0"' \
             app/build.gradle.kts
-
 
           echo "PROJECT_CONFIGURATION=PASS"
 
 
       # ==========================================================
       # 11. CLEAN
-      #
-      # No gradle help.
-      # No unnecessary configuration build.
       # ==========================================================
 
       - name: Clean previous build
@@ -546,19 +455,104 @@ jobs:
 
       # ==========================================================
       # 12. BUILD RELEASE APK
+      #
+      # ONLY THIS SECTION IS CHANGED.
+      #
+      # First compile release Kotlin separately.
+      # If Kotlin fails, print the exact source context for the
+      # reported lines.
+      #
+      # If compilation succeeds, assemble the APK normally.
       # ==========================================================
 
       - name: Build Release APK
         working-directory: project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
+
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+
+          test -f "$FILE"
 
           echo ""
           echo "=========================================="
-          echo "STARTING RELEASE APK COMPILATION"
+          echo "RELEASE KOTLIN COMPILATION"
           echo "=========================================="
           echo ""
+
+          set +e
+
+          gradle \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace \
+            --no-parallel \
+            :app:compileReleaseKotlin \
+            2>&1 | tee /tmp/majdoor-release-kotlin.log
+
+          KOTLIN_STATUS=${PIPESTATUS[0]}
+
+          set -e
+
+          if [ "$KOTLIN_STATUS" -ne 0 ]; then
+
+            echo ""
+            echo "=========================================="
+            echo "KOTLIN COMPILATION FAILED"
+            echo "=========================================="
+
+            echo ""
+            echo "COMPILER ERRORS:"
+            echo "------------------------------------------"
+
+            grep -E \
+              "e: .*MainActivityScreens.kt:" \
+              /tmp/majdoor-release-kotlin.log \
+              || true
+
+            echo ""
+            echo "------------------------------------------"
+            echo "SOURCE AROUND PREVIOUS ERROR LINE 1456"
+            echo "------------------------------------------"
+
+            nl -ba "$FILE" \
+              | sed -n '1440,1470p'
+
+            echo ""
+            echo "------------------------------------------"
+            echo "SOURCE AROUND PREVIOUS ERROR LINE 1517"
+            echo "------------------------------------------"
+
+            nl -ba "$FILE" \
+              | sed -n '1500,1535p'
+
+            echo ""
+            echo "------------------------------------------"
+            echo "SOURCE AROUND PREVIOUS ERROR LINE 1584"
+            echo "------------------------------------------"
+
+            nl -ba "$FILE" \
+              | sed -n '1575,1595p'
+
+            echo ""
+            echo "=========================================="
+            echo "KOTLIN_COMPILATION=FAIL"
+            echo "=========================================="
+
+            exit "$KOTLIN_STATUS"
+
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "KOTLIN COMPILATION SUCCESS"
+          echo "=========================================="
+
+          echo ""
+          echo "=========================================="
+          echo "ASSEMBLING RELEASE APK"
+          echo "=========================================="
 
           gradle \
             --no-daemon \
@@ -602,25 +596,20 @@ jobs:
           aapt dump badging "$APK" \
             | head -n 5
 
-
           aapt dump badging "$APK" \
             | grep -Fq \
             "package: name='${PACKAGE_NAME}'"
-
 
           aapt dump badging "$APK" \
             | grep -Fq \
             "versionCode='${VERSION_CODE}'"
 
-
           aapt dump badging "$APK" \
             | grep -Fq \
             "versionName='${VERSION_NAME}'"
 
-
           unzip -t "$APK" \
             >/dev/null
-
 
           echo "UNSIGNED_APK_VERIFICATION=PASS"
 
@@ -645,21 +634,17 @@ jobs:
           test -n "$KEY_PASSWORD"
           test -n "$KEY_ALIAS"
 
-
           printf '%s' "$KEYSTORE_B64" \
             | base64 --decode \
             > release.keystore
 
-
           test -s release.keystore
-
 
           keytool -list \
             -keystore release.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS" \
             >/dev/null
-
 
           echo "RELEASE_KEYSTORE=PASS"
 
@@ -676,7 +661,6 @@ jobs:
 
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
-
           zipalign \
             -f \
             -p \
@@ -684,16 +668,13 @@ jobs:
             "$APK" \
             app-release-aligned.apk
 
-
           zipalign \
             -c \
             -v \
             4 \
             app-release-aligned.apk
 
-
           test -s app-release-aligned.apk
-
 
           echo "ZIPALIGN=PASS"
 
@@ -714,7 +695,6 @@ jobs:
 
           mkdir -p artifacts
 
-
           apksigner sign \
             --ks release.keystore \
             --ks-key-alias "$KEY_ALIAS" \
@@ -724,10 +704,8 @@ jobs:
             artifacts/Majdoor-Hisaab-PRO-release.apk \
             app-release-aligned.apk
 
-
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.apk
-
 
           echo "APK_SIGNING=PASS"
 
@@ -746,12 +724,10 @@ jobs:
 
           test -s "$APK"
 
-
           apksigner verify \
             --verbose \
             --print-certs \
             "$APK"
-
 
           zipalign \
             -c \
@@ -759,25 +735,20 @@ jobs:
             4 \
             "$APK"
 
-
           aapt dump badging "$APK" \
             | grep -Fq \
             "package: name='${PACKAGE_NAME}'"
-
 
           aapt dump badging "$APK" \
             | grep -Fq \
             "versionCode='${VERSION_CODE}'"
 
-
           aapt dump badging "$APK" \
             | grep -Fq \
             "versionName='${VERSION_NAME}'"
 
-
           unzip -t "$APK" \
             >/dev/null
-
 
           echo "SIGNED_APK_VERIFICATION=PASS"
 
@@ -797,10 +768,8 @@ jobs:
             | tee \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
 
-
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
-
 
           echo "SHA256=PASS"
 
