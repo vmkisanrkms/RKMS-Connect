@@ -257,12 +257,15 @@ jobs:
 
           gradle --version | grep -Fq "Gradle 8.11.1"
 
-          cat > gradlew <<'EOF'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
+          # ------------------------------------------------------
+          # IMPORTANT:
+          # Keep the repository Gradle Wrapper untouched.
+          # The compatibility gate requires the real ./gradlew.
+          # ------------------------------------------------------
 
-          exec gradle "$@"
-          EOF
+          test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
 
           chmod +x gradlew
 
@@ -312,8 +315,7 @@ jobs:
 
           apksigner --version
 
-          # zipalign -h prints help but may return exit code 1.
-          # Do not let the help command fail the CI step.
+          # zipalign -h may return exit code 1 while printing help.
           zipalign -h >/dev/null 2>&1 || true
 
           echo "ADB_PATH=$(command -v adb)"
