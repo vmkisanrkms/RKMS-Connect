@@ -244,26 +244,11 @@ jobs:
 
           java -version
 
-          # ------------------------------------------------------
-          # IMPORTANT:
-          # AGP compatibility gate requires the repository
-          # Gradle Wrapper. Do NOT invoke system "gradle".
-          # ------------------------------------------------------
-
           test -f gradlew
           test -f gradle/wrapper/gradle-wrapper.jar
           test -f gradle/wrapper/gradle-wrapper.properties
 
           chmod +x gradlew
-
-          # ------------------------------------------------------
-          # Remove only the cached Gradle 8.11.1 distribution.
-          # This fixes a corrupted/incomplete wrapper distribution
-          # such as "distribution did not contain bin/gradle".
-          # ------------------------------------------------------
-
-          rm -rf \
-            "${HOME}/.gradle/wrapper/dists/gradle-8.11.1-bin"
 
           ./gradlew --version
 
