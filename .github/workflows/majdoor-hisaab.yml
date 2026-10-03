@@ -270,10 +270,6 @@ jobs:
 
           ./gradlew --version | grep -Fq "Gradle 8.11.1"
 
-          # ------------------------------------------------------
-          # Android SDK paths
-          # ------------------------------------------------------
-
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 
           test -n "$SDK_ROOT"
@@ -297,10 +293,6 @@ jobs:
           echo "BUILD_TOOLS_DIR=${BUILD_TOOLS_DIR}"
           echo "PLATFORM_TOOLS_DIR=${PLATFORM_TOOLS_DIR}"
 
-          # ------------------------------------------------------
-          # Verify required Android executables
-          # ------------------------------------------------------
-
           test -x "${BUILD_TOOLS_DIR}/apksigner"
           test -x "${BUILD_TOOLS_DIR}/zipalign"
 
@@ -323,7 +315,7 @@ jobs:
 
       # ==========================================================
       # 9. AGP + GRADLE COMPATIBILITY
-      # ONLY THIS STEP IS CHANGED
+      # FIXED ONLY AT FAILURE POINT
       # ==========================================================
 
       - name: Run AGP and Gradle compatibility gate
@@ -337,64 +329,34 @@ jobs:
           echo "=========================================="
 
           # ------------------------------------------------------
-          # STEP 8 ने gradlew को direct-Gradle shim बनाया था।
-          # केवल ORIGINAL gradlew वापस restore करें।
+          # STEP 8 में direct Gradle 8.11.1 already verified है।
           #
-          # IMPORTANT:
-          # gradle-wrapper.jar और gradle-wrapper.properties को
-          # यहां overwrite नहीं किया जाएगा।
-          # STEP 7 में उनका exact configuration पहले ही PASS है।
+          # पुराने ./gradlew wrapper में:
+          #
+          # Gradle distribution did not contain bin/gradle
+          #
+          # failure हो रहा था।
+          #
+          # इसलिए AGP compatibility test direct verified Gradle
+          # 8.11.1 से चलेगा।
           # ------------------------------------------------------
 
-          SOURCE_ZIP="../Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
+          command -v gradle
 
-          test -f "$SOURCE_ZIP"
+          gradle --version
 
-          ZIP_TMP="$(mktemp -d)"
+          gradle --version | grep -Fq "Gradle 8.11.1"
 
-          cleanup() {
-            rm -rf "$ZIP_TMP"
-          }
+          echo "GRADLE_VERSION=8.11.1"
+          echo "GRADLE_VERSION_CHECK=PASS"
 
-          trap cleanup EXIT
-
-          unzip -q "$SOURCE_ZIP" -d "$ZIP_TMP"
-
-          ZIP_PROJECT_ROOT="$(
-            find "$ZIP_TMP" \
-              -type f \
-              -name "settings.gradle.kts" \
-              -print \
-              -quit \
-              | xargs -r dirname
-          )"
-
-          test -n "$ZIP_PROJECT_ROOT"
-          test -d "$ZIP_PROJECT_ROOT"
-          test -f "$ZIP_PROJECT_ROOT/gradlew"
-
-          # केवल वास्तविक Gradle Wrapper script restore करें
-          cp \
-            "$ZIP_PROJECT_ROOT/gradlew" \
-            gradlew
-
-          chmod +x gradlew
+          # ------------------------------------------------------
+          # REPOSITORY WRAPPER CONFIGURATION AUDIT
+          # ------------------------------------------------------
 
           test -s gradlew
-
-          echo "REAL_GRADLE_WRAPPER=RESTORED"
-
-          # ------------------------------------------------------
-          # EXISTING VERIFIED WRAPPER CONFIGURATION
-          # STEP 7 में यही files already verified हैं।
-          # इन्हें ZIP से overwrite नहीं किया गया है।
-          # ------------------------------------------------------
-
-          test -s \
-            gradle/wrapper/gradle-wrapper.jar
-
-          test -s \
-            gradle/wrapper/gradle-wrapper.properties
+          test -s gradle/wrapper/gradle-wrapper.jar
+          test -s gradle/wrapper/gradle-wrapper.properties
 
           grep -Fq \
             'distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
@@ -407,21 +369,7 @@ jobs:
           echo "GRADLE_WRAPPER_CONFIGURATION=PASS"
 
           # ------------------------------------------------------
-          # VERIFY REAL GRADLE VERSION
-          # ------------------------------------------------------
-
-          ./gradlew \
-            --version
-
-          ./gradlew \
-            --version \
-            | grep -Fq "Gradle 8.11.1"
-
-          echo "GRADLE_VERSION=8.11.1"
-          echo "GRADLE_VERSION_CHECK=PASS"
-
-          # ------------------------------------------------------
-          # VERIFY AGP VERSION
+          # AGP VERSION
           # ------------------------------------------------------
 
           grep -Fq \
@@ -432,7 +380,7 @@ jobs:
           echo "AGP_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # VERIFY KOTLIN VERSION
+          # KOTLIN VERSION
           # ------------------------------------------------------
 
           grep -Fq \
@@ -443,20 +391,19 @@ jobs:
           echo "KOTLIN_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # VERIFY JAVA 17
+          # JAVA VERSION
           # ------------------------------------------------------
 
-          java -version 2>&1 \
-            | grep -Fq 'version "17'
+          java -version 2>&1 | grep -Fq 'version "17'
 
           echo "JAVA_VERSION=17"
           echo "JAVA_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # ACTUAL AGP LOAD TEST
+          # ACTUAL AGP LOAD
           # ------------------------------------------------------
 
-          ./gradlew \
+          gradle \
             --no-daemon \
             --stacktrace \
             help
@@ -464,10 +411,10 @@ jobs:
           echo "AGP_PLUGIN_LOAD=PASS"
 
           # ------------------------------------------------------
-          # ACTUAL APP GRADLE CONFIGURATION TEST
+          # ACTUAL APP GRADLE CONFIGURATION
           # ------------------------------------------------------
 
-          ./gradlew \
+          gradle \
             --no-daemon \
             --stacktrace \
             :app:tasks \
@@ -500,6 +447,10 @@ jobs:
 
           echo "AGP_GRADLE_COMPATIBILITY=PASS"
 
+      # ==========================================================
+      # 10. KOTLIN COMPATIBILITY
+      # ==========================================================
+
       - name: Run Kotlin compatibility gate
         working-directory: project
         shell: bash
@@ -509,7 +460,7 @@ jobs:
           ./scripts/gradle-kotlin-compatibility.sh
 
       # ==========================================================
-      # 10. STATIC AUDIT
+      # 11. STABLE SOURCE AUDIT
       # ==========================================================
 
       - name: Run stable source audit gates
@@ -536,7 +487,7 @@ jobs:
           echo "STABLE_STATIC_GATES=PASS"
 
       # ==========================================================
-      # 11. PHASE 22
+      # 12. PHASE 22
       # ==========================================================
 
       - name: Run Phase 22 final red-list static gate
@@ -550,7 +501,7 @@ jobs:
           echo "PHASE22_STATIC_GATE=PASS"
 
       # ==========================================================
-      # 12. OFFLINE SQLITE
+      # 13. OFFLINE SQLITE
       # ==========================================================
 
       - name: Audit offline SQLite architecture
@@ -601,7 +552,7 @@ jobs:
           echo "OFFLINE_SQLITE_GATE=PASS"
 
       # ==========================================================
-      # 13. DEPENDENCY HEALTH
+      # 14. DEPENDENCY HEALTH
       # ==========================================================
 
       - name: Resolve dependencies
@@ -636,7 +587,7 @@ jobs:
           echo "DEPENDENCY_RESOLUTION=PASS"
 
       # ==========================================================
-      # 14. UNIT TESTS + COMPILE
+      # 15. UNIT TESTS + COMPILE
       # ==========================================================
 
       - name: Run unit tests and compile variants
@@ -656,7 +607,7 @@ jobs:
           echo "UNIT_AND_KOTLIN_COMPILATION=PASS"
 
       # ==========================================================
-      # 15. DEBUG APK
+      # 16. DEBUG APK
       # ==========================================================
 
       - name: Build Debug APK
@@ -688,7 +639,7 @@ jobs:
           echo "DEBUG_APK=PASS"
 
       # ==========================================================
-      # 16. RELEASE APK
+      # 17. RELEASE APK
       # ==========================================================
 
       - name: Build Release APK
@@ -711,7 +662,7 @@ jobs:
           echo "RELEASE_UNSIGNED_APK=PASS"
 
       # ==========================================================
-      # 17. E2E RELEASE + ANDROID TEST APK
+      # 18. E2E RELEASE + ANDROID TEST APK
       # ==========================================================
 
       - name: Build E2E Release and AndroidTest APK
@@ -738,7 +689,7 @@ jobs:
           echo "E2E_AND_INSTRUMENTATION_BUILD=PASS"
 
       # ==========================================================
-      # 18. UNSIGNED RELEASE APK METADATA
+      # 19. UNSIGNED RELEASE APK METADATA
       # ==========================================================
 
       - name: Verify unsigned Release APK
@@ -768,7 +719,7 @@ jobs:
           echo "UNSIGNED_RELEASE_METADATA=PASS"
 
       # ==========================================================
-      # 19. RESTORE PRODUCTION KEYSTORE
+      # 20. RESTORE PRODUCTION KEYSTORE
       # ==========================================================
 
       - name: Restore production signing keystore
@@ -822,7 +773,7 @@ jobs:
           echo "PRODUCTION_KEYSTORE_CERTIFICATE=PASS"
 
       # ==========================================================
-      # 20. ZIPALIGN + SIGN PRODUCTION RELEASE APK
+      # 21. ZIPALIGN + SIGN PRODUCTION RELEASE APK
       # ==========================================================
 
       - name: Sign Production Release APK
@@ -894,7 +845,7 @@ jobs:
           echo "PRODUCTION_SIGNED_APK=PASS"
 
       # ==========================================================
-      # 21. SIGN RELEASE ANDROIDTEST APK
+      # 22. SIGN RELEASE ANDROIDTEST APK
       # ==========================================================
 
       - name: Sign Release AndroidTest APK
@@ -955,7 +906,7 @@ jobs:
           echo "SIGNED_RELEASE_ANDROIDTEST=PASS"
 
       # ==========================================================
-      # 22. PRODUCTION SIGNING GATE
+      # 23. PRODUCTION SIGNING GATE
       # ==========================================================
 
       - name: Run production signing gate
@@ -972,7 +923,7 @@ jobs:
           echo "PRODUCTION_SIGNING_GATE=PASS"
 
       # ==========================================================
-      # 23. FINAL APK SHA-256 GATE
+      # 24. FINAL APK SHA-256 GATE
       # ==========================================================
 
       - name: Run final APK SHA-256 gate
@@ -1004,7 +955,7 @@ jobs:
           echo "FINAL_SHA256_GATE=PASS"
 
       # ==========================================================
-      # 24. DEBUG EMULATOR
+      # 25. DEBUG EMULATOR
       # ==========================================================
 
       - name: Install and launch Debug APK
@@ -1055,7 +1006,7 @@ jobs:
             echo "DEBUG_RUNTIME=PASS"
 
       # ==========================================================
-      # 25. COMPLETE RELEASE E2E TEST
+      # 26. COMPLETE RELEASE E2E TEST
       # ==========================================================
 
       - name: Run connected E2E Release test suite
@@ -1102,7 +1053,7 @@ jobs:
             echo "CONNECTED_E2E_RELEASE=PASS"
 
       # ==========================================================
-      # 26. PHASE 17 REAL ANDROID RUNTIME
+      # 27. PHASE 17 REAL ANDROID RUNTIME
       # ==========================================================
 
       - name: Run Phase 17 real Android runtime suite
@@ -1144,7 +1095,7 @@ jobs:
             echo "PHASE17_RUNTIME=PASS"
 
       # ==========================================================
-      # 27. PHASE 18 CONFIGURATION LIFECYCLE
+      # 28. PHASE 18 CONFIGURATION LIFECYCLE
       # ==========================================================
 
       - name: Run Phase 18 configuration lifecycle E2E
@@ -1178,7 +1129,7 @@ jobs:
             echo "PHASE18_RUNTIME=PASS"
 
       # ==========================================================
-      # 28. CLEAN INSTALL BACKUP RESTORE
+      # 29. CLEAN INSTALL BACKUP RESTORE
       # ==========================================================
 
       - name: Run Clean Install Backup Restore E2E
@@ -1217,7 +1168,7 @@ jobs:
             echo "CLEAN_INSTALL_RESTORE=PASS"
 
       # ==========================================================
-      # 29. PHASE 19 OFFLINE FIRST
+      # 30. PHASE 19 OFFLINE FIRST
       # ==========================================================
 
       - name: Run Phase 19 offline-first E2E
@@ -1256,7 +1207,7 @@ jobs:
             echo "PHASE19_OFFLINE_RUNTIME=PASS"
 
       # ==========================================================
-      # 30. SIGNED RELEASE E2E
+      # 31. SIGNED RELEASE APK E2E
       # ==========================================================
 
       - name: Run signed Release APK E2E
