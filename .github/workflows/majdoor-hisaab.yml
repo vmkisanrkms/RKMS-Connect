@@ -145,10 +145,8 @@ jobs:
               echo "ERROR: MAJDOOR HISAAB PROJECT ZIP NOT FOUND"
               echo "=========================================="
               echo ""
-
               echo "Expected:"
               echo "${ZIP_NAME}"
-
               echo ""
 
               find . \
@@ -459,8 +457,6 @@ jobs:
       # 12. BUILD RELEASE APK
       #
       # ONLY THIS STEP IS CHANGED.
-      #
-      # COMPLETE SOURCE COMPILATION FIX IS APPLIED HERE.
       # ==========================================================
 
       - name: Build Release APK
@@ -475,10 +471,11 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo "RELEASE SOURCE FINAL AUDIT + FIX"
+          echo "RELEASE SOURCE FINAL FIX"
           echo "=========================================="
 
-          cp "$FILE" "${FILE}.pre-release-fix"
+          cp "$FILE" \
+            "${FILE}.before-release-fix"
 
           python3 - <<'PY'
           from pathlib import Path
@@ -490,76 +487,62 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           # ======================================================
-          # 1. FIX ALL WRONG IMPLICIT it.text REFERENCES
+          # FIX 1:
+          # Broken implicit `it.text` references
           # ======================================================
 
           replacements = {
 
-              # Crop form
               'it.text="Field: ${fields[i].name}"':
                   'fb.text="Field: ${fields[i].name}"',
 
-              # Production / Revenue crop selectors
               'it.text="Crop: ${crops[i].name}"':
                   'cropBtn.text="Crop: ${crops[i].name}"',
 
-              # Work worker selector
               'it.text="Workers: ${selectedWorkers.distinct().size}"':
                   'workerBtn.text="Workers: ${selectedWorkers.distinct().size}"',
 
-              # Worker selector
               'it.text="Worker: ${workers[i].name}"':
                   'wb.text="Worker: ${workers[i].name}"',
 
-              # Payment method
-              'it.text="Method: ${methods[i].name}"':
-                  'mb.text="Method: ${methods[i].name}"',
+              'it.text="Method: ${methods[i]}"':
+                  'mb.text="Method: ${methods[i]}"',
 
-              # Advance
               'it.text="Advance: ${if(advance)"YES" else "NO"}"':
                   'adv.text="Advance: ${if(advance)"YES" else "NO"}"',
 
-              # Expense category
+              'it.text="Rate type: $rateType"':
+                  'rateTypeBtn.text="Rate type: $rateType"',
+
               'it.text="Category: $cat"':
                   'cb.text="Category: $cat"',
 
-              # Expense field
               'it.text="Field: Not linked"':
                   'fb.text="Field: Not linked"',
 
               'it.text="Field: ${fields[i-1].name}"':
                   'fb.text="Field: ${fields[i-1].name}"',
 
-              # Expense crop
               'it.text="Crop: Not linked"':
                   'crb.text="Crop: Not linked"',
 
               'it.text="Crop: ${crops[i-1].name}"':
                   'crb.text="Crop: ${crops[i-1].name}"',
 
-              # Report worker
               'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"':
                   'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
 
-              # Report field
               'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"':
                   'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
 
-              # Report crop
               'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"':
                   'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
 
-              # Attendance field
               'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"':
                   'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
 
-              # Attendance status
               'it.text="Status: $status"':
                   'statusBtn.text="Status: $status"',
-
-              # Work-template rate type
-              'it.text="Rate type: $rateType"':
-                  'rateTypeBtn.text="Rate type: $rateType"',
           }
 
           for old, new in replacements.items():
@@ -567,32 +550,8 @@ jobs:
 
 
           # ======================================================
-          # 2. FIX SPECIFIC SELECTOR REFERENCES
-          # ======================================================
-
-          old = '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}'''
-
-          new = '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()}'''
-
-          s = s.replace(old, new)
-
-
-          old = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}'''
-
-          new = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fieldBtn.text="Field: ${fields[i].name}"}.show()}'''
-
-          s = s.replace(old, new)
-
-
-          old = '''val mb=btn("Method: $method"){val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];it.text="Method: ${methods[i]}"}.show()}'''
-
-          new = '''val mb=btn("Method: $method"){val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];mb.text="Method: ${methods[i]}"}.show()}'''
-
-          s = s.replace(old, new)
-
-
-          # ======================================================
-          # 3. FIX btn() CALLS WITH MISSING action PARAMETER
+          # FIX 2:
+          # Missing btn() action parameter
           # ======================================================
 
           s = s.replace(
@@ -638,15 +597,15 @@ jobs:
 
 
           # ======================================================
-          # 4. ATTENDANCE CALENDAR
+          # FIX 3:
+          # renderSummary() was below render().
           #
-          # renderSummary() was declared after render(), while
-          # render() calls renderSummary(). Move the local function
-          # before render().
+          # Kotlin local functions in this source need the
+          # declaration available before render() uses it.
           # ======================================================
 
           calendar_start = s.find(
-              'internal fun MainActivity.attendanceCalendar(){'
+              '    internal fun MainActivity.attendanceCalendar(){'
           )
 
           if calendar_start == -1:
@@ -659,31 +618,32 @@ jobs:
               calendar_start
           )
 
-          nav_start = s.find(
-              '        val nav=',
+          summary_start = s.find(
+              '        fun renderSummary(){',
               render_start
           )
 
-          if render_start == -1 or nav_start == -1:
-              raise SystemExit(
-                  "ERROR: attendanceCalendar render block not found"
-              )
-
-          block = s[render_start:nav_start]
-
-          marker = '        fun renderSummary(){'
-
-          if marker not in block:
-              raise SystemExit(
-                  "ERROR: renderSummary() not found"
-              )
-
-          render_part, summary_part = block.split(
-              marker,
-              1
+          nav_start = s.find(
+              '        val nav=',
+              summary_start
           )
 
-          summary_part = marker + summary_part
+          if (
+              render_start == -1
+              or summary_start == -1
+              or nav_start == -1
+          ):
+              raise SystemExit(
+                  "ERROR: attendanceCalendar render blocks not found"
+              )
+
+          render_part = s[
+              render_start:summary_start
+          ]
+
+          summary_part = s[
+              summary_start:nav_start
+          ]
 
           s = (
               s[:render_start]
@@ -692,10 +652,6 @@ jobs:
               + s[nav_start:]
           )
 
-
-          # ======================================================
-          # 5. WRITE FINAL PATCHED SOURCE
-          # ======================================================
 
           p.write_text(
               s,
@@ -708,18 +664,19 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo "RELEASE SOURCE PATCH VERIFICATION"
+          echo "RELEASE SOURCE AUDIT"
           echo "=========================================="
 
+
           # ------------------------------------------------------
-          # The known broken implicit it.text references must be
-          # completely gone except legitimate statusViews.forEach.
+          # Known broken it.text references must be gone.
+          # statusViews.forEach{it.text=...} is legitimate and
+          # therefore is intentionally allowed.
           # ------------------------------------------------------
 
           if grep -nE \
-            '\bit\.text\s*=' \
-            "$FILE" \
-            | grep -v 'statusViews.forEach'; then
+            'it\.text="(Field:|Crop:|Worker:|Workers:|Method:|Advance:|Rate type:|Category:|Status:)' \
+            "$FILE"; then
 
             echo ""
             echo "ERROR: Broken implicit it.text reference remains."
@@ -729,7 +686,7 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Old audit references must not return.
+          # Old audit references must remain fixed.
           # ------------------------------------------------------
 
           ! grep -Fq \
@@ -746,36 +703,44 @@ jobs:
 
 
           # ------------------------------------------------------
-          # renderSummary must exist before render in the
-          # attendanceCalendar local scope.
+          # Required fixed references must exist.
           # ------------------------------------------------------
 
-          SUMMARY_LINE="$(
-            grep -n \
-              'fun renderSummary()' \
-              "$FILE" \
-              | head -n 1 \
-              | cut -d: -f1
-          )"
+          grep -Fq \
+            "app.audit.list()" \
+            "$FILE"
 
-          RENDER_LINE="$(
-            grep -n \
-              'fun render()' \
-              "$FILE" \
-              | tail -n 1 \
-              | cut -d: -f1
-          )"
+          grep -Fq \
+            "app.audit.clear()" \
+            "$FILE"
 
-          test -n "$SUMMARY_LINE"
-          test -n "$RENDER_LINE"
+          grep -Fq \
+            "Context.ALARM_SERVICE" \
+            "$FILE"
 
 
           # ------------------------------------------------------
-          # Confirm the missing-action buttons now have actions.
+          # Missing-action fixes.
           # ------------------------------------------------------
 
           grep -Fq \
             'val cropBtn=btn("Crop: ${crops.first().name}"){}' \
+            "$FILE"
+
+          grep -Fq \
+            'val fb=btn("Field: All"){}' \
+            "$FILE"
+
+          grep -Fq \
+            'val cb=btn("Crop: All"){}' \
+            "$FILE"
+
+          grep -Fq \
+            'val wb=btn("Worker: All"){}' \
+            "$FILE"
+
+          grep -Fq \
+            'val db=btn("Date: All"){}' \
             "$FILE"
 
           grep -Fq \
@@ -794,115 +759,63 @@ jobs:
             'val next=btn("Next ›"){}' \
             "$FILE"
 
+          grep -Fq \
+            'val workerBtn=btn("Worker: All"){}' \
+            "$FILE"
+
+          grep -Fq \
+            'val fieldBtn=btn("Field: All"){}' \
+            "$FILE"
+
+          grep -Fq \
+            'val statusBtn=btn("Status: All"){}' \
+            "$FILE"
+
+
+          # ------------------------------------------------------
+          # renderSummary and render must both exist.
+          # ------------------------------------------------------
+
+          grep -Fq \
+            'fun renderSummary()' \
+            "$FILE"
+
+          grep -Fq \
+            'fun render()' \
+            "$FILE"
+
 
           echo ""
+          echo "=========================================="
           echo "SOURCE_AUDIT=PASS"
+          echo "=========================================="
+
+
+          # ======================================================
+          # ACTUAL RELEASE KOTLIN COMPILATION
+          # ======================================================
 
           echo ""
           echo "=========================================="
           echo "RELEASE KOTLIN COMPILATION"
           echo "=========================================="
 
-          set +e
-
           gradle \
             --no-daemon \
             --no-configuration-cache \
             --stacktrace \
             --no-parallel \
-            :app:compileReleaseKotlin \
-            2>&1 | tee /tmp/majdoor-release-kotlin.log
-
-          KOTLIN_STATUS=${PIPESTATUS[0]}
-
-          set -e
+            :app:compileReleaseKotlin
 
 
-          if [ "$KOTLIN_STATUS" -ne 0 ]; then
-
-            echo ""
-            echo "=========================================="
-            echo "KOTLIN COMPILATION FAILED"
-            echo "=========================================="
-
-            echo ""
-            echo "COMPILER ERRORS:"
-            echo "------------------------------------------"
-
-            grep -E \
-              "e: .*MainActivityScreens.kt:" \
-              /tmp/majdoor-release-kotlin.log \
-              || true
-
-            echo ""
-            echo "------------------------------------------"
-            echo "SOURCE AROUND 1278"
-            echo "------------------------------------------"
-
-            nl -ba "$FILE" \
-              | sed -n '1268,1288p'
-
-            echo ""
-            echo "------------------------------------------"
-            echo "SOURCE AROUND 1384"
-            echo "------------------------------------------"
-
-            nl -ba "$FILE" \
-              | sed -n '1374,1405p'
-
-            echo ""
-            echo "------------------------------------------"
-            echo "SOURCE AROUND 1420"
-            echo "------------------------------------------"
-
-            nl -ba "$FILE" \
-              | sed -n '1414,1440p'
-
-            echo ""
-            echo "------------------------------------------"
-            echo "SOURCE AROUND 1456"
-            echo "------------------------------------------"
-
-            nl -ba "$FILE" \
-              | sed -n '1450,1470p'
-
-            echo ""
-            echo "------------------------------------------"
-            echo "SOURCE AROUND 1517"
-            echo "------------------------------------------"
-
-            nl -ba "$FILE" \
-              | sed -n '1485,1540p'
-
-            echo ""
-            echo "------------------------------------------"
-            echo "SOURCE AROUND 1584"
-            echo "------------------------------------------"
-
-            nl -ba "$FILE" \
-              | sed -n '1575,1595p'
-
-            echo ""
-            echo "=========================================="
-            echo "KOTLIN_COMPILATION=FAIL"
-            echo "=========================================="
-
-            exit "$KOTLIN_STATUS"
-
-          fi
-
-
-          echo ""
-          echo "=========================================="
-          echo "KOTLIN COMPILATION SUCCESS"
-          echo "=========================================="
-
+          # ======================================================
+          # ACTUAL RELEASE APK BUILD
+          # ======================================================
 
           echo ""
           echo "=========================================="
           echo "ASSEMBLING RELEASE APK"
           echo "=========================================="
-
 
           gradle \
             --no-daemon \
