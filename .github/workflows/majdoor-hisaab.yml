@@ -258,16 +258,26 @@ jobs:
           gradle --version | grep -Fq "Gradle 8.11.1"
 
           # ------------------------------------------------------
-          # IMPORTANT:
-          # Keep the repository Gradle Wrapper untouched.
-          # The compatibility gate requires the real ./gradlew.
+          # REPAIR REPOSITORY GRADLE WRAPPER
           # ------------------------------------------------------
+          # The extracted wrapper is required by the compatibility
+          # gate. Regenerate it using the already installed
+          # Gradle 8.11.1 so ./gradlew is a valid repository wrapper.
+          # ------------------------------------------------------
+
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+
+          gradle \
+            wrapper \
+            --gradle-version "${GRADLE_VERSION}" \
+            --distribution-type bin
+
+          chmod +x gradlew
 
           test -f gradlew
           test -f gradle/wrapper/gradle-wrapper.jar
           test -f gradle/wrapper/gradle-wrapper.properties
-
-          chmod +x gradlew
 
           ./gradlew --version
 
