@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: majdoor-hisaab-pro-release
-  cancel-in-progress: true
-
 env:
   JAVA_VERSION: "17"
   GRADLE_VERSION: "8.11.1"
@@ -33,7 +29,7 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
 
@@ -46,7 +42,7 @@ jobs:
 
 
       # ==========================================================
-      # 2. BASIC INFORMATION
+      # 2. BUILD INFORMATION
       # ==========================================================
 
       - name: Show build configuration
@@ -55,16 +51,17 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "MAJDOOR HISAAB PRO RELEASE BUILD"
+          echo "MAJDOOR HISAAB PRO"
+          echo "STABLE RELEASE APK BUILD"
           echo "=========================================="
 
-          echo "Java       : ${JAVA_VERSION}"
-          echo "Gradle     : ${GRADLE_VERSION}"
-          echo "Android API: ${ANDROID_API}"
-          echo "Build Tools: ${BUILD_TOOLS}"
-          echo "Package    : ${PACKAGE_NAME}"
-          echo "Version    : ${VERSION_NAME}"
-          echo "Code       : ${VERSION_CODE}"
+          echo "Java        : ${JAVA_VERSION}"
+          echo "Gradle      : ${GRADLE_VERSION}"
+          echo "Android API : ${ANDROID_API}"
+          echo "Build Tools : ${BUILD_TOOLS}"
+          echo "Package     : ${PACKAGE_NAME}"
+          echo "Version     : ${VERSION_NAME}"
+          echo "VersionCode : ${VERSION_CODE}"
 
           echo "=========================================="
 
@@ -84,12 +81,17 @@ jobs:
 
           mkdir -p project extracted
 
+          # ------------------------------------------------------
+          # Project already present in repository
+          # ------------------------------------------------------
+
           if [ -f "settings.gradle.kts" ] &&
              [ -f "app/build.gradle.kts" ]; then
 
             echo "ANDROID_PROJECT_FOUND_IN_REPOSITORY"
 
             shopt -s dotglob
+
             cp -a . project/
 
           else
@@ -100,6 +102,10 @@ jobs:
 
             unzip -q "$ZIP" -d extracted
 
+            # ----------------------------------------------------
+            # ZIP contains project at root
+            # ----------------------------------------------------
+
             if [ -f "extracted/settings.gradle.kts" ] &&
                [ -f "extracted/app/build.gradle.kts" ]; then
 
@@ -107,9 +113,13 @@ jobs:
 
             else
 
+              # --------------------------------------------------
+              # Find project root inside ZIP
+              # --------------------------------------------------
+
               PROJECT_ROOT="$(
                 find extracted \
-                  -maxdepth 3 \
+                  -maxdepth 4 \
                   -type f \
                   -name settings.gradle.kts \
                   -print \
@@ -137,23 +147,10 @@ jobs:
 
 
       # ==========================================================
-      # 4. ONLY FAILED SOURCE FIXES
-      #
-      # MainActivityScreens.kt
-      #
-      # FIX 1:
-      # app.audit.auditLog() -> app.audit.list()
-      #
-      # FIX 2:
-      # app.audit.clearAuditLog() -> app.audit.clear()
-      #
-      # FIX 3:
-      # ALARM_SERVICE -> Context.ALARM_SERVICE
-      #
-      # NO OTHER SOURCE CODE IS MODIFIED.
+      # 4. ONLY PREVIOUSLY FAILED SOURCE FIXES
       # ==========================================================
 
-      - name: Apply only failed Kotlin source fixes
+      - name: Apply required Kotlin source fixes
         working-directory: project
         shell: bash
         run: |
@@ -163,20 +160,20 @@ jobs:
 
           test -f "$FILE"
 
-          cp "$FILE" "${FILE}.before-ci-fix"
+          cp "$FILE" "${FILE}.original-ci"
 
           python3 - <<'PY'
           from pathlib import Path
 
-          file = Path("app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt")
+          file = Path(
+              "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+          )
 
           text = file.read_text(encoding="utf-8")
 
-          original = text
-
           # ------------------------------------------------------
           # FIX 1
-          # AuditUseCase exposes list(), not auditLog()
+          # AuditUseCase uses list()
           # ------------------------------------------------------
 
           text = text.replace(
@@ -186,7 +183,7 @@ jobs:
 
           # ------------------------------------------------------
           # FIX 2
-          # AuditUseCase exposes clear(), not clearAuditLog()
+          # AuditUseCase uses clear()
           # ------------------------------------------------------
 
           text = text.replace(
@@ -208,50 +205,52 @@ jobs:
 
           print("SOURCE_FIXES_APPLIED")
 
-          print(
-              "auditLog remaining:",
-              text.count("app.audit.auditLog()")
-          )
-
-          print(
-              "clearAuditLog remaining:",
-              text.count("app.audit.clearAuditLog()")
-          )
-
-          print(
-              "ALARM_SERVICE old usage remaining:",
-              text.count("getSystemService(ALARM_SERVICE)")
-          )
-
-          if text == original:
-              print("WARNING: No source change detected")
-
           PY
 
           # ------------------------------------------------------
-          # Verify only intended old references are gone
+          # Verify old references are gone
           # ------------------------------------------------------
 
-          if grep -Fq "app.audit.auditLog()" "$FILE"; then
+          if grep -Fq \
+            "app.audit.auditLog()" \
+            "$FILE"; then
+
             echo "ERROR: old auditLog() reference remains"
             exit 1
+
           fi
 
-          if grep -Fq "app.audit.clearAuditLog()" "$FILE"; then
+          if grep -Fq \
+            "app.audit.clearAuditLog()" \
+            "$FILE"; then
+
             echo "ERROR: old clearAuditLog() reference remains"
             exit 1
+
           fi
 
-          if grep -Fq "getSystemService(ALARM_SERVICE)" "$FILE"; then
+          if grep -Fq \
+            "getSystemService(ALARM_SERVICE)" \
+            "$FILE"; then
+
             echo "ERROR: old ALARM_SERVICE usage remains"
             exit 1
+
           fi
 
-          grep -Fq "app.audit.list()" "$FILE"
-          grep -Fq "app.audit.clear()" "$FILE"
-          grep -Fq "Context.ALARM_SERVICE" "$FILE"
+          grep -Fq \
+            "app.audit.list()" \
+            "$FILE"
 
-          echo "FAILED_SOURCE_FIX=PASS"
+          grep -Fq \
+            "app.audit.clear()" \
+            "$FILE"
+
+          grep -Fq \
+            "Context.ALARM_SERVICE" \
+            "$FILE"
+
+          echo "SOURCE_FIXES_VERIFICATION=PASS"
 
 
       # ==========================================================
@@ -274,7 +273,7 @@ jobs:
 
 
       # ==========================================================
-      # 7. INSTALL ANDROID API 36
+      # 7. ANDROID API 36
       # ==========================================================
 
       - name: Install Android API 36
@@ -282,7 +281,8 @@ jobs:
         run: |
           set -e
 
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          yes | sdkmanager --licenses \
+            >/dev/null 2>&1 || true
 
           sdkmanager \
             "platform-tools" \
@@ -313,23 +313,25 @@ jobs:
         run: |
           set -e
 
-          echo "JAVA:"
+          echo "JAVA VERSION"
           java -version
 
           echo ""
-          echo "GRADLE:"
+          echo "GRADLE VERSION"
           gradle --version
 
-          gradle --version | grep -Fq "Gradle 8.11.1"
+          gradle --version \
+            | grep -Fq "Gradle 8.11.1"
 
           echo ""
-          echo "ANDROID:"
+          echo "ANDROID SDK"
 
-          sdkmanager --list_installed | grep -E \
+          sdkmanager --list_installed \
+            | grep -E \
             "platforms;android-${ANDROID_API}|build-tools;${BUILD_TOOLS}"
 
           echo ""
-          echo "TOOLCHAIN=PASS"
+          echo "TOOLCHAIN_VERIFICATION=PASS"
 
 
       # ==========================================================
@@ -378,26 +380,11 @@ jobs:
 
 
       # ==========================================================
-      # 11. GRADLE CONFIGURATION TEST
-      # ==========================================================
-
-      - name: Test Gradle configuration
-        working-directory: project
-        shell: bash
-        run: |
-          set -e
-
-          gradle \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace \
-            help
-
-          echo "GRADLE_CONFIGURATION=PASS"
-
-
-      # ==========================================================
-      # 12. CLEAN
+      # 11. CLEAN
+      #
+      # No separate "gradle help" here.
+      # The previous run was cancelled during that unnecessary
+      # configuration step.
       # ==========================================================
 
       - name: Clean previous build
@@ -409,13 +396,16 @@ jobs:
           gradle \
             --no-daemon \
             --no-configuration-cache \
+            --stacktrace \
             clean
 
-          echo "CLEAN=PASS"
+          echo "CLEAN_BUILD=PASS"
 
 
       # ==========================================================
-      # 13. BUILD RELEASE APK
+      # 12. BUILD RELEASE APK
+      #
+      # THIS IS THE MAIN BUILD STEP.
       # ==========================================================
 
       - name: Build Release APK
@@ -424,6 +414,10 @@ jobs:
         run: |
           set -e
 
+          echo "=========================================="
+          echo "STARTING RELEASE APK COMPILATION"
+          echo "=========================================="
+
           gradle \
             --no-daemon \
             --no-configuration-cache \
@@ -431,14 +425,20 @@ jobs:
             --no-parallel \
             :app:assembleRelease
 
-          test -s \
-            app/build/outputs/apk/release/app-release-unsigned.apk
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
-          echo "RELEASE_APK_BUILD=PASS"
+          test -s "$APK"
+
+          echo ""
+          echo "=========================================="
+          echo "RELEASE APK BUILD SUCCESS"
+          echo "=========================================="
+
+          ls -lh "$APK"
 
 
       # ==========================================================
-      # 14. VERIFY UNSIGNED APK
+      # 13. VERIFY UNSIGNED APK
       # ==========================================================
 
       - name: Verify unsigned APK
@@ -455,26 +455,31 @@ jobs:
           du -h "$APK"
 
           echo ""
-          echo "APK INFORMATION:"
-
-          aapt dump badging "$APK" | head -n 5
+          echo "APK BADGING:"
 
           aapt dump badging "$APK" \
-            | grep -Fq "package: name='${PACKAGE_NAME}'"
+            | head -n 5
 
           aapt dump badging "$APK" \
-            | grep -Fq "versionCode='${VERSION_CODE}'"
+            | grep -Fq \
+            "package: name='${PACKAGE_NAME}'"
 
           aapt dump badging "$APK" \
-            | grep -Fq "versionName='${VERSION_NAME}'"
+            | grep -Fq \
+            "versionCode='${VERSION_CODE}'"
 
-          unzip -t "$APK" >/dev/null
+          aapt dump badging "$APK" \
+            | grep -Fq \
+            "versionName='${VERSION_NAME}'"
 
-          echo "APK_VERIFICATION=PASS"
+          unzip -t "$APK" \
+            >/dev/null
+
+          echo "UNSIGNED_APK_VERIFICATION=PASS"
 
 
       # ==========================================================
-      # 15. RESTORE RELEASE KEYSTORE
+      # 14. RESTORE RELEASE KEYSTORE
       # ==========================================================
 
       - name: Restore release keystore
@@ -505,11 +510,11 @@ jobs:
             -alias "$KEY_ALIAS" \
             >/dev/null
 
-          echo "KEYSTORE=PASS"
+          echo "RELEASE_KEYSTORE=PASS"
 
 
       # ==========================================================
-      # 16. ZIPALIGN
+      # 15. ZIPALIGN
       # ==========================================================
 
       - name: Align APK
@@ -539,7 +544,7 @@ jobs:
 
 
       # ==========================================================
-      # 17. SIGN APK
+      # 16. SIGN APK
       # ==========================================================
 
       - name: Sign Release APK
@@ -559,7 +564,8 @@ jobs:
             --ks-key-alias "$KEY_ALIAS" \
             --ks-pass env:KEYSTORE_PASSWORD \
             --key-pass env:KEY_PASSWORD \
-            --out artifacts/Majdoor-Hisaab-PRO-release.apk \
+            --out \
+            artifacts/Majdoor-Hisaab-PRO-release.apk \
             app-release-aligned.apk
 
           test -s \
@@ -569,7 +575,7 @@ jobs:
 
 
       # ==========================================================
-      # 18. VERIFY SIGNATURE
+      # 17. VERIFY SIGNED APK
       # ==========================================================
 
       - name: Verify signed APK
@@ -579,6 +585,8 @@ jobs:
           set -e
 
           APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
+
+          test -s "$APK"
 
           apksigner verify \
             --verbose \
@@ -592,21 +600,25 @@ jobs:
             "$APK"
 
           aapt dump badging "$APK" \
-            | grep -Fq "package: name='${PACKAGE_NAME}'"
+            | grep -Fq \
+            "package: name='${PACKAGE_NAME}'"
 
           aapt dump badging "$APK" \
-            | grep -Fq "versionCode='${VERSION_CODE}'"
+            | grep -Fq \
+            "versionCode='${VERSION_CODE}'"
 
           aapt dump badging "$APK" \
-            | grep -Fq "versionName='${VERSION_NAME}'"
+            | grep -Fq \
+            "versionName='${VERSION_NAME}'"
 
-          unzip -t "$APK" >/dev/null
+          unzip -t "$APK" \
+            >/dev/null
 
           echo "SIGNED_APK_VERIFICATION=PASS"
 
 
       # ==========================================================
-      # 19. SHA256
+      # 18. SHA256
       # ==========================================================
 
       - name: Generate SHA256
@@ -617,7 +629,8 @@ jobs:
 
           sha256sum \
             artifacts/Majdoor-Hisaab-PRO-release.apk \
-            | tee artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
+            | tee \
+            artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
 
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
@@ -626,7 +639,7 @@ jobs:
 
 
       # ==========================================================
-      # 20. UPLOAD FINAL APK
+      # 19. UPLOAD FINAL APK
       # ==========================================================
 
       - name: Upload final signed APK
@@ -641,7 +654,7 @@ jobs:
 
 
       # ==========================================================
-      # 21. FINAL SUCCESS
+      # 20. FINAL SUCCESS
       # ==========================================================
 
       - name: FINAL BUILD SUCCESS
@@ -649,13 +662,14 @@ jobs:
         run: |
           echo ""
           echo "=========================================="
-          echo "      MAJDOOR HISAAB PRO"
-          echo "      RELEASE BUILD SUCCESS"
+          echo "       MAJDOOR HISAAB PRO"
+          echo "       RELEASE BUILD SUCCESS"
           echo "=========================================="
           echo ""
-          echo "Package : ${PACKAGE_NAME}"
-          echo "Version : ${VERSION_NAME}"
-          echo "Code    : ${VERSION_CODE}"
+          echo "Package     : ${PACKAGE_NAME}"
+          echo "Version     : ${VERSION_NAME}"
+          echo "VersionCode : ${VERSION_CODE}"
           echo ""
-          echo "SIGNED APK CREATED"
+          echo "SIGNED APK CREATED SUCCESSFULLY"
+          echo ""
           echo "=========================================="
