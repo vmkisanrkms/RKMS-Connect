@@ -86,17 +86,7 @@ jobs:
           echo "PROJECT_EXTRACT=PASS"
 
       # ==========================================================
-      # 3. FIXED:
-      #    AUTOMATICALLY DETECT THE ACTUAL WORKFLOW FILE
-      #
-      #    Your repository currently uses:
-      #    .github/workflows/majdoor-hisaab.yml
-      #
-      #    But release gates expect:
-      #    .github/workflows/build-release-apk.yml
-      #
-      #    We therefore copy whichever workflow actually triggered
-      #    this run.
+      # 3. INSTALL WORKFLOW INTO EXTRACTED PROJECT
       # ==========================================================
 
       - name: Install workflow into extracted project
@@ -150,10 +140,18 @@ jobs:
 
       # ==========================================================
       # 6. ANDROID SDK
+      #
+      # FIX:
+      # setup-android@v3 was requesting deprecated "tools"
+      # package and failing.
+      #
+      # platform-tools is explicitly requested.
       # ==========================================================
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Install Android API 36 and Build Tools 36
         shell: bash
@@ -169,6 +167,8 @@ jobs:
 
           sdkmanager --list_installed | grep -E \
             "platforms;android-${ANDROID_API}|build-tools;${BUILD_TOOLS}|platform-tools"
+
+          echo "ANDROID_SDK_INSTALL=PASS"
 
       # ==========================================================
       # 7. EXACT CONFIGURATION AUDIT
@@ -228,6 +228,14 @@ jobs:
             'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
             gradle/wrapper/gradle-wrapper.properties
 
+          echo "AGP=8.9.1"
+          echo "KOTLIN=2.1.21"
+          echo "GRADLE=8.11.1"
+          echo "JDK=17"
+          echo "ANDROID_API=36"
+          echo "PACKAGE=com.majdoor.hisaab"
+          echo "VERSION=1.77.0"
+          echo "VERSION_CODE=77"
           echo "CONFIGURATION_AUDIT=PASS"
 
       # ==========================================================
@@ -338,6 +346,11 @@ jobs:
 
           grep -R -q \
             --include='*.kt' \
+            'core_records' \
+            app/src/main/java/com/majdoor/hisaab
+
+          grep -R -q \
+            --include='*.kt' \
             'CoreSqliteStore' \
             app/src/main/java/com/majdoor/hisaab
 
@@ -359,7 +372,7 @@ jobs:
           echo "OFFLINE_SQLITE_GATE=PASS"
 
       # ==========================================================
-      # 13. DEPENDENCIES
+      # 13. DEPENDENCY HEALTH
       # ==========================================================
 
       - name: Resolve dependencies
@@ -394,7 +407,7 @@ jobs:
           echo "DEPENDENCY_RESOLUTION=PASS"
 
       # ==========================================================
-      # 14. UNIT + KOTLIN
+      # 14. UNIT TESTS + COMPILE
       # ==========================================================
 
       - name: Run unit tests and compile variants
@@ -469,7 +482,7 @@ jobs:
           echo "RELEASE_UNSIGNED_APK=PASS"
 
       # ==========================================================
-      # 17. E2E APKs
+      # 17. E2E RELEASE + ANDROID TEST APK
       # ==========================================================
 
       - name: Build E2E Release and AndroidTest APK
@@ -493,10 +506,10 @@ jobs:
             app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
             artifacts/test/Majdoor-Hisaab-PRO-release-androidTest-unsigned.apk
 
-          echo "E2E_BUILD=PASS"
+          echo "E2E_AND_INSTRUMENTATION_BUILD=PASS"
 
       # ==========================================================
-      # 18. RELEASE METADATA
+      # 18. UNSIGNED RELEASE APK METADATA
       # ==========================================================
 
       - name: Verify unsigned Release APK
@@ -526,7 +539,7 @@ jobs:
           echo "UNSIGNED_RELEASE_METADATA=PASS"
 
       # ==========================================================
-      # 19. KEYSTORE
+      # 19. RESTORE PRODUCTION KEYSTORE
       # ==========================================================
 
       - name: Restore production signing keystore
@@ -574,12 +587,13 @@ jobs:
               | tr '[:lower:]' '[:upper:]'
           )"
 
+          test -n "$ACTUAL_CERT"
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
           echo "PRODUCTION_KEYSTORE_CERTIFICATE=PASS"
 
       # ==========================================================
-      # 20. SIGN RELEASE APK
+      # 20. ZIPALIGN + SIGN PRODUCTION RELEASE APK
       # ==========================================================
 
       - name: Sign Production Release APK
@@ -651,7 +665,7 @@ jobs:
           echo "PRODUCTION_SIGNED_APK=PASS"
 
       # ==========================================================
-      # 21. SIGN ANDROIDTEST APK
+      # 21. SIGN RELEASE ANDROIDTEST APK
       # ==========================================================
 
       - name: Sign Release AndroidTest APK
@@ -707,7 +721,9 @@ jobs:
 
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
-          echo "SIGNED_ANDROIDTEST=PASS"
+          test -s "$TEST_SIGNED"
+
+          echo "SIGNED_RELEASE_ANDROIDTEST=PASS"
 
       # ==========================================================
       # 22. PRODUCTION SIGNING GATE
@@ -727,7 +743,7 @@ jobs:
           echo "PRODUCTION_SIGNING_GATE=PASS"
 
       # ==========================================================
-      # 23. FIXED SHA-256 GATE
+      # 23. FINAL APK SHA-256 GATE
       # ==========================================================
 
       - name: Run final APK SHA-256 gate
@@ -740,7 +756,8 @@ jobs:
 
           test -s "$APK"
 
-          ./scripts/phase1-points-18-25-gate.sh "$APK"
+          ./scripts/phase1-points-18-25-gate.sh \
+            "$APK"
 
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
@@ -758,7 +775,7 @@ jobs:
           echo "FINAL_SHA256_GATE=PASS"
 
       # ==========================================================
-      # 24. DEBUG RUNTIME
+      # 24. DEBUG EMULATOR
       # ==========================================================
 
       - name: Install and launch Debug APK
@@ -809,7 +826,7 @@ jobs:
             echo "DEBUG_RUNTIME=PASS"
 
       # ==========================================================
-      # 25. CONNECTED E2E
+      # 25. COMPLETE RELEASE E2E TEST
       # ==========================================================
 
       - name: Run connected E2E Release test suite
@@ -856,7 +873,7 @@ jobs:
             echo "CONNECTED_E2E_RELEASE=PASS"
 
       # ==========================================================
-      # 26. PHASE 17
+      # 26. PHASE 17 REAL ANDROID RUNTIME
       # ==========================================================
 
       - name: Run Phase 17 real Android runtime suite
@@ -898,7 +915,7 @@ jobs:
             echo "PHASE17_RUNTIME=PASS"
 
       # ==========================================================
-      # 27. PHASE 18
+      # 27. PHASE 18 CONFIGURATION LIFECYCLE
       # ==========================================================
 
       - name: Run Phase 18 configuration lifecycle E2E
@@ -932,7 +949,7 @@ jobs:
             echo "PHASE18_RUNTIME=PASS"
 
       # ==========================================================
-      # 28. CLEAN INSTALL / RESTORE
+      # 28. CLEAN INSTALL BACKUP RESTORE
       # ==========================================================
 
       - name: Run Clean Install Backup Restore E2E
@@ -971,7 +988,7 @@ jobs:
             echo "CLEAN_INSTALL_RESTORE=PASS"
 
       # ==========================================================
-      # 29. OFFLINE FIRST
+      # 29. PHASE 19 OFFLINE FIRST
       # ==========================================================
 
       - name: Run Phase 19 offline-first E2E
@@ -1041,7 +1058,7 @@ jobs:
             echo "SIGNED_RELEASE_E2E=PASS"
 
       # ==========================================================
-      # 31. REBOOT PERSISTENCE
+      # 31. SIGNED RELEASE REBOOT PERSISTENCE
       # ==========================================================
 
       - name: Run signed Release reboot persistence gate
@@ -1076,7 +1093,7 @@ jobs:
             echo "SIGNED_RELEASE_REBOOT=PASS"
 
       # ==========================================================
-      # 32. RUNTIME MARKERS
+      # 32. FINAL RUNTIME MARKER VALIDATION
       # ==========================================================
 
       - name: Verify all final runtime evidence markers
@@ -1106,7 +1123,7 @@ jobs:
           echo "ALL_RUNTIME_EVIDENCE_MARKERS=PASS"
 
       # ==========================================================
-      # 33. FIXED FINAL SHA-256 + RELEASE GATE
+      # 33. FINAL RELEASE GATE 541-566
       # ==========================================================
 
       - name: Run FINAL RELEASE GATE 541-566
@@ -1132,7 +1149,7 @@ jobs:
           echo "541_566_FINAL_RELEASE_GATE=PASS"
 
       # ==========================================================
-      # 34. FINAL APK VERIFICATION
+      # 34. FINAL APK INFORMATION
       # ==========================================================
 
       - name: Final signed APK verification
@@ -1177,11 +1194,14 @@ jobs:
           echo "=============================================="
 
       # ==========================================================
-      # 35. FINAL ARTIFACT
+      # 35. UPLOAD FINAL ARTIFACTS
+      #
+      # FIX:
+      # Do not run artifact upload after a failed build.
       # ==========================================================
 
       - name: Upload final APK and audit evidence
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-FINAL-SIGNED-APK
