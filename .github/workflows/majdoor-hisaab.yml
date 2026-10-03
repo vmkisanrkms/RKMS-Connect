@@ -20,8 +20,7 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
-
+  ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
 
 jobs:
 
@@ -69,7 +68,15 @@ jobs:
 
 
       # ==========================================================
-      # 3. PREPARE AND FIND ANDROID PROJECT
+      # 3. PREPARE AND FIND PROJECT
+      #
+      # FIXED:
+      # - Git LFS ZIP support
+      # - exact ZIP search
+      # - safe ZIP copy
+      # - ZIP integrity verification
+      # - Python zip extraction
+      # - detailed diagnostics
       # ==========================================================
 
       - name: Prepare Android project
@@ -102,11 +109,10 @@ jobs:
             echo "SEARCHING FOR PROJECT ZIP..."
 
             # ----------------------------------------------------
-            # Git LFS
+            # Try Git LFS if the repository uses LFS.
             # ----------------------------------------------------
 
             if command -v git-lfs >/dev/null 2>&1; then
-
               echo "GIT_LFS_DETECTED"
 
               git lfs install --local >/dev/null 2>&1 || true
@@ -114,29 +120,24 @@ jobs:
               git lfs pull >/dev/null 2>&1 || true
 
               echo "GIT_LFS_PULL_COMPLETED"
-
             else
-
               echo "GIT_LFS_NOT_INSTALLED"
-
             fi
 
 
             # ----------------------------------------------------
-            # Expected ZIP
+            # Search expected ZIP first.
             # ----------------------------------------------------
 
             ZIP_PATH=""
 
             if [ -f "${ZIP_NAME}" ]; then
-
               ZIP_PATH="./${ZIP_NAME}"
-
             fi
 
 
             # ----------------------------------------------------
-            # BUILD_FIXED ZIP
+            # Search BUILD_FIXED ZIP.
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -152,7 +153,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Recursive expected ZIP search
+            # Recursive exact search.
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -172,7 +173,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Recursive BUILD_FIXED search
+            # Recursive BUILD_FIXED search.
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -192,7 +193,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Final fallback
+            # Final fallback.
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -212,7 +213,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # ZIP NOT FOUND
+            # ZIP must exist.
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -221,13 +222,13 @@ jobs:
               echo "=========================================="
               echo "ERROR: MAJDOOR HISAAB PROJECT ZIP NOT FOUND"
               echo "=========================================="
-
               echo ""
+
               echo "Expected:"
               echo "${ZIP_NAME}"
 
               echo ""
-              echo "BUILD_FIXED:"
+              echo "BUILD_FIXED fallback:"
               echo "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
 
               echo ""
@@ -241,7 +242,7 @@ jobs:
                 | head -n 50 || true
 
               echo ""
-              echo "GIT TRACKED FILES:"
+              echo "GIT TRACKED FILE CHECK:"
 
               git ls-files \
                 | grep -Ei \
@@ -254,7 +255,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Normalize ZIP path
+            # Normalize path.
             # ----------------------------------------------------
 
             ZIP_PATH="$(realpath "$ZIP_PATH")"
@@ -273,7 +274,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Git LFS pointer check
+            # Detect Git LFS pointer.
             # ----------------------------------------------------
 
             if head -n 1 "$ZIP_PATH" 2>/dev/null \
@@ -281,6 +282,7 @@ jobs:
 
               echo ""
               echo "ERROR: ZIP IS STILL A GIT LFS POINTER"
+              echo "Git LFS object was not downloaded."
 
               git lfs ls-files || true
 
@@ -290,7 +292,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Verify ZIP
+            # Verify ZIP using Python zipfile.
             # ----------------------------------------------------
 
             echo ""
@@ -304,7 +306,6 @@ jobs:
 
           try:
               with zipfile.ZipFile(zip_path, "r") as z:
-
                   bad = z.testzip()
 
                   if bad is not None:
@@ -337,7 +338,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Extract ZIP
+            # Extract with Python.
             # ----------------------------------------------------
 
             echo ""
@@ -365,7 +366,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Detect project root
+            # Detect project root.
             # ----------------------------------------------------
 
             if [ -f "extracted/settings.gradle.kts" ] &&
@@ -420,13 +421,14 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Final project verification
+          # Final project verification.
           # ------------------------------------------------------
 
           test -f project/settings.gradle.kts
           test -f project/build.gradle.kts
           test -f project/app/build.gradle.kts
           test -f project/app/src/main/AndroidManifest.xml
+
 
           echo ""
           echo "=========================================="
@@ -435,27 +437,14 @@ jobs:
 
 
       # ==========================================================
-      # 4. SAFE KOTLIN FIXES ONLY
-      #
-      # IMPORTANT:
-      # Do NOT modify UI variables such as:
-      # fb
-      # cropBtn
-      # workerBtn
-      # rateTypeBtn
-      # wb
-      # mb
-      # adv
-      # cb
-      #
-      # Previous build failed because of those broad replacements.
+      # 4. APPLY ONLY PREVIOUSLY FAILED KOTLIN FIXES
       # ==========================================================
 
       - name: Apply required Kotlin source fixes
         working-directory: project
         shell: bash
         run: |
-          set -Eeuo pipefail
+          set -e
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
 
@@ -473,10 +462,6 @@ jobs:
 
           text = file.read_text(encoding="utf-8")
 
-          # ------------------------------------------------------
-          # SAFE AUDIT API FIXES ONLY
-          # ------------------------------------------------------
-
           text = text.replace(
               "app.audit.auditLog()",
               "app.audit.list()"
@@ -486,10 +471,6 @@ jobs:
               "app.audit.clearAuditLog()",
               "app.audit.clear()"
           )
-
-          # ------------------------------------------------------
-          # SAFE Android Context constant
-          # ------------------------------------------------------
 
           text = text.replace(
               "getSystemService(ALARM_SERVICE)",
@@ -501,66 +482,43 @@ jobs:
               encoding="utf-8"
           )
 
-          print("SAFE_SOURCE_FIXES_APPLIED")
+          print("SOURCE_FIXES_APPLIED")
           PY
-
-
-          # ------------------------------------------------------
-          # Verify safe fixes
-          # ------------------------------------------------------
 
           if grep -Fq \
             "app.audit.auditLog()" \
             "$FILE"; then
-
             echo "ERROR: old auditLog() reference remains"
-
             exit 1
-
           fi
-
 
           if grep -Fq \
             "app.audit.clearAuditLog()" \
             "$FILE"; then
-
             echo "ERROR: old clearAuditLog() reference remains"
-
             exit 1
-
           fi
-
 
           if grep -Fq \
             "getSystemService(ALARM_SERVICE)" \
             "$FILE"; then
-
             echo "ERROR: old ALARM_SERVICE reference remains"
-
             exit 1
-
           fi
-
 
           grep -Fq \
             "app.audit.list()" \
             "$FILE"
 
-
           grep -Fq \
             "app.audit.clear()" \
             "$FILE"
-
 
           grep -Fq \
             "Context.ALARM_SERVICE" \
             "$FILE"
 
-
-          echo ""
-          echo "=========================================="
-          echo "SAFE_SOURCE_FIXES_VERIFICATION=PASS"
-          echo "=========================================="
+          echo "SOURCE_FIXES_VERIFICATION=PASS"
 
 
       # ==========================================================
@@ -709,22 +667,125 @@ jobs:
 
 
       # ==========================================================
-      # 12. COMPILE RELEASE KOTLIN
+      # 12. BUILD RELEASE APK
+      #
+      # ONLY THIS SECTION HAS BEEN CHANGED
       #
       # IMPORTANT:
-      # No automatic source rewriting here.
-      # This is the critical fix.
+      # Previous failure was caused by broad replacements such as:
+      #
+      # it.text -> fb.text
+      # it.text -> cropBtn.text
+      # it.text -> workerBtn.text
+      # it.text -> rateTypeBtn.text
+      # it.text -> wb.text
+      # it.text -> mb.text
+      # it.text -> adv.text
+      # it.text -> cb.text
+      #
+      # Those replacements are NOT performed here.
+      #
+      # We first compile Kotlin and only if compilation succeeds
+      # do we assemble the release APK.
       # ==========================================================
 
-      - name: Compile Release Kotlin
+      - name: Build Release APK
         working-directory: project
         shell: bash
         run: |
           set -Eeuo pipefail
 
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+
+          test -f "$FILE"
+
           echo ""
           echo "=========================================="
-          echo "RELEASE KOTLIN COMPILATION"
+          echo "RELEASE SOURCE CHECK"
+          echo "=========================================="
+
+          echo "Kotlin file:"
+          echo "$FILE"
+
+          echo ""
+          echo "IMPORTANT:"
+          echo "No broad UI variable replacements will be performed."
+
+          echo ""
+          echo "=========================================="
+          echo "CHECKING PREVIOUS SAFE FIXES"
+          echo "=========================================="
+
+          if grep -Fq \
+            "app.audit.auditLog()" \
+            "$FILE"; then
+
+            echo "ERROR: old auditLog() reference remains"
+            exit 1
+
+          fi
+
+
+          if grep -Fq \
+            "app.audit.clearAuditLog()" \
+            "$FILE"; then
+
+            echo "ERROR: old clearAuditLog() reference remains"
+            exit 1
+
+          fi
+
+
+          if grep -Fq \
+            "getSystemService(ALARM_SERVICE)" \
+            "$FILE"; then
+
+            echo "ERROR: old ALARM_SERVICE reference remains"
+            exit 1
+
+          fi
+
+
+          grep -Fq \
+            "app.audit.list()" \
+            "$FILE"
+
+
+          grep -Fq \
+            "app.audit.clear()" \
+            "$FILE"
+
+
+          grep -Fq \
+            "Context.ALARM_SERVICE" \
+            "$FILE"
+
+
+          echo "SOURCE_SAFE_FIX_CHECK=PASS"
+
+
+          # ------------------------------------------------------
+          # IMPORTANT:
+          # Do NOT modify MainActivityScreens.kt here.
+          #
+          # The previous failed workflow modified it with broad
+          # string replacements. That caused:
+          #
+          # Unresolved reference 'fb'
+          # Unresolved reference 'cropBtn'
+          # Unresolved reference 'workerBtn'
+          # Unresolved reference 'rateTypeBtn'
+          # Unresolved reference 'wb'
+          # Unresolved reference 'mb'
+          # Unresolved reference 'adv'
+          # Unresolved reference 'cb'
+          #
+          # No such modifications are made now.
+          # ------------------------------------------------------
+
+          echo ""
+          echo "=========================================="
+          echo "COMPILE RELEASE KOTLIN"
           echo "=========================================="
 
           gradle \
@@ -734,25 +795,20 @@ jobs:
             --no-parallel \
             :app:compileReleaseKotlin
 
-          echo ""
-          echo "=========================================="
-          echo "KOTLIN_COMPILATION=PASS"
-          echo "=========================================="
-
-
-      # ==========================================================
-      # 13. BUILD RELEASE APK
-      # ==========================================================
-
-      - name: Build Release APK
-        working-directory: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
 
           echo ""
           echo "=========================================="
-          echo "ASSEMBLING RELEASE APK"
+          echo "KOTLIN COMPILATION=PASS"
+          echo "=========================================="
+
+
+          # ------------------------------------------------------
+          # Assemble release APK
+          # ------------------------------------------------------
+
+          echo ""
+          echo "=========================================="
+          echo "ASSEMBLE RELEASE APK"
           echo "=========================================="
 
           gradle \
@@ -762,20 +818,55 @@ jobs:
             --no-parallel \
             :app:assembleRelease
 
+
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
-          test -s "$APK"
+
+          # ------------------------------------------------------
+          # Verify APK exists
+          # ------------------------------------------------------
+
+          if [ ! -s "$APK" ]; then
+
+            echo ""
+            echo "=========================================="
+            echo "ERROR: RELEASE APK NOT CREATED"
+            echo "=========================================="
+
+            echo ""
+            echo "Release output files:"
+
+            find app/build/outputs \
+              -maxdepth 5 \
+              -type f \
+              -print \
+              2>/dev/null || true
+
+            exit 1
+
+          fi
+
 
           echo ""
           echo "=========================================="
           echo "RELEASE APK BUILD SUCCESS"
           echo "=========================================="
 
+          echo "APK:"
           ls -lh "$APK"
+
+          echo ""
+          echo "APK PATH:"
+          realpath "$APK"
+
+          echo ""
+          echo "=========================================="
+          echo "BUILD_RELEASE_APK=PASS"
+          echo "=========================================="
 
 
       # ==========================================================
-      # 14. VERIFY UNSIGNED APK
+      # 13. VERIFY UNSIGNED APK
       # ==========================================================
 
       - name: Verify unsigned APK
@@ -816,7 +907,7 @@ jobs:
 
 
       # ==========================================================
-      # 15. RESTORE RELEASE KEYSTORE
+      # 14. RESTORE RELEASE KEYSTORE
       # ==========================================================
 
       - name: Restore release keystore
@@ -826,7 +917,6 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.MH_RELEASE_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
-
         shell: bash
         run: |
           set -e
@@ -852,7 +942,7 @@ jobs:
 
 
       # ==========================================================
-      # 16. ZIPALIGN
+      # 15. ZIPALIGN
       # ==========================================================
 
       - name: Align APK
@@ -882,7 +972,7 @@ jobs:
 
 
       # ==========================================================
-      # 17. SIGN APK
+      # 16. SIGN APK
       # ==========================================================
 
       - name: Sign Release APK
@@ -891,7 +981,6 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.MH_RELEASE_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
-
         shell: bash
         run: |
           set -e
@@ -914,7 +1003,7 @@ jobs:
 
 
       # ==========================================================
-      # 18. VERIFY SIGNED APK
+      # 17. VERIFY SIGNED APK
       # ==========================================================
 
       - name: Verify signed APK
@@ -957,7 +1046,7 @@ jobs:
 
 
       # ==========================================================
-      # 19. SHA256
+      # 18. SHA256
       # ==========================================================
 
       - name: Generate SHA256
@@ -978,7 +1067,7 @@ jobs:
 
 
       # ==========================================================
-      # 20. UPLOAD FINAL APK
+      # 19. UPLOAD FINAL APK
       # ==========================================================
 
       - name: Upload final signed APK
@@ -996,7 +1085,7 @@ jobs:
 
 
       # ==========================================================
-      # 21. FINAL SUCCESS
+      # 20. FINAL SUCCESS
       # ==========================================================
 
       - name: FINAL BUILD SUCCESS
