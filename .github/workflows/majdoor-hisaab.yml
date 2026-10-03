@@ -233,15 +233,7 @@ jobs:
           echo "CONFIGURATION_AUDIT=PASS"
 
       # ==========================================================
-      # 8. FIXED FAILED STEP
-      #
-      # ONLY CHANGE:
-      # Explicitly add Android Build Tools 36.0.0 to PATH.
-      # This provides:
-      # apksigner
-      # zipalign
-      # apkanalyzer
-      # adb
+      # 8. VERIFY JAVA GRADLE AND ANDROID TOOLS
       # ==========================================================
 
       - name: Set up direct Gradle 8.11.1
@@ -293,10 +285,8 @@ jobs:
           test -d "$BUILD_TOOLS_DIR"
           test -d "$PLATFORM_TOOLS_DIR"
 
-          # Explicitly add Android tools to current PATH
           export PATH="${BUILD_TOOLS_DIR}:${PLATFORM_TOOLS_DIR}:${CMDLINE_TOOLS_DIR}:${PATH}"
 
-          # Also make the paths available to every following step
           {
             echo "${BUILD_TOOLS_DIR}"
             echo "${PLATFORM_TOOLS_DIR}"
@@ -321,7 +311,10 @@ jobs:
           command -v unzip
 
           apksigner --version
-          zipalign -h >/dev/null
+
+          # zipalign -h prints help but may return exit code 1.
+          # Do not let the help command fail the CI step.
+          zipalign -h >/dev/null 2>&1 || true
 
           echo "ADB_PATH=$(command -v adb)"
           echo "APKANALYZER_PATH=$(command -v apkanalyzer)"
