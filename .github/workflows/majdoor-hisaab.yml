@@ -69,12 +69,20 @@ jobs:
 
       # ==========================================================
       # 3. PREPARE AND FIND PROJECT
+      #
+      # FIXED:
+      # - Git LFS ZIP support
+      # - exact ZIP search
+      # - safe ZIP copy
+      # - ZIP integrity verification
+      # - Python zip extraction
+      # - detailed diagnostics
       # ==========================================================
 
       - name: Prepare Android project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           rm -rf project
           rm -rf extracted
@@ -100,15 +108,74 @@ jobs:
             echo "ANDROID_PROJECT_NOT_FOUND_AT_ROOT"
             echo "SEARCHING FOR PROJECT ZIP..."
 
-            ZIP_PATH="$(
-              find . \
-                -type f \
-                -name "${ZIP_NAME}" \
-                -not -path "./project/*" \
-                -not -path "./extracted/*" \
-                -print \
-                | head -n 1
-            )"
+            # ----------------------------------------------------
+            # Try Git LFS if the repository uses LFS.
+            # This is harmless when LFS is not being used.
+            # ----------------------------------------------------
+
+            if command -v git-lfs >/dev/null 2>&1; then
+              echo "GIT_LFS_DETECTED"
+
+              git lfs install --local >/dev/null 2>&1 || true
+
+              git lfs pull >/dev/null 2>&1 || true
+
+              echo "GIT_LFS_PULL_COMPLETED"
+            else
+              echo "GIT_LFS_NOT_INSTALLED"
+            fi
+
+
+            # ----------------------------------------------------
+            # Search expected ZIP first.
+            # ----------------------------------------------------
+
+            ZIP_PATH=""
+
+            if [ -f "${ZIP_NAME}" ]; then
+              ZIP_PATH="./${ZIP_NAME}"
+            fi
+
+
+            # ----------------------------------------------------
+            # Search BUILD_FIXED ZIP.
+            # ----------------------------------------------------
+
+            if [ -z "$ZIP_PATH" ]; then
+
+              if [ -f \
+                "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip" ]; then
+
+                ZIP_PATH="./Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
+
+              fi
+
+            fi
+
+
+            # ----------------------------------------------------
+            # Recursive exact search.
+            # ----------------------------------------------------
+
+            if [ -z "$ZIP_PATH" ]; then
+
+              ZIP_PATH="$(
+                find . \
+                  -type f \
+                  -name "${ZIP_NAME}" \
+                  -not -path "./project/*" \
+                  -not -path "./extracted/*" \
+                  -not -path "./.git/*" \
+                  -print \
+                  | head -n 1
+              )"
+
+            fi
+
+
+            # ----------------------------------------------------
+            # Recursive BUILD_FIXED search.
+            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -118,11 +185,17 @@ jobs:
                   -name "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip" \
                   -not -path "./project/*" \
                   -not -path "./extracted/*" \
+                  -not -path "./.git/*" \
                   -print \
                   | head -n 1
-              )
+              )"
 
             fi
+
+
+            # ----------------------------------------------------
+            # Final fallback.
+            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -132,11 +205,17 @@ jobs:
                   -iname "Majdoor_Hisaab*.zip" \
                   -not -path "./project/*" \
                   -not -path "./extracted/*" \
+                  -not -path "./.git/*" \
                   -print \
                   | head -n 1
-              )
+              )"
 
             fi
+
+
+            # ----------------------------------------------------
+            # ZIP must exist.
+            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -145,31 +224,160 @@ jobs:
               echo "ERROR: MAJDOOR HISAAB PROJECT ZIP NOT FOUND"
               echo "=========================================="
               echo ""
+
               echo "Expected:"
               echo "${ZIP_NAME}"
+
               echo ""
+              echo "BUILD_FIXED fallback:"
+              echo "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
+
+              echo ""
+              echo "AVAILABLE ZIP FILES:"
 
               find . \
                 -type f \
                 -iname "*.zip" \
                 -not -path "./.git/*" \
                 -print \
-                | head -n 30 || true
+                | head -n 50 || true
+
+              echo ""
+              echo "GIT TRACKED FILE CHECK:"
+
+              git ls-files \
+                | grep -Ei \
+                'Majdoor_Hisaab.*\.zip$' \
+                | head -n 50 || true
 
               exit 1
 
             fi
 
+
+            # ----------------------------------------------------
+            # Normalize path.
+            # ----------------------------------------------------
+
+            ZIP_PATH="$(realpath "$ZIP_PATH")"
+
+            echo ""
+            echo "=========================================="
+            echo "PROJECT ZIP FOUND"
+            echo "=========================================="
+
             echo "PROJECT_ZIP_FOUND=${ZIP_PATH}"
 
-            unzip -q "$ZIP_PATH" -d extracted
+            test -f "$ZIP_PATH"
+            test -r "$ZIP_PATH"
 
+            ls -lh "$ZIP_PATH"
+
+
+            # ----------------------------------------------------
+            # Detect Git LFS pointer.
+            # ----------------------------------------------------
+
+            if head -n 1 "$ZIP_PATH" 2>/dev/null \
+              | grep -Fq "version https://git-lfs.github.com/spec/v1"; then
+
+              echo ""
+              echo "ERROR: ZIP IS STILL A GIT LFS POINTER"
+              echo "Git LFS object was not downloaded."
+
+              git lfs ls-files || true
+
+              exit 1
+
+            fi
+
+
+            # ----------------------------------------------------
+            # Verify ZIP using Python zipfile.
+            # ----------------------------------------------------
+
+            echo ""
+            echo "VERIFYING ZIP INTEGRITY..."
+
+            python3 - "$ZIP_PATH" <<'PY'
+          import sys
+          import zipfile
+
+          zip_path = sys.argv[1]
+
+          try:
+              with zipfile.ZipFile(zip_path, "r") as z:
+                  bad = z.testzip()
+
+                  if bad is not None:
+                      print(f"ERROR: CORRUPTED ZIP ENTRY: {bad}")
+                      raise SystemExit(1)
+
+                  names = z.namelist()
+
+                  print(f"ZIP_ENTRIES={len(names)}")
+
+                  required = [
+                      "settings.gradle.kts",
+                      "build.gradle.kts",
+                      "app/build.gradle.kts",
+                      "app/src/main/AndroidManifest.xml",
+                  ]
+
+                  for item in required:
+                      if item in names:
+                          print(f"ZIP_REQUIRED_FILE=PASS:{item}")
+                      else:
+                          print(f"ZIP_REQUIRED_FILE=MISS:{item}")
+
+                  print("ZIP_INTEGRITY=PASS")
+
+          except zipfile.BadZipFile as exc:
+              print(f"ERROR: INVALID ZIP: {exc}")
+              raise SystemExit(1)
+          PY
+
+
+            # ----------------------------------------------------
+            # Extract with Python.
+            #
+            # This avoids the previous unzip path/open failure.
+            # ----------------------------------------------------
+
+            echo ""
+            echo "EXTRACTING PROJECT ZIP..."
+
+            python3 - "$ZIP_PATH" "$PWD/extracted" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          zip_path = Path(sys.argv[1])
+          output_dir = Path(sys.argv[2])
+
+          output_dir.mkdir(parents=True, exist_ok=True)
+
+          with zipfile.ZipFile(zip_path, "r") as z:
+              z.extractall(output_dir)
+
+          print("ZIP_EXTRACTION=PASS")
+          PY
+
+
+            echo ""
             echo "ZIP_EXTRACTED=PASS"
+
+
+            # ----------------------------------------------------
+            # Detect project root.
+            # ----------------------------------------------------
 
             if [ -f "extracted/settings.gradle.kts" ] &&
                [ -f "extracted/app/build.gradle.kts" ]; then
 
               echo "PROJECT_ROOT=extracted"
+
+              shopt -s dotglob
 
               cp -a extracted/. project/
 
@@ -191,9 +399,9 @@ jobs:
                 echo "=========================================="
 
                 find extracted \
-                  -maxdepth 4 \
+                  -maxdepth 5 \
                   -type f \
-                  | head -n 100
+                  | head -n 150
 
                 exit 1
 
@@ -206,16 +414,24 @@ jobs:
               test -f \
                 "$PROJECT_ROOT/app/build.gradle.kts"
 
+              shopt -s dotglob
+
               cp -a "$PROJECT_ROOT"/. project/
 
             fi
 
           fi
 
+
+          # ------------------------------------------------------
+          # Final project verification.
+          # ------------------------------------------------------
+
           test -f project/settings.gradle.kts
           test -f project/build.gradle.kts
           test -f project/app/build.gradle.kts
           test -f project/app/src/main/AndroidManifest.xml
+
 
           echo ""
           echo "=========================================="
@@ -456,7 +672,7 @@ jobs:
       # ==========================================================
       # 12. BUILD RELEASE APK
       #
-      # ONLY THIS STEP IS CHANGED.
+      # FIXED ACCORDING TO ACTUAL ZIP SOURCE
       # ==========================================================
 
       - name: Build Release APK
@@ -477,6 +693,7 @@ jobs:
           cp "$FILE" \
             "${FILE}.before-release-fix"
 
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -486,9 +703,15 @@ jobs:
 
           s = p.read_text(encoding="utf-8")
 
+
           # ======================================================
-          # FIX 1:
-          # Broken implicit `it.text` references
+          # FIX 1
+          # ------------------------------------------------------
+          # Actual source contains several setItems() lambdas
+          # using implicit `it.text`.
+          #
+          # Because those lambdas already have explicit
+          # parameters {_, i -> ...}, `it` is unresolved.
           # ======================================================
 
           replacements = {
@@ -545,63 +768,53 @@ jobs:
                   'statusBtn.text="Status: $status"',
           }
 
+
           for old, new in replacements.items():
               s = s.replace(old, new)
 
 
           # ======================================================
-          # FIX 2:
-          # Missing btn() action parameter
-          # ======================================================
-
-          s = s.replace(
-              'val cropBtn=btn("Crop: ${crops.first().name}");',
-              'val cropBtn=btn("Crop: ${crops.first().name}"){};'
-          )
-
-          s = s.replace(
-              'val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}")\n',
-              'val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){}\n'
-          )
-
-          s = s.replace(
-              '''val fb=btn("Field: All")
-          val cb=btn("Crop: All")
-          val wb=btn("Worker: All")
-          val db=btn("Date: All")''',
-              '''val fb=btn("Field: All"){}
-          val cb=btn("Crop: All"){}
-          val wb=btn("Worker: All"){}
-          val db=btn("Date: All"){}'''
-          )
-
-          s = s.replace(
-              'val attendanceTimeBtn=btn("Attendance time: %02d:%02d".format(Locale.US,ah.first,ah.second))',
-              'val attendanceTimeBtn=btn("Attendance time: %02d:%02d".format(Locale.US,ah.first,ah.second)){}'
-          )
-
-          s = s.replace(
-              'val paymentTimeBtn=btn("Payment time: %02d:%02d".format(Locale.US,ph.first,ph.second))',
-              'val paymentTimeBtn=btn("Payment time: %02d:%02d".format(Locale.US,ph.first,ph.second)){}'
-          )
-
-          s = s.replace(
-              'val prev=btn("‹ Previous"); val next=btn("Next ›")',
-              'val prev=btn("‹ Previous"){}; val next=btn("Next ›"){}'
-          )
-
-          s = s.replace(
-              'val workerBtn=btn("Worker: All"); val fieldBtn=btn("Field: All"); val statusBtn=btn("Status: All"); val dateBtn=dateField("Date filter","")',
-              'val workerBtn=btn("Worker: All"){}; val fieldBtn=btn("Field: All"){}; val statusBtn=btn("Status: All"){}; val dateBtn=dateField("Date filter","")'
-          )
-
-
-          # ======================================================
-          # FIX 3:
-          # renderSummary() was below render().
+          # FIX 2
+          # ------------------------------------------------------
+          # Actual btn() definition requires action:
           #
-          # Kotlin local functions in this source need the
-          # declaration available before render() uses it.
+          # btn(s, action)
+          #
+          # But actual source contains several plain btn("...")
+          # calls without action.
+          #
+          # Make action optional with a safe empty lambda.
+          # This fixes all such calls globally.
+          # ======================================================
+
+          old_btn_definition = (
+              'internal fun MainActivity.btn(s:String,action:()->Unit)=Button(this).apply{'
+          )
+
+          new_btn_definition = (
+              'internal fun MainActivity.btn(s:String,action:()->Unit = {})=Button(this).apply{'
+          )
+
+          if old_btn_definition not in s:
+              if new_btn_definition not in s:
+                  raise SystemExit(
+                      "ERROR: expected btn() definition not found"
+                  )
+          else:
+              s = s.replace(
+                  old_btn_definition,
+                  new_btn_definition,
+                  1
+              )
+
+
+          # ======================================================
+          # FIX 3
+          # ------------------------------------------------------
+          # renderSummary() is declared after render(), while
+          # render() calls renderSummary().
+          #
+          # Move renderSummary() before render().
           # ======================================================
 
           calendar_start = s.find(
@@ -613,29 +826,39 @@ jobs:
                   "ERROR: attendanceCalendar() not found"
               )
 
+
           render_start = s.find(
               '        fun render(){',
               calendar_start
           )
+
+          if render_start == -1:
+              raise SystemExit(
+                  "ERROR: attendanceCalendar render() not found"
+              )
+
 
           summary_start = s.find(
               '        fun renderSummary(){',
               render_start
           )
 
+          if summary_start == -1:
+              raise SystemExit(
+                  "ERROR: renderSummary() not found"
+              )
+
+
           nav_start = s.find(
               '        val nav=',
               summary_start
           )
 
-          if (
-              render_start == -1
-              or summary_start == -1
-              or nav_start == -1
-          ):
+          if nav_start == -1:
               raise SystemExit(
-                  "ERROR: attendanceCalendar render blocks not found"
+                  "ERROR: attendanceCalendar navigation block not found"
               )
+
 
           render_part = s[
               render_start:summary_start
@@ -644,6 +867,7 @@ jobs:
           summary_part = s[
               summary_start:nav_start
           ]
+
 
           s = (
               s[:render_start]
@@ -669,9 +893,10 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Known broken it.text references must be gone.
-          # statusViews.forEach{it.text=...} is legitimate and
-          # therefore is intentionally allowed.
+          # No broken implicit it.text references.
+          #
+          # These three are legitimate:
+          # statusViews.forEach{it.text=...}
           # ------------------------------------------------------
 
           if grep -nE \
@@ -686,7 +911,7 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Old audit references must remain fixed.
+          # Existing Step 4 fixes must remain.
           # ------------------------------------------------------
 
           ! grep -Fq \
@@ -702,10 +927,6 @@ jobs:
             "$FILE"
 
 
-          # ------------------------------------------------------
-          # Required fixed references must exist.
-          # ------------------------------------------------------
-
           grep -Fq \
             "app.audit.list()" \
             "$FILE"
@@ -720,60 +941,17 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Missing-action fixes.
+          # btn() definition must now have default action.
           # ------------------------------------------------------
 
           grep -Fq \
-            'val cropBtn=btn("Crop: ${crops.first().name}"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val fb=btn("Field: All"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val cb=btn("Crop: All"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val wb=btn("Worker: All"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val db=btn("Date: All"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val attendanceTimeBtn=btn("Attendance time:' \
-            "$FILE"
-
-          grep -Fq \
-            'val paymentTimeBtn=btn("Payment time:' \
-            "$FILE"
-
-          grep -Fq \
-            'val prev=btn("‹ Previous"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val next=btn("Next ›"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val workerBtn=btn("Worker: All"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val fieldBtn=btn("Field: All"){}' \
-            "$FILE"
-
-          grep -Fq \
-            'val statusBtn=btn("Status: All"){}' \
+            'internal fun MainActivity.btn(s:String,action:()->Unit = {})' \
             "$FILE"
 
 
           # ------------------------------------------------------
-          # renderSummary and render must both exist.
+          # renderSummary() and render() must both exist.
+          # renderSummary must appear before render().
           # ------------------------------------------------------
 
           grep -Fq \
@@ -783,6 +961,40 @@ jobs:
           grep -Fq \
             'fun render()' \
             "$FILE"
+
+
+          SUMMARY_LINE="$(
+            grep -n \
+              'fun renderSummary()' \
+              "$FILE" \
+              | head -n 1 \
+              | cut -d: -f1
+          )"
+
+          RENDER_LINE="$(
+            grep -n \
+              'fun render()' \
+              "$FILE" \
+              | tail -n 1 \
+              | cut -d: -f1
+          )"
+
+
+          if [ -z "$SUMMARY_LINE" ] ||
+             [ -z "$RENDER_LINE" ]; then
+
+            echo "ERROR: render functions not detected."
+            exit 1
+
+          fi
+
+
+          if [ "$SUMMARY_LINE" -ge "$RENDER_LINE" ]; then
+
+            echo "ERROR: renderSummary() is still after render()."
+            exit 1
+
+          fi
 
 
           echo ""
