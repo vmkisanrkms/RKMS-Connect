@@ -331,16 +331,51 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # Re-create a genuine repository Gradle Wrapper.
-          # The previous tool verification step temporarily replaced
-          # gradlew with a direct Gradle launcher.
-          gradle wrapper \
-            --gradle-version 8.11.1 \
-            --distribution-type bin
+          # ------------------------------------------------------
+          # Restore the ORIGINAL repository Gradle Wrapper
+          # from the exact project ZIP.
+          #
+          # The previous verification step temporarily replaced
+          # project/gradlew with a direct "gradle" launcher.
+          # The compatibility gate requires the real repository
+          # Gradle Wrapper, so restore all wrapper files exactly
+          # from the source ZIP before running the gate.
+          # ------------------------------------------------------
+
+          SOURCE_ZIP="../Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
+
+          test -f "$SOURCE_ZIP"
+
+          unzip -p \
+            "$SOURCE_ZIP" \
+            gradlew \
+            > gradlew
+
+          unzip -p \
+            "$SOURCE_ZIP" \
+            gradlew.bat \
+            > gradlew.bat
+
+          mkdir -p gradle/wrapper
+
+          unzip -p \
+            "$SOURCE_ZIP" \
+            gradle/wrapper/gradle-wrapper.jar \
+            > gradle/wrapper/gradle-wrapper.jar
+
+          unzip -p \
+            "$SOURCE_ZIP" \
+            gradle/wrapper/gradle-wrapper.properties \
+            > gradle/wrapper/gradle-wrapper.properties
 
           chmod +x gradlew
 
+          # ------------------------------------------------------
+          # Verify restored repository wrapper
+          # ------------------------------------------------------
+
           test -s gradlew
+          test -s gradlew.bat
           test -s gradle/wrapper/gradle-wrapper.jar
           test -s gradle/wrapper/gradle-wrapper.properties
 
@@ -348,9 +383,27 @@ jobs:
             'distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
             gradle/wrapper/gradle-wrapper.properties
 
+          grep -Fq \
+            'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
+            gradle/wrapper/gradle-wrapper.properties
+
+          # Confirm this is the actual wrapper script, not the
+          # temporary direct-gradle launcher.
+          grep -Fq \
+            'gradle-wrapper.jar' \
+            gradlew
+
+          # ------------------------------------------------------
+          # Run the actual repository Gradle Wrapper
+          # ------------------------------------------------------
+
           ./gradlew --version
 
           ./gradlew --version | grep -Fq "Gradle 8.11.1"
+
+          # ------------------------------------------------------
+          # Run the existing compatibility gate
+          # ------------------------------------------------------
 
           ./scripts/gradle-agp-compatibility.sh
 
