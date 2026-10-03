@@ -1275,4 +1275,4 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          force
+          force-avd-creation: true
