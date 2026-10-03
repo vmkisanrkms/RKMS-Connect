@@ -84,20 +84,13 @@ jobs:
 
           mkdir -p project extracted
 
-          # ------------------------------------------------------
-          # If project already exists in repository
-          # ------------------------------------------------------
-
           if [ -f "settings.gradle.kts" ] &&
              [ -f "app/build.gradle.kts" ]; then
 
             echo "ANDROID_PROJECT_FOUND_IN_REPOSITORY"
 
+            shopt -s dotglob
             cp -a . project/
-
-          # ------------------------------------------------------
-          # Otherwise extract ZIP
-          # ------------------------------------------------------
 
           else
 
@@ -107,7 +100,6 @@ jobs:
 
             unzip -q "$ZIP" -d extracted
 
-            # Direct project root
             if [ -f "extracted/settings.gradle.kts" ] &&
                [ -f "extracted/app/build.gradle.kts" ]; then
 
@@ -145,7 +137,125 @@ jobs:
 
 
       # ==========================================================
-      # 4. JAVA 17
+      # 4. ONLY FAILED SOURCE FIXES
+      #
+      # MainActivityScreens.kt
+      #
+      # FIX 1:
+      # app.audit.auditLog() -> app.audit.list()
+      #
+      # FIX 2:
+      # app.audit.clearAuditLog() -> app.audit.clear()
+      #
+      # FIX 3:
+      # ALARM_SERVICE -> Context.ALARM_SERVICE
+      #
+      # NO OTHER SOURCE CODE IS MODIFIED.
+      # ==========================================================
+
+      - name: Apply only failed Kotlin source fixes
+        working-directory: project
+        shell: bash
+        run: |
+          set -e
+
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+
+          test -f "$FILE"
+
+          cp "$FILE" "${FILE}.before-ci-fix"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          file = Path("app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt")
+
+          text = file.read_text(encoding="utf-8")
+
+          original = text
+
+          # ------------------------------------------------------
+          # FIX 1
+          # AuditUseCase exposes list(), not auditLog()
+          # ------------------------------------------------------
+
+          text = text.replace(
+              "app.audit.auditLog()",
+              "app.audit.list()"
+          )
+
+          # ------------------------------------------------------
+          # FIX 2
+          # AuditUseCase exposes clear(), not clearAuditLog()
+          # ------------------------------------------------------
+
+          text = text.replace(
+              "app.audit.clearAuditLog()",
+              "app.audit.clear()"
+          )
+
+          # ------------------------------------------------------
+          # FIX 3
+          # Android Context constant
+          # ------------------------------------------------------
+
+          text = text.replace(
+              "getSystemService(ALARM_SERVICE)",
+              "getSystemService(Context.ALARM_SERVICE)"
+          )
+
+          file.write_text(text, encoding="utf-8")
+
+          print("SOURCE_FIXES_APPLIED")
+
+          print(
+              "auditLog remaining:",
+              text.count("app.audit.auditLog()")
+          )
+
+          print(
+              "clearAuditLog remaining:",
+              text.count("app.audit.clearAuditLog()")
+          )
+
+          print(
+              "ALARM_SERVICE old usage remaining:",
+              text.count("getSystemService(ALARM_SERVICE)")
+          )
+
+          if text == original:
+              print("WARNING: No source change detected")
+
+          PY
+
+          # ------------------------------------------------------
+          # Verify only intended old references are gone
+          # ------------------------------------------------------
+
+          if grep -Fq "app.audit.auditLog()" "$FILE"; then
+            echo "ERROR: old auditLog() reference remains"
+            exit 1
+          fi
+
+          if grep -Fq "app.audit.clearAuditLog()" "$FILE"; then
+            echo "ERROR: old clearAuditLog() reference remains"
+            exit 1
+          fi
+
+          if grep -Fq "getSystemService(ALARM_SERVICE)" "$FILE"; then
+            echo "ERROR: old ALARM_SERVICE usage remains"
+            exit 1
+          fi
+
+          grep -Fq "app.audit.list()" "$FILE"
+          grep -Fq "app.audit.clear()" "$FILE"
+          grep -Fq "Context.ALARM_SERVICE" "$FILE"
+
+          echo "FAILED_SOURCE_FIX=PASS"
+
+
+      # ==========================================================
+      # 5. JAVA 17
       # ==========================================================
 
       - name: Setup JDK 17
@@ -156,7 +266,7 @@ jobs:
 
 
       # ==========================================================
-      # 5. ANDROID SDK
+      # 6. ANDROID SDK
       # ==========================================================
 
       - name: Setup Android SDK
@@ -164,7 +274,7 @@ jobs:
 
 
       # ==========================================================
-      # 6. INSTALL ANDROID API 36
+      # 7. INSTALL ANDROID API 36
       # ==========================================================
 
       - name: Install Android API 36
@@ -183,10 +293,7 @@ jobs:
 
 
       # ==========================================================
-      # 7. SETUP EXACT GRADLE 8.11.1
-      #
-      # We deliberately use installed Gradle instead of replacing
-      # the project's gradlew file.
+      # 8. GRADLE 8.11.1
       # ==========================================================
 
       - name: Setup Gradle 8.11.1
@@ -198,7 +305,7 @@ jobs:
 
 
       # ==========================================================
-      # 8. VERIFY TOOLCHAIN
+      # 9. VERIFY TOOLCHAIN
       # ==========================================================
 
       - name: Verify Java Gradle Android
@@ -226,7 +333,7 @@ jobs:
 
 
       # ==========================================================
-      # 9. PROJECT CONFIGURATION CHECK
+      # 10. PROJECT CONFIGURATION
       # ==========================================================
 
       - name: Verify project configuration
@@ -271,7 +378,7 @@ jobs:
 
 
       # ==========================================================
-      # 10. GRADLE CONFIGURATION TEST
+      # 11. GRADLE CONFIGURATION TEST
       # ==========================================================
 
       - name: Test Gradle configuration
@@ -290,7 +397,7 @@ jobs:
 
 
       # ==========================================================
-      # 11. CLEAN BUILD
+      # 12. CLEAN
       # ==========================================================
 
       - name: Clean previous build
@@ -308,19 +415,7 @@ jobs:
 
 
       # ==========================================================
-      # 12. BUILD RELEASE APK
-      #
-      # ONLY BUILD THE APK.
-      #
-      # No Phase 5
-      # No Phase 6
-      # No Phase 8
-      # No Phase 11
-      # No Phase 17
-      # No Phase 18
-      # No Phase 19
-      # No emulator
-      # No unrelated static gates
+      # 13. BUILD RELEASE APK
       # ==========================================================
 
       - name: Build Release APK
@@ -343,7 +438,7 @@ jobs:
 
 
       # ==========================================================
-      # 13. VERIFY APK
+      # 14. VERIFY UNSIGNED APK
       # ==========================================================
 
       - name: Verify unsigned APK
@@ -379,7 +474,7 @@ jobs:
 
 
       # ==========================================================
-      # 14. RESTORE RELEASE KEYSTORE
+      # 15. RESTORE RELEASE KEYSTORE
       # ==========================================================
 
       - name: Restore release keystore
@@ -414,7 +509,7 @@ jobs:
 
 
       # ==========================================================
-      # 15. ZIPALIGN
+      # 16. ZIPALIGN
       # ==========================================================
 
       - name: Align APK
@@ -444,7 +539,7 @@ jobs:
 
 
       # ==========================================================
-      # 16. SIGN APK
+      # 17. SIGN APK
       # ==========================================================
 
       - name: Sign Release APK
@@ -474,7 +569,7 @@ jobs:
 
 
       # ==========================================================
-      # 17. VERIFY SIGNATURE
+      # 18. VERIFY SIGNATURE
       # ==========================================================
 
       - name: Verify signed APK
@@ -511,7 +606,7 @@ jobs:
 
 
       # ==========================================================
-      # 18. SHA256
+      # 19. SHA256
       # ==========================================================
 
       - name: Generate SHA256
@@ -531,7 +626,7 @@ jobs:
 
 
       # ==========================================================
-      # 19. UPLOAD FINAL APK
+      # 20. UPLOAD FINAL APK
       # ==========================================================
 
       - name: Upload final signed APK
@@ -546,7 +641,7 @@ jobs:
 
 
       # ==========================================================
-      # 20. FINAL SUCCESS
+      # 21. FINAL SUCCESS
       # ==========================================================
 
       - name: FINAL BUILD SUCCESS
