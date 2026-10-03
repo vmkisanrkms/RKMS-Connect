@@ -236,13 +236,6 @@ jobs:
       # 8. VERIFY JAVA GRADLE AND ANDROID TOOLS
       # ==========================================================
 
-      - name: Set up direct Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-          cache-disabled: true
-          cache-cleanup: never
-
       - name: Verify Java Gradle and Android tools
         working-directory: project
         shell: bash
@@ -251,33 +244,26 @@ jobs:
 
           java -version
 
-          command -v gradle
-
-          gradle --version
-
-          gradle --version | grep -Fq "Gradle 8.11.1"
-
           # ------------------------------------------------------
-          # REPAIR REPOSITORY GRADLE WRAPPER
+          # IMPORTANT:
+          # AGP compatibility gate requires the repository
+          # Gradle Wrapper. Do NOT invoke system "gradle".
           # ------------------------------------------------------
-          # The extracted wrapper is required by the compatibility
-          # gate. Regenerate it using the already installed
-          # Gradle 8.11.1 so ./gradlew is a valid repository wrapper.
-          # ------------------------------------------------------
-
-          test -f gradle/wrapper/gradle-wrapper.jar
-          test -f gradle/wrapper/gradle-wrapper.properties
-
-          gradle \
-            wrapper \
-            --gradle-version "${GRADLE_VERSION}" \
-            --distribution-type bin
-
-          chmod +x gradlew
 
           test -f gradlew
           test -f gradle/wrapper/gradle-wrapper.jar
           test -f gradle/wrapper/gradle-wrapper.properties
+
+          chmod +x gradlew
+
+          # ------------------------------------------------------
+          # Remove only the cached Gradle 8.11.1 distribution.
+          # This fixes a corrupted/incomplete wrapper distribution
+          # such as "distribution did not contain bin/gradle".
+          # ------------------------------------------------------
+
+          rm -rf \
+            "${HOME}/.gradle/wrapper/dists/gradle-8.11.1-bin"
 
           ./gradlew --version
 
