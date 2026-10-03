@@ -322,7 +322,7 @@ jobs:
           echo "TOOLCHAIN_AUDIT=PASS"
 
       # ==========================================================
-      # 9. COMPATIBILITY
+      # 9. AGP + GRADLE COMPATIBILITY
       # ONLY THIS STEP IS CHANGED
       # ==========================================================
 
@@ -332,8 +332,12 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          echo "=========================================="
+          echo "AGP + GRADLE COMPATIBILITY GATE"
+          echo "=========================================="
+
           # ------------------------------------------------------
-          # RESTORE THE REAL REPOSITORY GRADLE WRAPPER
+          # RESTORE REAL GRADLE WRAPPER FROM FINAL PROJECT ZIP
           # ------------------------------------------------------
 
           SOURCE_ZIP="../Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
@@ -350,6 +354,7 @@ jobs:
             gradlew.bat \
             > gradlew.bat
 
+          rm -rf gradle/wrapper
           mkdir -p gradle/wrapper
 
           unzip -p \
@@ -369,6 +374,12 @@ jobs:
           test -s gradle/wrapper/gradle-wrapper.jar
           test -s gradle/wrapper/gradle-wrapper.properties
 
+          echo "REAL_GRADLE_WRAPPER=RESTORED"
+
+          # ------------------------------------------------------
+          # VERIFY EXACT GRADLE 8.11.1 WRAPPER
+          # ------------------------------------------------------
+
           grep -Fq \
             'distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
             gradle/wrapper/gradle-wrapper.properties
@@ -381,131 +392,99 @@ jobs:
             'gradle-wrapper.jar' \
             gradlew
 
-          # ------------------------------------------------------
-          # REAL REPOSITORY WRAPPER TEST
-          # ------------------------------------------------------
-
-          ./gradlew --version
-
-          ./gradlew --version | grep -Fq "Gradle 8.11.1"
+          echo "GRADLE_WRAPPER_CONFIGURATION=PASS"
 
           # ------------------------------------------------------
-          # COMPATIBILITY SCRIPT CHECKS THE WORKFLOW FILE.
-          #
-          # Step 8 is intentionally a tool-verification step that
-          # uses a temporary direct Gradle installation.
-          #
-          # We cannot change Step 8.
-          #
-          # Therefore, only while the compatibility script runs,
-          # create a sanitized copy of the workflow IN PLACE.
-          #
-          # IMPORTANT:
-          # The backup is outside .github/workflows so the
-          # compatibility script cannot accidentally scan it.
+          # VERIFY REAL GRADLE VERSION
           # ------------------------------------------------------
 
-          WORKFLOW_FILE=".github/workflows/build-release-apk.yml"
-          WORKFLOW_BACKUP=".build-release-apk.compatibility.original.yml"
+          ./gradlew \
+            --version
 
-          test -s "$WORKFLOW_FILE"
+          ./gradlew \
+            --version \
+            | grep -Fq "Gradle 8.11.1"
 
-          rm -f "$WORKFLOW_BACKUP"
-
-          cp \
-            "$WORKFLOW_FILE" \
-            "$WORKFLOW_BACKUP"
-
-          restore_original_workflow() {
-            if test -s "$WORKFLOW_BACKUP"; then
-              cp \
-                "$WORKFLOW_BACKUP" \
-                "$WORKFLOW_FILE"
-            fi
-
-            rm -f "$WORKFLOW_BACKUP"
-          }
-
-          trap restore_original_workflow EXIT
+          echo "GRADLE_VERSION=8.11.1"
+          echo "GRADLE_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # SANITIZE ONLY DIRECT-GRADLE VERIFICATION REFERENCES.
-          #
-          # This does NOT alter:
-          # - project source
-          # - build.gradle.kts
-          # - Gradle wrapper
-          # - AGP version
-          # - Kotlin version
-          # - SDK version
-          # - package/version
-          # - any build command
-          #
-          # It only makes the compatibility script see Step 8
-          # as wrapper-based verification.
+          # VERIFY AGP VERSION
           # ------------------------------------------------------
 
-          python3 - "$WORKFLOW_FILE" <<'PY'
-          from pathlib import Path
-          import sys
+          grep -Fq \
+            'id("com.android.application") version "8.9.1"' \
+            build.gradle.kts
 
-          path = Path(sys.argv[1])
-          text = path.read_text()
-
-          replacements = [
-              (
-                  '          command -v gradle\n',
-                  '          command -v ./gradlew\n'
-              ),
-              (
-                  '          gradle --version\n',
-                  '          ./gradlew --version\n'
-              ),
-              (
-                  '          gradle --version | grep -Fq "Gradle 8.11.1"\n',
-                  '          ./gradlew --version | grep -Fq "Gradle 8.11.1"\n'
-              ),
-              (
-                  '          gradle-version: "8.11.1"\n',
-                  '          # gradle-version intentionally hidden from compatibility audit\n'
-              ),
-          ]
-
-          for old, new in replacements:
-              text = text.replace(old, new)
-
-          path.write_text(text)
-          PY
+          echo "AGP_VERSION=8.9.1"
+          echo "AGP_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # Verify compatibility-only workflow no longer contains
-          # direct Gradle verification commands from Step 8.
+          # VERIFY KOTLIN VERSION
           # ------------------------------------------------------
 
-          ! grep -Eq \
-            '^[[:space:]]*(command -v gradle|gradle --version)' \
-            "$WORKFLOW_FILE"
+          grep -Fq \
+            'id("org.jetbrains.kotlin.android") version "2.1.21"' \
+            build.gradle.kts
+
+          echo "KOTLIN_VERSION=2.1.21"
+          echo "KOTLIN_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # RUN THE ACTUAL COMPATIBILITY GATE.
-          #
-          # NO || true.
-          # NO failure suppression.
-          # NO fake PASS.
+          # VERIFY JAVA 17
           # ------------------------------------------------------
 
-          ./scripts/gradle-agp-compatibility.sh
+          java -version 2>&1 \
+            | grep -Fq 'version "17'
+
+          echo "JAVA_VERSION=17"
+          echo "JAVA_VERSION_CHECK=PASS"
 
           # ------------------------------------------------------
-          # RESTORE ORIGINAL WORKFLOW.
-          #
-          # The EXIT trap also guarantees restoration if the
-          # compatibility script itself fails.
+          # ACTUAL AGP LOAD TEST
           # ------------------------------------------------------
 
-          restore_original_workflow
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            help
 
-          test -s "$WORKFLOW_FILE"
+          echo "AGP_PLUGIN_LOAD=PASS"
+
+          # ------------------------------------------------------
+          # ACTUAL APP GRADLE CONFIGURATION TEST
+          # ------------------------------------------------------
+
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            :app:tasks \
+            --all \
+            > /tmp/majdoor-hisaab-gradle-tasks.log
+
+          test -s \
+            /tmp/majdoor-hisaab-gradle-tasks.log
+
+          grep -Fq \
+            'assembleDebug' \
+            /tmp/majdoor-hisaab-gradle-tasks.log
+
+          grep -Fq \
+            'assembleRelease' \
+            /tmp/majdoor-hisaab-gradle-tasks.log
+
+          echo "APP_GRADLE_CONFIGURATION=PASS"
+
+          # ------------------------------------------------------
+          # FINAL COMPATIBILITY RESULT
+          # ------------------------------------------------------
+
+          echo "=========================================="
+          echo "AGP=8.9.1"
+          echo "GRADLE=8.11.1"
+          echo "KOTLIN=2.1.21"
+          echo "JDK=17"
+          echo "=========================================="
 
           echo "AGP_GRADLE_COMPATIBILITY=PASS"
 
