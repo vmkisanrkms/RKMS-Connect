@@ -20,7 +20,8 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
+
 
 jobs:
 
@@ -68,15 +69,7 @@ jobs:
 
 
       # ==========================================================
-      # 3. PREPARE AND FIND PROJECT
-      #
-      # FIXED:
-      # - Git LFS ZIP support
-      # - exact ZIP search
-      # - safe ZIP copy
-      # - ZIP integrity verification
-      # - Python zip extraction
-      # - detailed diagnostics
+      # 3. PREPARE AND FIND ANDROID PROJECT
       # ==========================================================
 
       - name: Prepare Android project
@@ -109,11 +102,11 @@ jobs:
             echo "SEARCHING FOR PROJECT ZIP..."
 
             # ----------------------------------------------------
-            # Try Git LFS if the repository uses LFS.
-            # This is harmless when LFS is not being used.
+            # Git LFS
             # ----------------------------------------------------
 
             if command -v git-lfs >/dev/null 2>&1; then
+
               echo "GIT_LFS_DETECTED"
 
               git lfs install --local >/dev/null 2>&1 || true
@@ -121,24 +114,29 @@ jobs:
               git lfs pull >/dev/null 2>&1 || true
 
               echo "GIT_LFS_PULL_COMPLETED"
+
             else
+
               echo "GIT_LFS_NOT_INSTALLED"
+
             fi
 
 
             # ----------------------------------------------------
-            # Search expected ZIP first.
+            # Expected ZIP
             # ----------------------------------------------------
 
             ZIP_PATH=""
 
             if [ -f "${ZIP_NAME}" ]; then
+
               ZIP_PATH="./${ZIP_NAME}"
+
             fi
 
 
             # ----------------------------------------------------
-            # Search BUILD_FIXED ZIP.
+            # BUILD_FIXED ZIP
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -154,7 +152,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Recursive exact search.
+            # Recursive expected ZIP search
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -174,7 +172,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Recursive BUILD_FIXED search.
+            # Recursive BUILD_FIXED search
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -194,7 +192,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Final fallback.
+            # Final fallback
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -214,7 +212,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # ZIP must exist.
+            # ZIP NOT FOUND
             # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
@@ -223,13 +221,13 @@ jobs:
               echo "=========================================="
               echo "ERROR: MAJDOOR HISAAB PROJECT ZIP NOT FOUND"
               echo "=========================================="
-              echo ""
 
+              echo ""
               echo "Expected:"
               echo "${ZIP_NAME}"
 
               echo ""
-              echo "BUILD_FIXED fallback:"
+              echo "BUILD_FIXED:"
               echo "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
 
               echo ""
@@ -243,7 +241,7 @@ jobs:
                 | head -n 50 || true
 
               echo ""
-              echo "GIT TRACKED FILE CHECK:"
+              echo "GIT TRACKED FILES:"
 
               git ls-files \
                 | grep -Ei \
@@ -256,7 +254,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Normalize path.
+            # Normalize ZIP path
             # ----------------------------------------------------
 
             ZIP_PATH="$(realpath "$ZIP_PATH")"
@@ -275,7 +273,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Detect Git LFS pointer.
+            # Git LFS pointer check
             # ----------------------------------------------------
 
             if head -n 1 "$ZIP_PATH" 2>/dev/null \
@@ -283,7 +281,6 @@ jobs:
 
               echo ""
               echo "ERROR: ZIP IS STILL A GIT LFS POINTER"
-              echo "Git LFS object was not downloaded."
 
               git lfs ls-files || true
 
@@ -293,7 +290,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Verify ZIP using Python zipfile.
+            # Verify ZIP
             # ----------------------------------------------------
 
             echo ""
@@ -307,6 +304,7 @@ jobs:
 
           try:
               with zipfile.ZipFile(zip_path, "r") as z:
+
                   bad = z.testzip()
 
                   if bad is not None:
@@ -339,9 +337,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Extract with Python.
-            #
-            # This avoids the previous unzip path/open failure.
+            # Extract ZIP
             # ----------------------------------------------------
 
             echo ""
@@ -369,7 +365,7 @@ jobs:
 
 
             # ----------------------------------------------------
-            # Detect project root.
+            # Detect project root
             # ----------------------------------------------------
 
             if [ -f "extracted/settings.gradle.kts" ] &&
@@ -424,14 +420,13 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Final project verification.
+          # Final project verification
           # ------------------------------------------------------
 
           test -f project/settings.gradle.kts
           test -f project/build.gradle.kts
           test -f project/app/build.gradle.kts
           test -f project/app/src/main/AndroidManifest.xml
-
 
           echo ""
           echo "=========================================="
@@ -440,14 +435,27 @@ jobs:
 
 
       # ==========================================================
-      # 4. APPLY ONLY PREVIOUSLY FAILED KOTLIN FIXES
+      # 4. SAFE KOTLIN FIXES ONLY
+      #
+      # IMPORTANT:
+      # Do NOT modify UI variables such as:
+      # fb
+      # cropBtn
+      # workerBtn
+      # rateTypeBtn
+      # wb
+      # mb
+      # adv
+      # cb
+      #
+      # Previous build failed because of those broad replacements.
       # ==========================================================
 
       - name: Apply required Kotlin source fixes
         working-directory: project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
 
@@ -465,6 +473,10 @@ jobs:
 
           text = file.read_text(encoding="utf-8")
 
+          # ------------------------------------------------------
+          # SAFE AUDIT API FIXES ONLY
+          # ------------------------------------------------------
+
           text = text.replace(
               "app.audit.auditLog()",
               "app.audit.list()"
@@ -474,6 +486,10 @@ jobs:
               "app.audit.clearAuditLog()",
               "app.audit.clear()"
           )
+
+          # ------------------------------------------------------
+          # SAFE Android Context constant
+          # ------------------------------------------------------
 
           text = text.replace(
               "getSystemService(ALARM_SERVICE)",
@@ -485,43 +501,66 @@ jobs:
               encoding="utf-8"
           )
 
-          print("SOURCE_FIXES_APPLIED")
+          print("SAFE_SOURCE_FIXES_APPLIED")
           PY
+
+
+          # ------------------------------------------------------
+          # Verify safe fixes
+          # ------------------------------------------------------
 
           if grep -Fq \
             "app.audit.auditLog()" \
             "$FILE"; then
+
             echo "ERROR: old auditLog() reference remains"
+
             exit 1
+
           fi
+
 
           if grep -Fq \
             "app.audit.clearAuditLog()" \
             "$FILE"; then
+
             echo "ERROR: old clearAuditLog() reference remains"
+
             exit 1
+
           fi
+
 
           if grep -Fq \
             "getSystemService(ALARM_SERVICE)" \
             "$FILE"; then
+
             echo "ERROR: old ALARM_SERVICE reference remains"
+
             exit 1
+
           fi
+
 
           grep -Fq \
             "app.audit.list()" \
             "$FILE"
 
+
           grep -Fq \
             "app.audit.clear()" \
             "$FILE"
+
 
           grep -Fq \
             "Context.ALARM_SERVICE" \
             "$FILE"
 
-          echo "SOURCE_FIXES_VERIFICATION=PASS"
+
+          echo ""
+          echo "=========================================="
+          echo "SAFE_SOURCE_FIXES_VERIFICATION=PASS"
+          echo "=========================================="
 
 
       # ==========================================================
@@ -670,342 +709,18 @@ jobs:
 
 
       # ==========================================================
-      # 12. BUILD RELEASE APK
+      # 12. COMPILE RELEASE KOTLIN
       #
-      # FIXED ACCORDING TO ACTUAL ZIP SOURCE
+      # IMPORTANT:
+      # No automatic source rewriting here.
+      # This is the critical fix.
       # ==========================================================
 
-      - name: Build Release APK
+      - name: Compile Release Kotlin
         working-directory: project
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
-
-          test -f "$FILE"
-
-          echo ""
-          echo "=========================================="
-          echo "RELEASE SOURCE FINAL FIX"
-          echo "=========================================="
-
-          cp "$FILE" \
-            "${FILE}.before-release-fix"
-
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path(
-              "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
-          )
-
-          s = p.read_text(encoding="utf-8")
-
-
-          # ======================================================
-          # FIX 1
-          # ------------------------------------------------------
-          # Actual source contains several setItems() lambdas
-          # using implicit `it.text`.
-          #
-          # Because those lambdas already have explicit
-          # parameters {_, i -> ...}, `it` is unresolved.
-          # ======================================================
-
-          replacements = {
-
-              'it.text="Field: ${fields[i].name}"':
-                  'fb.text="Field: ${fields[i].name}"',
-
-              'it.text="Crop: ${crops[i].name}"':
-                  'cropBtn.text="Crop: ${crops[i].name}"',
-
-              'it.text="Workers: ${selectedWorkers.distinct().size}"':
-                  'workerBtn.text="Workers: ${selectedWorkers.distinct().size}"',
-
-              'it.text="Worker: ${workers[i].name}"':
-                  'wb.text="Worker: ${workers[i].name}"',
-
-              'it.text="Method: ${methods[i]}"':
-                  'mb.text="Method: ${methods[i]}"',
-
-              'it.text="Advance: ${if(advance)"YES" else "NO"}"':
-                  'adv.text="Advance: ${if(advance)"YES" else "NO"}"',
-
-              'it.text="Rate type: $rateType"':
-                  'rateTypeBtn.text="Rate type: $rateType"',
-
-              'it.text="Category: $cat"':
-                  'cb.text="Category: $cat"',
-
-              'it.text="Field: Not linked"':
-                  'fb.text="Field: Not linked"',
-
-              'it.text="Field: ${fields[i-1].name}"':
-                  'fb.text="Field: ${fields[i-1].name}"',
-
-              'it.text="Crop: Not linked"':
-                  'crb.text="Crop: Not linked"',
-
-              'it.text="Crop: ${crops[i-1].name}"':
-                  'crb.text="Crop: ${crops[i-1].name}"',
-
-              'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"':
-                  'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
-
-              'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"':
-                  'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
-
-              'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"':
-                  'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
-
-              'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"':
-                  'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
-
-              'it.text="Status: $status"':
-                  'statusBtn.text="Status: $status"',
-          }
-
-
-          for old, new in replacements.items():
-              s = s.replace(old, new)
-
-
-          # ======================================================
-          # FIX 2
-          # ------------------------------------------------------
-          # Actual btn() definition requires action:
-          #
-          # btn(s, action)
-          #
-          # But actual source contains several plain btn("...")
-          # calls without action.
-          #
-          # Make action optional with a safe empty lambda.
-          # This fixes all such calls globally.
-          # ======================================================
-
-          old_btn_definition = (
-              'internal fun MainActivity.btn(s:String,action:()->Unit)=Button(this).apply{'
-          )
-
-          new_btn_definition = (
-              'internal fun MainActivity.btn(s:String,action:()->Unit = {})=Button(this).apply{'
-          )
-
-          if old_btn_definition not in s:
-              if new_btn_definition not in s:
-                  raise SystemExit(
-                      "ERROR: expected btn() definition not found"
-                  )
-          else:
-              s = s.replace(
-                  old_btn_definition,
-                  new_btn_definition,
-                  1
-              )
-
-
-          # ======================================================
-          # FIX 3
-          # ------------------------------------------------------
-          # renderSummary() is declared after render(), while
-          # render() calls renderSummary().
-          #
-          # Move renderSummary() before render().
-          # ======================================================
-
-          calendar_start = s.find(
-              '    internal fun MainActivity.attendanceCalendar(){'
-          )
-
-          if calendar_start == -1:
-              raise SystemExit(
-                  "ERROR: attendanceCalendar() not found"
-              )
-
-
-          render_start = s.find(
-              '        fun render(){',
-              calendar_start
-          )
-
-          if render_start == -1:
-              raise SystemExit(
-                  "ERROR: attendanceCalendar render() not found"
-              )
-
-
-          summary_start = s.find(
-              '        fun renderSummary(){',
-              render_start
-          )
-
-          if summary_start == -1:
-              raise SystemExit(
-                  "ERROR: renderSummary() not found"
-              )
-
-
-          nav_start = s.find(
-              '        val nav=',
-              summary_start
-          )
-
-          if nav_start == -1:
-              raise SystemExit(
-                  "ERROR: attendanceCalendar navigation block not found"
-              )
-
-
-          render_part = s[
-              render_start:summary_start
-          ]
-
-          summary_part = s[
-              summary_start:nav_start
-          ]
-
-
-          s = (
-              s[:render_start]
-              + summary_part
-              + render_part
-              + s[nav_start:]
-          )
-
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-
-          print("RELEASE_SOURCE_PATCH=PASS")
-          PY
-
-
-          echo ""
-          echo "=========================================="
-          echo "RELEASE SOURCE AUDIT"
-          echo "=========================================="
-
-
-          # ------------------------------------------------------
-          # No broken implicit it.text references.
-          #
-          # These three are legitimate:
-          # statusViews.forEach{it.text=...}
-          # ------------------------------------------------------
-
-          if grep -nE \
-            'it\.text="(Field:|Crop:|Worker:|Workers:|Method:|Advance:|Rate type:|Category:|Status:)' \
-            "$FILE"; then
-
-            echo ""
-            echo "ERROR: Broken implicit it.text reference remains."
-            exit 1
-
-          fi
-
-
-          # ------------------------------------------------------
-          # Existing Step 4 fixes must remain.
-          # ------------------------------------------------------
-
-          ! grep -Fq \
-            "app.audit.auditLog()" \
-            "$FILE"
-
-          ! grep -Fq \
-            "app.audit.clearAuditLog()" \
-            "$FILE"
-
-          ! grep -Fq \
-            "getSystemService(ALARM_SERVICE)" \
-            "$FILE"
-
-
-          grep -Fq \
-            "app.audit.list()" \
-            "$FILE"
-
-          grep -Fq \
-            "app.audit.clear()" \
-            "$FILE"
-
-          grep -Fq \
-            "Context.ALARM_SERVICE" \
-            "$FILE"
-
-
-          # ------------------------------------------------------
-          # btn() definition must now have default action.
-          # ------------------------------------------------------
-
-          grep -Fq \
-            'internal fun MainActivity.btn(s:String,action:()->Unit = {})' \
-            "$FILE"
-
-
-          # ------------------------------------------------------
-          # renderSummary() and render() must both exist.
-          # renderSummary must appear before render().
-          # ------------------------------------------------------
-
-          grep -Fq \
-            'fun renderSummary()' \
-            "$FILE"
-
-          grep -Fq \
-            'fun render()' \
-            "$FILE"
-
-
-          SUMMARY_LINE="$(
-            grep -n \
-              'fun renderSummary()' \
-              "$FILE" \
-              | head -n 1 \
-              | cut -d: -f1
-          )"
-
-          RENDER_LINE="$(
-            grep -n \
-              'fun render()' \
-              "$FILE" \
-              | tail -n 1 \
-              | cut -d: -f1
-          )"
-
-
-          if [ -z "$SUMMARY_LINE" ] ||
-             [ -z "$RENDER_LINE" ]; then
-
-            echo "ERROR: render functions not detected."
-            exit 1
-
-          fi
-
-
-          if [ "$SUMMARY_LINE" -ge "$RENDER_LINE" ]; then
-
-            echo "ERROR: renderSummary() is still after render()."
-            exit 1
-
-          fi
-
-
-          echo ""
-          echo "=========================================="
-          echo "SOURCE_AUDIT=PASS"
-          echo "=========================================="
-
-
-          # ======================================================
-          # ACTUAL RELEASE KOTLIN COMPILATION
-          # ======================================================
 
           echo ""
           echo "=========================================="
@@ -1019,10 +734,21 @@ jobs:
             --no-parallel \
             :app:compileReleaseKotlin
 
+          echo ""
+          echo "=========================================="
+          echo "KOTLIN_COMPILATION=PASS"
+          echo "=========================================="
 
-          # ======================================================
-          # ACTUAL RELEASE APK BUILD
-          # ======================================================
+
+      # ==========================================================
+      # 13. BUILD RELEASE APK
+      # ==========================================================
+
+      - name: Build Release APK
+        working-directory: project
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
           echo ""
           echo "=========================================="
@@ -1036,11 +762,9 @@ jobs:
             --no-parallel \
             :app:assembleRelease
 
-
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
           test -s "$APK"
-
 
           echo ""
           echo "=========================================="
@@ -1051,7 +775,7 @@ jobs:
 
 
       # ==========================================================
-      # 13. VERIFY UNSIGNED APK
+      # 14. VERIFY UNSIGNED APK
       # ==========================================================
 
       - name: Verify unsigned APK
@@ -1092,7 +816,7 @@ jobs:
 
 
       # ==========================================================
-      # 14. RESTORE RELEASE KEYSTORE
+      # 15. RESTORE RELEASE KEYSTORE
       # ==========================================================
 
       - name: Restore release keystore
@@ -1102,6 +826,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.MH_RELEASE_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+
         shell: bash
         run: |
           set -e
@@ -1127,7 +852,7 @@ jobs:
 
 
       # ==========================================================
-      # 15. ZIPALIGN
+      # 16. ZIPALIGN
       # ==========================================================
 
       - name: Align APK
@@ -1157,7 +882,7 @@ jobs:
 
 
       # ==========================================================
-      # 16. SIGN APK
+      # 17. SIGN APK
       # ==========================================================
 
       - name: Sign Release APK
@@ -1166,6 +891,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.MH_RELEASE_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+
         shell: bash
         run: |
           set -e
@@ -1188,7 +914,7 @@ jobs:
 
 
       # ==========================================================
-      # 17. VERIFY SIGNED APK
+      # 18. VERIFY SIGNED APK
       # ==========================================================
 
       - name: Verify signed APK
@@ -1231,7 +957,7 @@ jobs:
 
 
       # ==========================================================
-      # 18. SHA256
+      # 19. SHA256
       # ==========================================================
 
       - name: Generate SHA256
@@ -1252,7 +978,7 @@ jobs:
 
 
       # ==========================================================
-      # 19. UPLOAD FINAL APK
+      # 20. UPLOAD FINAL APK
       # ==========================================================
 
       - name: Upload final signed APK
@@ -1270,7 +996,7 @@ jobs:
 
 
       # ==========================================================
-      # 20. FINAL SUCCESS
+      # 21. FINAL SUCCESS
       # ==========================================================
 
       - name: FINAL BUILD SUCCESS
