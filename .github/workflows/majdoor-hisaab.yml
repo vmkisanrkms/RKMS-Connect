@@ -233,12 +233,21 @@ jobs:
           echo "CONFIGURATION_AUDIT=PASS"
 
       # ==========================================================
-      # 8. TOOLCHAIN
+      # 8. FIX FROM THE FAILED STEP
       #
-      # FIX ONLY:
-      # Remove any broken cached Gradle 8.11.1 wrapper distribution
-      # so Gradle Wrapper downloads a fresh verified distribution.
+      # The project wrapper download is failing with:
+      # "Gradle distribution did not contain bin/gradle"
+      #
+      # Use a direct Gradle 8.11.1 installation and bypass the
+      # broken wrapper distribution only for this CI run.
       # ==========================================================
+
+      - name: Set up direct Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+          cache-disabled: true
+          cache-cleanup: never
 
       - name: Verify Java Gradle and Android tools
         working-directory: project
@@ -248,12 +257,24 @@ jobs:
 
           java -version
 
-          GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          command -v gradle
 
-          rm -rf \
-            "${GRADLE_USER_HOME}/wrapper/dists/gradle-8.11.1-bin"
+          gradle --version
+
+          gradle --version | grep -Fq "Gradle 8.11.1"
+
+          cat > gradlew <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+
+          exec gradle "$@"
+          EOF
+
+          chmod +x gradlew
 
           ./gradlew --version
+
+          ./gradlew --version | grep -Fq "Gradle 8.11.1"
 
           command -v adb
           command -v apkanalyzer
