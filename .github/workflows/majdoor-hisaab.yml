@@ -236,6 +236,13 @@ jobs:
       # 8. VERIFY JAVA GRADLE AND ANDROID TOOLS
       # ==========================================================
 
+      - name: Set up direct Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+          cache-disabled: true
+          cache-cleanup: never
+
       - name: Verify Java Gradle and Android tools
         working-directory: project
         shell: bash
@@ -244,9 +251,18 @@ jobs:
 
           java -version
 
-          test -f gradlew
-          test -f gradle/wrapper/gradle-wrapper.jar
-          test -f gradle/wrapper/gradle-wrapper.properties
+          command -v gradle
+
+          gradle --version
+
+          gradle --version | grep -Fq "Gradle 8.11.1"
+
+          cat > gradlew <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+
+          exec gradle "$@"
+          EOF
 
           chmod +x gradlew
 
@@ -296,7 +312,6 @@ jobs:
 
           apksigner --version
 
-          # zipalign -h may return exit code 1 while printing help.
           zipalign -h >/dev/null 2>&1 || true
 
           echo "ADB_PATH=$(command -v adb)"
@@ -315,6 +330,27 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+
+          # Re-create a genuine repository Gradle Wrapper.
+          # The previous tool verification step temporarily replaced
+          # gradlew with a direct Gradle launcher.
+          gradle wrapper \
+            --gradle-version 8.11.1 \
+            --distribution-type bin
+
+          chmod +x gradlew
+
+          test -s gradlew
+          test -s gradle/wrapper/gradle-wrapper.jar
+          test -s gradle/wrapper/gradle-wrapper.properties
+
+          grep -Fq \
+            'distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip' \
+            gradle/wrapper/gradle-wrapper.properties
+
+          ./gradlew --version
+
+          ./gradlew --version | grep -Fq "Gradle 8.11.1"
 
           ./scripts/gradle-agp-compatibility.sh
 
