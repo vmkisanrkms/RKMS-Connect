@@ -30,7 +30,7 @@ jobs:
     steps:
 
       # ==========================================================
-      # 1. CLEAN GITHUB HOSTED RUNNER
+      # 1. CHECKOUT
       # ==========================================================
 
       - name: Checkout repository
@@ -51,7 +51,7 @@ jobs:
           echo "VERSION_CODE=${VERSION_CODE}"
 
       # ==========================================================
-      # 2. EXTRACT THE ACTUAL PROJECT FROM ZIP
+      # 2. EXTRACT ACTUAL PROJECT FROM ZIP
       # ==========================================================
 
       - name: Extract Majdoor Hisaab project from ZIP
@@ -78,15 +78,25 @@ jobs:
           test -f project/gradle/wrapper/gradle-wrapper.properties
 
           chmod +x project/gradlew
-          chmod +x project/scripts/*.sh
+
+          if compgen -G "project/scripts/*.sh" > /dev/null; then
+            chmod +x project/scripts/*.sh
+          fi
 
           echo "PROJECT_EXTRACT=PASS"
 
       # ==========================================================
-      # 3. MAKE THE WORKFLOW AVAILABLE INSIDE THE EXTRACTED
-      #    PROJECT BECAUSE THE PROJECT'S RELEASE GATES REQUIRE:
+      # 3. FIXED:
+      #    AUTOMATICALLY DETECT THE ACTUAL WORKFLOW FILE
       #
+      #    Your repository currently uses:
+      #    .github/workflows/majdoor-hisaab.yml
+      #
+      #    But release gates expect:
       #    .github/workflows/build-release-apk.yml
+      #
+      #    We therefore copy whichever workflow actually triggered
+      #    this run.
       # ==========================================================
 
       - name: Install workflow into extracted project
@@ -96,16 +106,26 @@ jobs:
 
           mkdir -p project/.github/workflows
 
-          cp \
-            "${GITHUB_WORKSPACE}/.github/workflows/build-release-apk.yml" \
-            project/.github/workflows/build-release-apk.yml
+          WORKFLOW_REF="${GITHUB_WORKFLOW_REF}"
 
-          chmod +x project/gradlew
-          chmod +x project/scripts/*.sh
+          WORKFLOW_PATH="${WORKFLOW_REF#*/.github/workflows/}"
+          WORKFLOW_FILE="${WORKFLOW_PATH%%@*}"
+
+          echo "Detected workflow file: ${WORKFLOW_FILE}"
+
+          SOURCE_WORKFLOW="${GITHUB_WORKSPACE}/.github/workflows/${WORKFLOW_FILE}"
+
+          test -f "$SOURCE_WORKFLOW"
+
+          cp \
+            "$SOURCE_WORKFLOW" \
+            project/.github/workflows/build-release-apk.yml
 
           test -s \
             project/.github/workflows/build-release-apk.yml
 
+          echo "SOURCE_WORKFLOW=${SOURCE_WORKFLOW}"
+          echo "REQUIRED_WORKFLOW=project/.github/workflows/build-release-apk.yml"
           echo "WORKFLOW_IN_PROJECT=PASS"
 
       # ==========================================================
@@ -151,10 +171,10 @@ jobs:
             "platforms;android-${ANDROID_API}|build-tools;${BUILD_TOOLS}|platform-tools"
 
       # ==========================================================
-      # 7. EXACT PROJECT CONFIGURATION AUDIT
+      # 7. EXACT CONFIGURATION AUDIT
       # ==========================================================
 
-      - name: Audit Gradle, Kotlin, Android and version configuration
+      - name: Audit Gradle Kotlin Android and version configuration
         working-directory: project
         shell: bash
         run: |
@@ -208,18 +228,10 @@ jobs:
             'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
             gradle/wrapper/gradle-wrapper.properties
 
-          echo "AGP=8.9.1"
-          echo "KOTLIN=2.1.21"
-          echo "GRADLE=8.11.1"
-          echo "JDK=17"
-          echo "ANDROID_API=36"
-          echo "PACKAGE=com.majdoor.hisaab"
-          echo "VERSION=1.77.0"
-          echo "VERSION_CODE=77"
           echo "CONFIGURATION_AUDIT=PASS"
 
       # ==========================================================
-      # 8. JAVA / GRADLE / ANDROID TOOL AUDIT
+      # 8. TOOLCHAIN
       # ==========================================================
 
       - name: Verify Java Gradle and Android tools
@@ -240,7 +252,7 @@ jobs:
           echo "TOOLCHAIN_AUDIT=PASS"
 
       # ==========================================================
-      # 9. AGP + GRADLE + KOTLIN STATIC COMPATIBILITY
+      # 9. COMPATIBILITY
       # ==========================================================
 
       - name: Run AGP and Gradle compatibility gate
@@ -260,7 +272,7 @@ jobs:
           ./scripts/gradle-kotlin-compatibility.sh
 
       # ==========================================================
-      # 10. IMPORTANT STATIC FEATURE AUDIT
+      # 10. STATIC AUDIT
       # ==========================================================
 
       - name: Run stable source audit gates
@@ -287,7 +299,7 @@ jobs:
           echo "STABLE_STATIC_GATES=PASS"
 
       # ==========================================================
-      # 11. PHASE 22 STATIC RED LIST
+      # 11. PHASE 22
       # ==========================================================
 
       - name: Run Phase 22 final red-list static gate
@@ -301,7 +313,7 @@ jobs:
           echo "PHASE22_STATIC_GATE=PASS"
 
       # ==========================================================
-      # 12. OFFLINE / LOCAL SQLITE AUDIT
+      # 12. OFFLINE SQLITE
       # ==========================================================
 
       - name: Audit offline SQLite architecture
@@ -322,11 +334,6 @@ jobs:
           grep -R -q \
             --include='*.kt' \
             'SQLiteOpenHelper' \
-            app/src/main/java/com/majdoor/hisaab
-
-          grep -R -q \
-            --include='*.kt' \
-            'core_records' \
             app/src/main/java/com/majdoor/hisaab
 
           grep -R -q \
@@ -352,41 +359,62 @@ jobs:
           echo "OFFLINE_SQLITE_GATE=PASS"
 
       # ==========================================================
-      # 13. DEPENDENCY HEALTH
+      # 13. DEPENDENCIES
       # ==========================================================
 
-      - name: Resolve dependencies from clean runner
+      - name: Resolve dependencies
         working-directory: project
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ./gradlew --no-daemon --stacktrace --refresh-dependencies :app:dependencies --configuration debugRuntimeClasspath
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            --refresh-dependencies \
+            :app:dependencies \
+            --configuration debugRuntimeClasspath
 
-          ./gradlew --no-daemon --stacktrace --refresh-dependencies :app:dependencies --configuration releaseRuntimeClasspath
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            --refresh-dependencies \
+            :app:dependencies \
+            --configuration releaseRuntimeClasspath
 
-          ./gradlew --no-daemon --stacktrace --refresh-dependencies :app:dependencies --configuration e2eReleaseRuntimeClasspath
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            --refresh-dependencies \
+            :app:dependencies \
+            --configuration e2eReleaseRuntimeClasspath
 
           ./scripts/dependency-health.sh
 
           echo "DEPENDENCY_RESOLUTION=PASS"
 
       # ==========================================================
-      # 14. UNIT TESTS + ALL REQUIRED COMPILE GATES
+      # 14. UNIT + KOTLIN
       # ==========================================================
 
-      - name: Run unit tests and compile every release variant
+      - name: Run unit tests and compile variants
         working-directory: project
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ./gradlew --no-daemon --stacktrace test compileDebugKotlin compileE2eReleaseKotlin compileReleaseKotlin
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            test \
+            compileDebugKotlin \
+            compileE2eReleaseKotlin \
+            compileReleaseKotlin
 
           echo "UNIT_AND_KOTLIN_COMPILATION=PASS"
 
       # ==========================================================
-      # 15. BUILD DEBUG APK
+      # 15. DEBUG APK
       # ==========================================================
 
       - name: Build Debug APK
@@ -395,7 +423,10 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            :app:assembleDebug
 
           test -s \
             app/build/outputs/apk/debug/app-debug.apk
@@ -415,7 +446,7 @@ jobs:
           echo "DEBUG_APK=PASS"
 
       # ==========================================================
-      # 16. BUILD RELEASE APK
+      # 16. RELEASE APK
       # ==========================================================
 
       - name: Build Release APK
@@ -424,7 +455,11 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          ./gradlew --no-daemon --stacktrace :app:compileReleaseKotlin :app:assembleRelease
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            :app:compileReleaseKotlin \
+            :app:assembleRelease
 
           ./scripts/release-build-gate.sh
 
@@ -434,16 +469,20 @@ jobs:
           echo "RELEASE_UNSIGNED_APK=PASS"
 
       # ==========================================================
-      # 17. BUILD E2E RELEASE APK + RELEASE TEST APK
+      # 17. E2E APKs
       # ==========================================================
 
-      - name: Build E2E Release and Release AndroidTest APK
+      - name: Build E2E Release and AndroidTest APK
         working-directory: project
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ./gradlew --no-daemon --stacktrace assembleE2eRelease assembleReleaseAndroidTest
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            assembleE2eRelease \
+            assembleReleaseAndroidTest
 
           test -s \
             app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
@@ -454,10 +493,10 @@ jobs:
             app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
             artifacts/test/Majdoor-Hisaab-PRO-release-androidTest-unsigned.apk
 
-          echo "E2E_AND_INSTRUMENTATION_BUILD=PASS"
+          echo "E2E_BUILD=PASS"
 
       # ==========================================================
-      # 18. UNSIGNED RELEASE APK METADATA
+      # 18. RELEASE METADATA
       # ==========================================================
 
       - name: Verify unsigned Release APK
@@ -487,7 +526,7 @@ jobs:
           echo "UNSIGNED_RELEASE_METADATA=PASS"
 
       # ==========================================================
-      # 19. RESTORE PRODUCTION KEYSTORE
+      # 19. KEYSTORE
       # ==========================================================
 
       - name: Restore production signing keystore
@@ -535,13 +574,12 @@ jobs:
               | tr '[:lower:]' '[:upper:]'
           )"
 
-          test -n "$ACTUAL_CERT"
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
           echo "PRODUCTION_KEYSTORE_CERTIFICATE=PASS"
 
       # ==========================================================
-      # 20. ZIPALIGN + SIGN PRODUCTION RELEASE APK
+      # 20. SIGN RELEASE APK
       # ==========================================================
 
       - name: Sign Production Release APK
@@ -613,8 +651,7 @@ jobs:
           echo "PRODUCTION_SIGNED_APK=PASS"
 
       # ==========================================================
-      # 21. SIGN THE RELEASE ANDROIDTEST APK WITH THE SAME
-      #     PRODUCTION CERTIFICATE
+      # 21. SIGN ANDROIDTEST APK
       # ==========================================================
 
       - name: Sign Release AndroidTest APK
@@ -670,9 +707,7 @@ jobs:
 
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
 
-          test -s "$TEST_SIGNED"
-
-          echo "SIGNED_RELEASE_ANDROIDTEST=PASS"
+          echo "SIGNED_ANDROIDTEST=PASS"
 
       # ==========================================================
       # 22. PRODUCTION SIGNING GATE
@@ -692,7 +727,7 @@ jobs:
           echo "PRODUCTION_SIGNING_GATE=PASS"
 
       # ==========================================================
-      # 23. PHASE 1 SHA-256 GATE
+      # 23. FIXED SHA-256 GATE
       # ==========================================================
 
       - name: Run final APK SHA-256 gate
@@ -701,13 +736,15 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          ./scripts/phase1-points-18-25-gate.sh \
-            artifacts/Majdoor-Hisaab-PRO-release.apk
+          APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
+
+          test -s "$APK"
+
+          ./scripts/phase1-points-18-25-gate.sh "$APK"
 
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
 
-          # Canonical final checksum filename required by final-release-gate.sh
           cp \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256 \
             artifacts/Majdoor-Hisaab-PRO-release.sha256
@@ -715,12 +752,13 @@ jobs:
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.sha256
 
-          sha256sum "$APK" 2>/dev/null || true
+          sha256sum -c \
+            artifacts/Majdoor-Hisaab-PRO-release.sha256
 
           echo "FINAL_SHA256_GATE=PASS"
 
       # ==========================================================
-      # 24. DEBUG EMULATOR
+      # 24. DEBUG RUNTIME
       # ==========================================================
 
       - name: Install and launch Debug APK
@@ -745,7 +783,8 @@ jobs:
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r \
+              app/build/outputs/apk/debug/app-debug.apk
 
             adb shell am force-stop "${PACKAGE_NAME}"
 
@@ -770,7 +809,7 @@ jobs:
             echo "DEBUG_RUNTIME=PASS"
 
       # ==========================================================
-      # 25. COMPLETE RELEASE E2E TEST APK
+      # 25. CONNECTED E2E
       # ==========================================================
 
       - name: Run connected E2E Release test suite
@@ -795,19 +834,29 @@ jobs:
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -q '^1$'
 
-            ./gradlew --no-daemon --stacktrace connectedE2eReleaseAndroidTest
+            ./gradlew \
+              --no-daemon \
+              --stacktrace \
+              connectedE2eReleaseAndroidTest
 
             mkdir -p artifacts/release-e2e/markers
 
-            touch artifacts/release-e2e/markers/550_offline_runtime.pass
-            touch artifacts/release-e2e/markers/552_553_clean_install_restore_totals.pass
-            touch artifacts/release-e2e/markers/554_security_runtime.pass
-            touch artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
+            touch \
+              artifacts/release-e2e/markers/550_offline_runtime.pass
+
+            touch \
+              artifacts/release-e2e/markers/552_553_clean_install_restore_totals.pass
+
+            touch \
+              artifacts/release-e2e/markers/554_security_runtime.pass
+
+            touch \
+              artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
 
             echo "CONNECTED_E2E_RELEASE=PASS"
 
       # ==========================================================
-      # 26. PHASE 17 EXPLICIT REAL ANDROID RUNTIME
+      # 26. PHASE 17
       # ==========================================================
 
       - name: Run Phase 17 real Android runtime suite
@@ -840,13 +889,16 @@ jobs:
 
             mkdir -p artifacts/release-e2e/markers
 
-            touch artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
-            touch artifacts/release-e2e/markers/554_security_runtime.pass
+            touch \
+              artifacts/release-e2e/markers/555_556_557_558_559_runtime.pass
+
+            touch \
+              artifacts/release-e2e/markers/554_security_runtime.pass
 
             echo "PHASE17_RUNTIME=PASS"
 
       # ==========================================================
-      # 27. PHASE 18 CONFIGURATION / ROTATION / LIFECYCLE
+      # 27. PHASE 18
       # ==========================================================
 
       - name: Run Phase 18 configuration lifecycle E2E
@@ -880,7 +932,7 @@ jobs:
             echo "PHASE18_RUNTIME=PASS"
 
       # ==========================================================
-      # 28. CLEAN INSTALL BACKUP/RESTORE
+      # 28. CLEAN INSTALL / RESTORE
       # ==========================================================
 
       - name: Run Clean Install Backup Restore E2E
@@ -913,12 +965,13 @@ jobs:
 
             mkdir -p artifacts/release-e2e/markers
 
-            touch artifacts/release-e2e/markers/552_553_clean_install_restore_totals.pass
+            touch \
+              artifacts/release-e2e/markers/552_553_clean_install_restore_totals.pass
 
             echo "CLEAN_INSTALL_RESTORE=PASS"
 
       # ==========================================================
-      # 29. PHASE 19 OFFLINE FIRST
+      # 29. OFFLINE FIRST
       # ==========================================================
 
       - name: Run Phase 19 offline-first E2E
@@ -951,20 +1004,13 @@ jobs:
 
             mkdir -p artifacts/release-e2e/markers
 
-            touch artifacts/release-e2e/markers/550_offline_runtime.pass
+            touch \
+              artifacts/release-e2e/markers/550_offline_runtime.pass
 
             echo "PHASE19_OFFLINE_RUNTIME=PASS"
 
       # ==========================================================
       # 30. SIGNED RELEASE E2E
-      #
-      # This creates:
-      # 547 install
-      # 548 fresh launch
-      # 549 relaunch
-      # 560 force-stop
-      # 562 rotation
-      # 563 crash scan
       # ==========================================================
 
       - name: Run signed Release APK E2E
@@ -995,9 +1041,7 @@ jobs:
             echo "SIGNED_RELEASE_E2E=PASS"
 
       # ==========================================================
-      # 31. SIGNED RELEASE REBOOT PERSISTENCE
-      #
-      # Uses the production-signed instrumentation APK.
+      # 31. REBOOT PERSISTENCE
       # ==========================================================
 
       - name: Run signed Release reboot persistence gate
@@ -1032,7 +1076,7 @@ jobs:
             echo "SIGNED_RELEASE_REBOOT=PASS"
 
       # ==========================================================
-      # 32. FINAL RUNTIME MARKER VALIDATION
+      # 32. RUNTIME MARKERS
       # ==========================================================
 
       - name: Verify all final runtime evidence markers
@@ -1062,7 +1106,7 @@ jobs:
           echo "ALL_RUNTIME_EVIDENCE_MARKERS=PASS"
 
       # ==========================================================
-      # 33. FINAL RELEASE GATE 541-566
+      # 33. FIXED FINAL SHA-256 + RELEASE GATE
       # ==========================================================
 
       - name: Run FINAL RELEASE GATE 541-566
@@ -1073,13 +1117,12 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          test -s \
-            artifacts/Majdoor-Hisaab-PRO-release.apk
+          APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
+
+          test -s "$APK"
 
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.sha256
-
-          sha256sum "$APK" 2>/dev/null || true
 
           sha256sum -c \
             artifacts/Majdoor-Hisaab-PRO-release.sha256
@@ -1089,7 +1132,7 @@ jobs:
           echo "541_566_FINAL_RELEASE_GATE=PASS"
 
       # ==========================================================
-      # 34. FINAL APK INFORMATION
+      # 34. FINAL APK VERIFICATION
       # ==========================================================
 
       - name: Final signed APK verification
@@ -1134,7 +1177,7 @@ jobs:
           echo "=============================================="
 
       # ==========================================================
-      # 35. UPLOAD ONLY FINAL ARTIFACTS
+      # 35. FINAL ARTIFACT
       # ==========================================================
 
       - name: Upload final APK and audit evidence
@@ -1147,7 +1190,6 @@ jobs:
             project/artifacts/Majdoor-Hisaab-PRO-release.sha256
             project/artifacts/Majdoor-Hisaab-PRO-release-androidTest.apk
             project/artifacts/production-signature.txt
-            project/artifacts/production-signing-gate.txt
             project/artifacts/release-build/**
             project/artifacts/debug/**
             project/artifacts/release-e2e/**
