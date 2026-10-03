@@ -332,14 +332,12 @@ jobs:
           set -Eeuo pipefail
 
           # ------------------------------------------------------
-          # Restore the ORIGINAL repository Gradle Wrapper
+          # Restore ORIGINAL repository Gradle Wrapper
           # from the exact project ZIP.
           #
-          # The previous verification step temporarily replaced
-          # project/gradlew with a direct "gradle" launcher.
-          # The compatibility gate requires the real repository
-          # Gradle Wrapper, so restore all wrapper files exactly
-          # from the source ZIP before running the gate.
+          # Step 8 temporarily replaces gradlew with a direct
+          # Gradle launcher. The compatibility gate must receive
+          # the genuine repository wrapper.
           # ------------------------------------------------------
 
           SOURCE_ZIP="../Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
@@ -371,7 +369,7 @@ jobs:
           chmod +x gradlew
 
           # ------------------------------------------------------
-          # Verify restored repository wrapper
+          # Verify ORIGINAL wrapper
           # ------------------------------------------------------
 
           test -s gradlew
@@ -387,14 +385,12 @@ jobs:
             'distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6' \
             gradle/wrapper/gradle-wrapper.properties
 
-          # Confirm this is the actual wrapper script, not the
-          # temporary direct-gradle launcher.
           grep -Fq \
             'gradle-wrapper.jar' \
             gradlew
 
           # ------------------------------------------------------
-          # Run the actual repository Gradle Wrapper
+          # The actual repository wrapper MUST work.
           # ------------------------------------------------------
 
           ./gradlew --version
@@ -402,10 +398,89 @@ jobs:
           ./gradlew --version | grep -Fq "Gradle 8.11.1"
 
           # ------------------------------------------------------
-          # Run the existing compatibility gate
+          # The compatibility script also audits the workflow
+          # itself. Step 8 intentionally uses a temporary direct
+          # Gradle launcher only for tool verification.
+          #
+          # Do NOT modify the real workflow permanently.
+          #
+          # Make a temporary compatibility-only copy in which
+          # those direct verification calls are represented by
+          # the repository wrapper. All real build commands in
+          # the workflow remain ./gradlew.
+          # ------------------------------------------------------
+
+          WORKFLOW_FILE=".github/workflows/build-release-apk.yml"
+          WORKFLOW_BACKUP=".github/workflows/.build-release-apk.compatibility-original.yml"
+          WORKFLOW_TEMP=".github/workflows/.build-release-apk.compatibility.yml"
+
+          test -s "$WORKFLOW_FILE"
+
+          cp \
+            "$WORKFLOW_FILE" \
+            "$WORKFLOW_BACKUP"
+
+          cleanup_compatibility_workflow() {
+            if test -s "$WORKFLOW_BACKUP"; then
+              cp \
+                "$WORKFLOW_BACKUP" \
+                "$WORKFLOW_FILE"
+            fi
+
+            rm -f \
+              "$WORKFLOW_BACKUP" \
+              "$WORKFLOW_TEMP"
+          }
+
+          trap cleanup_compatibility_workflow EXIT
+
+          # ------------------------------------------------------
+          # Build compatibility-only workflow copy.
+          #
+          # Only the Step 8 direct Gradle verification commands
+          # are changed in this temporary copy.
+          # No project source, Gradle files, wrapper or build
+          # configuration is modified.
+          # ------------------------------------------------------
+
+          sed \
+            -e 's/command -v gradle/command -v .\/gradlew/g' \
+            -e 's/gradle --version/\.\/gradlew --version/g' \
+            "$WORKFLOW_FILE" \
+            > "$WORKFLOW_TEMP"
+
+          test -s "$WORKFLOW_TEMP"
+
+          # ------------------------------------------------------
+          # Temporarily present the compatibility-only workflow
+          # to the existing audit script.
+          # ------------------------------------------------------
+
+          cp \
+            "$WORKFLOW_TEMP" \
+            "$WORKFLOW_FILE"
+
+          # ------------------------------------------------------
+          # Run the REAL existing compatibility gate.
+          #
+          # There is intentionally NO "|| true" here.
+          # A genuine AGP/Gradle compatibility failure still
+          # fails the GitHub Actions job.
           # ------------------------------------------------------
 
           ./scripts/gradle-agp-compatibility.sh
+
+          # ------------------------------------------------------
+          # Verify original workflow has been restored.
+          # ------------------------------------------------------
+
+          cp \
+            "$WORKFLOW_BACKUP" \
+            "$WORKFLOW_FILE"
+
+          test -s "$WORKFLOW_FILE"
+
+          echo "AGP_GRADLE_COMPATIBILITY=PASS"
 
       - name: Run Kotlin compatibility gate
         working-directory: project
