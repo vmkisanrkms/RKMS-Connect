@@ -24,6 +24,9 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
+  # Preferred ZIP name.
+  # If this exact file is not found, workflow automatically
+  # searches for Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_*.zip
   ZIP_NAME: "Majdoor-Hisaab-PRO-Professional-UI-V82-KOTLIN-COMPILE-FIXED.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
@@ -62,8 +65,7 @@ jobs:
       # ============================================================
       # 3. SETUP GRADLE 8.11.1
       #
-      # IMPORTANT:
-      # This does NOT require gradlew.
+      # Does NOT require gradlew.
       # ============================================================
 
       - name: Setup Gradle 8.11.1
@@ -117,7 +119,6 @@ jobs:
 
           if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-
           else
             SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
               -type f \
@@ -197,22 +198,78 @@ jobs:
 
 
       # ============================================================
-      # 7. VERIFY V82 ZIP
+      # 7. FIND PROJECT ZIP
+      #
+      # FIXED:
+      # The repository contains:
+      #
+      # Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_v10.zip
+      #
+      # instead of the old V82 filename.
+      #
+      # This step automatically detects the correct ZIP.
       # ============================================================
 
-      - name: Verify V82 ZIP
+      - name: Find Majdoor Hisaab Project ZIP
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY V82 ZIP"
+          echo "FIND MAJDOOR HISAAB PROJECT ZIP"
           echo "=============================================="
 
-          if [ ! -f "$ZIP_NAME" ]; then
+          PREFERRED="$ZIP_NAME"
+
+          echo ""
+          echo "PREFERRED ZIP:"
+          echo "$PREFERRED"
+
+          if [ -f "$PREFERRED" ]; then
+
+            FOUND_ZIP="$PREFERRED"
 
             echo ""
-            echo "ERROR: V82 ZIP NOT FOUND."
+            echo "PREFERRED ZIP FOUND."
+
+          else
+
+            echo ""
+            echo "PREFERRED ZIP NOT FOUND."
+            echo "Searching for READY_TO_BUILD_FIXED ZIP..."
+
+            FOUND_ZIP=$(
+              find . \
+                -type f \
+                -name "Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_*.zip" \
+                -not -path "./.git/*" \
+                -print \
+                | sort \
+                | tail -1
+            )
+
+            if [ -z "$FOUND_ZIP" ]; then
+
+              echo ""
+              echo "Searching for any Majdoor Hisaab ZIP..."
+
+              FOUND_ZIP=$(
+                find . \
+                  -type f \
+                  -iname "*Majdoor*Hisaab*.zip" \
+                  -not -path "./.git/*" \
+                  -print \
+                  | sort \
+                  | tail -1
+              )
+
+            fi
+          fi
+
+          if [ -z "$FOUND_ZIP" ] || [ ! -f "$FOUND_ZIP" ]; then
+
+            echo ""
+            echo "ERROR: Majdoor Hisaab project ZIP NOT FOUND."
 
             echo ""
             echo "AVAILABLE ZIP FILES:"
@@ -227,23 +284,46 @@ jobs:
             exit 1
           fi
 
+          # Remove leading ./ only for cleaner output.
+          FOUND_ZIP="${FOUND_ZIP#./}"
+
           echo ""
-          echo "V82 ZIP FOUND:"
-          ls -lh "$ZIP_NAME"
+          echo "=============================================="
+          echo "PROJECT ZIP FOUND"
+          echo "=============================================="
+
+          echo "$FOUND_ZIP"
+          ls -lh "$FOUND_ZIP"
+
+          # Override environment variable for all later steps.
+          echo "ZIP_NAME=$FOUND_ZIP" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "ZIP_NAME UPDATED SUCCESSFULLY."
 
 
       # ============================================================
       # 8. EXTRACT PROJECT
       # ============================================================
 
-      - name: Extract V82 Project
+      - name: Extract Majdoor Hisaab Project
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "EXTRACT V82 PROJECT"
+          echo "EXTRACT PROJECT"
           echo "=============================================="
+
+          echo ""
+          echo "USING ZIP:"
+          echo "$ZIP_NAME"
+
+          if [ ! -f "$ZIP_NAME" ]; then
+            echo ""
+            echo "ERROR: Selected ZIP does not exist."
+            exit 1
+          fi
 
           rm -rf build_source
           mkdir -p build_source
@@ -320,9 +400,6 @@ jobs:
 
       # ============================================================
       # 10. GRADLE ENVIRONMENT
-      #
-      # IMPORTANT:
-      # Uses installed Gradle, NOT ./gradlew.
       # ============================================================
 
       - name: Verify Gradle Environment
@@ -842,6 +919,8 @@ jobs:
             -quit)
 
           if [ -z "$APK" ]; then
+
+            echo ""
             echo "ERROR: Release APK not found."
 
             find "$PROJECT_DIR/app/build/outputs" \
@@ -895,7 +974,7 @@ jobs:
 
 
       # ============================================================
-      # 20. PREPARE SIGNING
+      # 20. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -940,10 +1019,6 @@ jobs:
 
               echo ""
               echo "ERROR: Permanent keystore verification failed."
-              echo "Check:"
-              echo "KEYSTORE_BASE64"
-              echo "KEYSTORE_PASSWORD"
-              echo "KEY_ALIAS"
 
               exit 1
             fi
