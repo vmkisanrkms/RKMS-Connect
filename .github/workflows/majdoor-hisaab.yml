@@ -47,8 +47,7 @@ jobs:
       # ============================================================
       # 2. JAVA 17
       # IMPORTANT:
-      # DO NOT USE cache: gradle HERE
-      # Because Android project is inside ZIP.
+      # NO GRADLE CACHE HERE
       # ============================================================
 
       - name: Set up JDK 17
@@ -99,6 +98,11 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "ANDROID SDK VERIFICATION"
+          echo "=============================================="
+
+          echo
           echo "ANDROID_HOME:"
           echo "${ANDROID_HOME}"
 
@@ -131,7 +135,7 @@ jobs:
 
 
       # ============================================================
-      # 6. LOCATE ANDROID PROJECT
+      # 6. LOCATE ANDROID PROJECT / V81 ZIP
       # ============================================================
 
       - name: Locate Android project
@@ -146,7 +150,7 @@ jobs:
           PROJECT_ROOT=""
 
           # ----------------------------------------------------------
-          # Check whether project already exists at repository root
+          # Check project directly at repository root
           # ----------------------------------------------------------
 
           if [ -f "settings.gradle.kts" ] && \
@@ -158,7 +162,8 @@ jobs:
 
           else
 
-            echo "Android project is not at repository root."
+            echo
+            echo "Android project not at repository root."
             echo "Searching for V81 ZIP..."
 
             ZIP_PATH=""
@@ -177,7 +182,7 @@ jobs:
             # --------------------------------------------------------
             # Search only V81 ZIP
             # IMPORTANT:
-            # Old V104 is NOT allowed as fallback.
+            # V104 is NOT used as fallback.
             # --------------------------------------------------------
 
             if [ -z "${ZIP_PATH}" ]; then
@@ -206,14 +211,14 @@ jobs:
               echo "======================================================"
               echo "ERROR: V81 SOURCE ZIP NOT FOUND"
               echo "======================================================"
+
               echo
               echo "Expected:"
               echo "${ZIP_NAME}"
-              echo
-              echo "IMPORTANT:"
-              echo "The V81 ZIP must be uploaded to the GitHub repository."
+
               echo
               echo "Available ZIP files:"
+
               find . \
                 -type f \
                 -iname "*.zip" \
@@ -225,17 +230,13 @@ jobs:
             fi
 
 
-            # --------------------------------------------------------
-            # Show selected ZIP
-            # --------------------------------------------------------
-
             echo
             echo "V81 SOURCE ZIP:"
             echo "${ZIP_PATH}"
 
 
             # --------------------------------------------------------
-            # Clean extraction directories
+            # Clean extraction
             # --------------------------------------------------------
 
             rm -rf extracted
@@ -246,7 +247,7 @@ jobs:
 
 
             # --------------------------------------------------------
-            # Extract ZIP
+            # Extract
             # --------------------------------------------------------
 
             unzip -q \
@@ -271,7 +272,7 @@ jobs:
             else
 
               # ------------------------------------------------------
-              # Find nested Android project
+              # Find nested project
               # ------------------------------------------------------
 
               SETTINGS_FILE="$(
@@ -289,6 +290,7 @@ jobs:
 
                 echo
                 echo "Extracted files:"
+
                 find extracted \
                   -maxdepth 7 \
                   -type f \
@@ -324,7 +326,7 @@ jobs:
 
 
             # --------------------------------------------------------
-            # Final project validation
+            # Final validation
             # --------------------------------------------------------
 
             if [ ! -f "project/settings.gradle.kts" ]; then
@@ -402,7 +404,11 @@ jobs:
 
 
       # ============================================================
-      # 8. SETUP GRADLE
+      # 8. INSTALL / SETUP GRADLE 8.11.1
+      #
+      # IMPORTANT:
+      # We use installed Gradle directly.
+      # Gradle wrapper will NOT be executed.
       # ============================================================
 
       - name: Set up Gradle
@@ -437,6 +443,10 @@ jobs:
 
           gradle --version
 
+          echo
+          echo "Required Gradle:"
+          echo "${GRADLE_VERSION}"
+
 
       # ============================================================
       # 10. VERIFY V81 SOURCE CONFIGURATION
@@ -467,6 +477,7 @@ jobs:
 
           echo
           echo "Namespace:"
+
           grep -n \
             "namespace" \
             "${BUILD_FILE}" \
@@ -475,6 +486,7 @@ jobs:
 
           echo
           echo "Application ID:"
+
           grep -n \
             "applicationId" \
             "${BUILD_FILE}" \
@@ -483,6 +495,7 @@ jobs:
 
           echo
           echo "compileSdk:"
+
           grep -n \
             "compileSdk" \
             "${BUILD_FILE}" \
@@ -491,6 +504,7 @@ jobs:
 
           echo
           echo "minSdk:"
+
           grep -n \
             "minSdk" \
             "${BUILD_FILE}" \
@@ -499,6 +513,7 @@ jobs:
 
           echo
           echo "targetSdk:"
+
           grep -n \
             "targetSdk" \
             "${BUILD_FILE}" \
@@ -507,6 +522,7 @@ jobs:
 
           echo
           echo "versionCode:"
+
           grep -n \
             "versionCode" \
             "${BUILD_FILE}" \
@@ -515,6 +531,7 @@ jobs:
 
           echo
           echo "versionName:"
+
           grep -n \
             "versionName" \
             "${BUILD_FILE}" \
@@ -523,6 +540,7 @@ jobs:
 
           echo
           echo "Android plugin:"
+
           grep -R \
             "com.android.application" \
             -n \
@@ -533,6 +551,7 @@ jobs:
 
           echo
           echo "Kotlin plugin:"
+
           grep -R \
             "org.jetbrains.kotlin.android" \
             -n \
@@ -565,7 +584,6 @@ jobs:
               exit 1
             }
 
-
           echo "Application ID OK."
 
 
@@ -579,7 +597,6 @@ jobs:
               echo "ERROR: versionName 1.77.0 not found."
               exit 1
             }
-
 
           echo "versionName OK."
 
@@ -595,7 +612,6 @@ jobs:
               exit 1
             }
 
-
           echo "versionCode OK."
 
 
@@ -610,7 +626,6 @@ jobs:
               exit 1
             }
 
-
           echo "compileSdk OK."
 
 
@@ -624,7 +639,6 @@ jobs:
               echo "ERROR: targetSdk 36 not found."
               exit 1
             }
-
 
           echo "targetSdk OK."
 
@@ -642,59 +656,57 @@ jobs:
 
 
       # ============================================================
-      # 12. VERIFY GRADLE WRAPPER
+      # 12. VERIFY GRADLE CONFIGURATION
+      #
+      # IMPORTANT:
+      # DO NOT RUN ./gradlew
+      # The wrapper download was the previous failure.
       # ============================================================
 
-      - name: Verify Gradle wrapper
+      - name: Verify Gradle configuration
         shell: bash
         run: |
           set -e
 
           cd "${PROJECT_ROOT}"
 
+          echo "=============================================="
+          echo "GRADLE CONFIGURATION"
+          echo "=============================================="
 
-          if [ ! -f "gradlew" ]; then
 
-            echo "ERROR: gradlew not found in V81 source."
+          if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
 
-            exit 1
+            echo
+            echo "Wrapper configuration found:"
+
+            grep \
+              "distributionUrl" \
+              gradle/wrapper/gradle-wrapper.properties \
+              || true
+
+            echo
+            echo "Wrapper will NOT be executed."
+
+          else
+
+            echo
+            echo "No Gradle wrapper configuration found."
 
           fi
 
 
-          if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-
-            echo "ERROR: gradle-wrapper.properties not found."
-
-            exit 1
-
-          fi
-
-
-          chmod +x gradlew
-
-
           echo
-          echo "Gradle wrapper configuration:"
+          echo "Using GitHub-installed Gradle:"
 
-          grep \
-            "distributionUrl" \
-            gradle/wrapper/gradle-wrapper.properties
-
-
-          echo
-          echo "Gradle wrapper version:"
-
-          ./gradlew \
-            --version
+          gradle --version
 
 
       # ============================================================
-      # 13. SAFE SOURCE CHECK
+      # 13. SAFE SOURCE COMPATIBILITY FIXES
       #
       # IMPORTANT:
-      # V81 already contains professional btn() implementation.
-      # DO NOT replace btn() with Button().
+      # V81 professional btn() is NOT replaced.
       # ============================================================
 
       - name: Apply safe source compatibility fixes
@@ -710,9 +722,6 @@ jobs:
           if [ -f "${FILE}" ]; then
 
             echo "Checking source compatibility..."
-
-            # Safe replacements only.
-            # No old btn() patch is applied.
 
             sed -i \
               's/\.audit\.auditLog/\.auditLog/g' \
@@ -733,19 +742,19 @@ jobs:
 
 
             echo
-            echo "Source compatibility check completed."
+            echo "Safe source compatibility check completed."
 
           else
 
             echo
             echo "MainActivityScreens.kt not found."
-            echo "No source compatibility patch required."
+            echo "No compatibility patch applied."
 
           fi
 
 
       # ============================================================
-      # 14. VERIFY PROFESSIONAL btn() IMPLEMENTATION
+      # 14. VERIFY V81 BUTTON IMPLEMENTATION
       # ============================================================
 
       - name: Verify V81 button implementation
@@ -760,7 +769,8 @@ jobs:
 
           if [ -f "${FILE}" ]; then
 
-            echo "Checking V81 btn() implementation..."
+            echo "Checking V81 professional button implementation..."
+
 
             grep -q \
               'internal fun MainActivity.btn' \
@@ -775,11 +785,12 @@ jobs:
               'TextView(this)' \
               "${FILE}" \
               || {
-                echo "ERROR: Professional V81 TextView button renderer not found."
+                echo "ERROR: V81 TextView button renderer not found."
                 exit 1
               }
 
 
+            echo
             echo "V81 professional button implementation verified."
 
           fi
@@ -787,6 +798,8 @@ jobs:
 
       # ============================================================
       # 15. CLEAN
+      # IMPORTANT:
+      # USE gradle, NOT ./gradlew
       # ============================================================
 
       - name: Clean project
@@ -796,7 +809,7 @@ jobs:
 
           cd "${PROJECT_ROOT}"
 
-          ./gradlew \
+          gradle \
             clean \
             --no-daemon \
             --stacktrace
@@ -813,7 +826,7 @@ jobs:
 
           cd "${PROJECT_ROOT}"
 
-          ./gradlew \
+          gradle \
             :app:compileReleaseKotlin \
             --no-daemon \
             --stacktrace
@@ -830,7 +843,7 @@ jobs:
 
           cd "${PROJECT_ROOT}"
 
-          ./gradlew \
+          gradle \
             :app:assembleRelease \
             --no-daemon \
             --stacktrace
@@ -904,6 +917,7 @@ jobs:
 
           APK="${UNSIGNED_APK}"
 
+
           if [ ! -f "${APK}" ]; then
 
             echo "ERROR: Unsigned APK missing."
@@ -942,7 +956,7 @@ jobs:
 
 
           echo
-          echo "Application ID check..."
+          echo "Checking package..."
 
           echo "${BADGING}" \
             | grep -q \
@@ -957,7 +971,7 @@ jobs:
 
 
           echo
-          echo "Version check..."
+          echo "Checking version..."
 
           echo "${BADGING}" \
             | grep \
@@ -1076,6 +1090,7 @@ jobs:
             "${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release-aligned.apk"
 
 
+          echo
           echo "Zipalign completed."
 
 
@@ -1241,6 +1256,7 @@ jobs:
           echo "FINAL APK VERIFICATION SUCCESS"
           echo "=============================================="
 
+
           echo "Package      : ${PACKAGE_NAME}"
           echo "Version Name : ${VERSION_NAME}"
           echo "Version Code : ${VERSION_CODE}"
@@ -1266,6 +1282,7 @@ jobs:
 
           echo
           echo "SHA256:"
+
           cat \
             "Majdoor-Hisaab-PRO-1.77.0-release.apk.sha256"
 
