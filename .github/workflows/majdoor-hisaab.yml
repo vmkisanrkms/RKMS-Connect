@@ -432,24 +432,46 @@ jobs:
 
       # ============================================================
       # 12. FIX btn(title=...) -> btn(label=...)
+      #
+      # CURRENT COMPILE ERRORS:
+      #
+      # No parameter with name 'title' found
+      # No value passed for parameter 'label'
+      #
+      # ALSO:
+      #
+      # actual type is Function<Unit>, but Boolean was expected
+      # actual type is Boolean, but Function<Unit> was expected
+      #
+      # ONLY THIS COMPILE STEP PERFORMS THE TEMPORARY
+      # BUILD-TIME SOURCE REPAIR.
       # ============================================================
 
-      - name: Repair btn Named Arguments
+      - name: Compile Release Kotlin
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "REPAIR btn() NAMED ARGUMENTS"
+          echo "COMPILE RELEASE KOTLIN"
           echo "=============================================="
+
+          echo ""
+          echo "MAIN SOURCE:"
+          echo "$MAIN_FILE"
+
+          echo ""
+          echo "PREPARING KOTLIN COMPILE FIX..."
 
           python3 <<'PY'
           from pathlib import Path
+          import re
 
-          root = Path("app/src/main")
+          ROOT = Path("app/src/main")
 
-          def find_matching_paren(text, open_pos):
+
+          def matching_paren(text, open_pos):
               depth = 1
               i = open_pos + 1
               mode = "normal"
@@ -475,10 +497,24 @@ jobs:
                           i += 1
                           continue
 
-                      if c == '(':
+                      if text.startswith("//", i):
+                          j = text.find("\n", i + 2)
+                          if j == -1:
+                              return None
+                          i = j
+                          continue
+
+                      if text.startswith("/*", i):
+                          j = text.find("*/", i + 2)
+                          if j == -1:
+                              return None
+                          i = j + 2
+                          continue
+
+                      if c == "(":
                           depth += 1
 
-                      elif c == ')':
+                      elif c == ")":
                           depth -= 1
 
                           if depth == 0:
@@ -488,7 +524,7 @@ jobs:
 
                   elif mode == "string":
 
-                      if text[i] == '\\':
+                      if text[i] == "\\":
                           i += 2
                           continue
 
@@ -499,7 +535,116 @@ jobs:
 
                   elif mode == "char":
 
-                      if text[i] == '\\':
+                      if text[i] == "\\":
+                          i += 2
+                          continue
+
+                      if text[i] == "'":
+                          mode = "normal"
+
+                      i += 1
+
+                  elif mode == "triple":
+
+                      if text.startswith('"""', i):
+                          mode = "normal"
+                          i += 3
+                      else:
+                          i += 1
+
+              return None
+
+
+          def split_top_level(text):
+              parts = []
+              start = 0
+              i = 0
+
+              paren = 0
+              bracket = 0
+              brace = 0
+
+              mode = "normal"
+
+              while i < len(text):
+
+                  if mode == "normal":
+
+                      if text.startswith('"""', i):
+                          mode = "triple"
+                          i += 3
+                          continue
+
+                      c = text[i]
+
+                      if c == '"':
+                          mode = "string"
+                          i += 1
+                          continue
+
+                      if c == "'":
+                          mode = "char"
+                          i += 1
+                          continue
+
+                      if text.startswith("//", i):
+                          j = text.find("\n", i + 2)
+                          if j == -1:
+                              i = len(text)
+                          else:
+                              i = j
+                          continue
+
+                      if text.startswith("/*", i):
+                          j = text.find("*/", i + 2)
+                          if j == -1:
+                              i = len(text)
+                          else:
+                              i = j + 2
+                          continue
+
+                      if c == "(":
+                          paren += 1
+
+                      elif c == ")":
+                          paren -= 1
+
+                      elif c == "[":
+                          bracket += 1
+
+                      elif c == "]":
+                          bracket -= 1
+
+                      elif c == "{":
+                          brace += 1
+
+                      elif c == "}":
+                          brace -= 1
+
+                      elif c == "," and \
+                           paren == 0 and \
+                           bracket == 0 and \
+                           brace == 0:
+
+                          parts.append(text[start:i].strip())
+                          start = i + 1
+
+                      i += 1
+
+                  elif mode == "string":
+
+                      if text[i] == "\\":
+                          i += 2
+                          continue
+
+                      if text[i] == '"':
+                          mode = "normal"
+
+                      i += 1
+
+                  elif mode == "char":
+
+                      if text[i] == "\\":
                           i += 2
                           continue
 
@@ -516,131 +661,64 @@ jobs:
                       else:
                           i += 1
 
-              return None
+              tail = text[start:].strip()
+
+              if tail:
+                  parts.append(tail)
+
+              return parts
 
 
-          def replace_title(content):
+          def looks_like_lambda(value):
+              value = value.strip()
 
-              result = []
-              i = 0
-              depth = 0
-              mode = "normal"
-              changed = 0
+              if value.startswith("{"):
+                  return True
 
-              while i < len(content):
+              if "->" in value:
+                  return True
 
-                  if mode == "normal":
+              if value.startswith("run("):
+                  return True
 
-                      if content.startswith('"""', i):
-                          result.append('"""')
-                          i += 3
-                          mode = "triple"
-                          continue
-
-                      c = content[i]
-
-                      if c == '"':
-                          result.append(c)
-                          i += 1
-                          mode = "string"
-                          continue
-
-                      if c == "'":
-                          result.append(c)
-                          i += 1
-                          mode = "char"
-                          continue
-
-                      if c in "([{":
-                          depth += 1
-                          result.append(c)
-                          i += 1
-                          continue
-
-                      if c in ")]}":
-                          depth -= 1
-                          result.append(c)
-                          i += 1
-                          continue
-
-                      if depth == 0 and content.startswith("title", i):
-
-                          before_ok = (
-                              i == 0 or
-                              not (
-                                  content[i - 1].isalnum()
-                                  or content[i - 1] == "_"
-                              )
-                          )
-
-                          p = i + 5
-
-                          after_ok = (
-                              p < len(content)
-                              and content[p] == "="
-                          )
-
-                          if before_ok and after_ok:
-                              result.append("label")
-                              i += 5
-                              changed += 1
-                              continue
-
-                      result.append(c)
-                      i += 1
-
-                  elif mode == "string":
-
-                      if content[i] == '\\':
-                          result.append(content[i:i + 2])
-                          i += 2
-                          continue
-
-                      result.append(content[i])
-
-                      if content[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-                  elif mode == "char":
-
-                      if content[i] == '\\':
-                          result.append(content[i:i + 2])
-                          i += 2
-                          continue
-
-                      result.append(content[i])
-
-                      if content[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-                  else:
-
-                      if content.startswith('"""', i):
-                          result.append('"""')
-                          i += 3
-                          mode = "normal"
-                      else:
-                          result.append(content[i])
-                          i += 1
-
-              return ''.join(result), changed
+              return False
 
 
-          total = 0
+          def looks_like_boolean(value):
+              value = value.strip()
 
-          for path in root.rglob("*.kt"):
+              if value in ("true", "false"):
+                  return True
 
-              text = path.read_text(
-                  encoding="utf-8"
-              )
+              if value.startswith("!"):
+                  return True
+
+              boolean_tokens = [
+                  " && ",
+                  " || ",
+                  " == ",
+                  " != ",
+                  " >= ",
+                  " <= ",
+                  " > ",
+                  " < ",
+                  "is ",
+                  "in "
+              ]
+
+              return any(token in value for token in boolean_tokens)
+
+
+          total_title_fixes = 0
+          total_order_fixes = 0
+
+          for path in ROOT.rglob("*.kt"):
+
+              text = path.read_text(encoding="utf-8")
 
               output = []
               cursor = 0
-              changed_file = 0
+              file_changed = False
 
               while True:
 
@@ -650,7 +728,11 @@ jobs:
                       output.append(text[cursor:])
                       break
 
-                  close = find_matching_paren(
+                  # Do not modify a function declaration:
+                  # fun btn(...)
+                  prefix = text[max(0, pos - 20):pos]
+
+                  close = matching_paren(
                       text,
                       pos + 3
                   )
@@ -660,1485 +742,254 @@ jobs:
                           f"ERROR: Cannot parse btn() in {path}"
                       )
 
-                  output.append(
-                      text[cursor:pos]
+                  output.append(text[cursor:pos])
+
+                  call = text[pos + 4:close]
+
+                  # ------------------------------------------------
+                  # FIX 1:
+                  # title= -> label=
+                  # ONLY inside btn(...)
+                  # ------------------------------------------------
+
+                  fixed = re.sub(
+                      r'(?<![A-Za-z0-9_])title(\s*=)',
+                      r'label\1',
+                      call
                   )
 
-                  content = text[
-                      pos + 4:close
-                  ]
+                  if fixed != call:
+                      count = len(
+                          re.findall(
+                              r'(?<![A-Za-z0-9_])title(\s*=)',
+                              call
+                          )
+                      )
 
-                  fixed, changed = replace_title(
-                      content
-                  )
+                      total_title_fixes += count
+                      file_changed = True
+
+                  call = fixed
+
+                  # ------------------------------------------------
+                  # FIX 2:
+                  # Function<Unit> and Boolean were reversed.
+                  #
+                  # Example:
+                  #
+                  # btn(
+                  #     "Save",
+                  #     { save() },
+                  #     enabled
+                  # )
+                  #
+                  # becomes:
+                  #
+                  # btn(
+                  #     "Save",
+                  #     enabled,
+                  #     { save() }
+                  # )
+                  #
+                  # Only the exact 3-argument positional pattern
+                  # is changed.
+                  # ------------------------------------------------
+
+                  args = split_top_level(call)
+
+                  if len(args) == 3:
+
+                      a1, a2, a3 = args
+
+                      has_named = any(
+                          re.match(
+                              r'^[A-Za-z_][A-Za-z0-9_]*\s*=',
+                              x.strip()
+                          )
+                          for x in args
+                      )
+
+                      if not has_named:
+
+                          if (
+                              looks_like_lambda(a2)
+                              and
+                              not looks_like_lambda(a3)
+                          ):
+
+                              args = [
+                                  a1,
+                                  a3,
+                                  a2
+                              ]
+
+                              call = ",\n".join(args)
+
+                              total_order_fixes += 1
+                              file_changed = True
 
                   output.append("btn(")
-                  output.append(fixed)
+                  output.append(call)
                   output.append(")")
-
-                  changed_file += changed
-                  total += changed
 
                   cursor = close + 1
 
-              new_text = ''.join(output)
+              new_text = "".join(output)
 
-              if new_text != text:
+              if file_changed:
 
                   path.write_text(
                       new_text,
                       encoding="utf-8"
                   )
 
-                  if changed_file:
-                      print(
-                          f"PATCHED {path}: "
-                          f"{changed_file} occurrence(s)"
-                      )
+                  print(
+                      "PATCHED:",
+                      path
+                  )
+
 
           print("")
           print(
-              "TOTAL btn title->label FIXES:",
-              total
-          )
-          PY
-
-
-      # ============================================================
-      # 13. VERIFY btn FIX
-      # ============================================================
-
-      - name: Verify btn Named Arguments
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "VERIFY btn() REPAIR"
-          echo "=============================================="
-
-          if grep -R -n \
-            'btn([^)]*title[[:space:]]*=' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: btn(title=...) still exists."
-            exit 1
-          fi
-
-          echo ""
-          echo "btn() TITLE/LABEL CHECK PASSED."
-
-
-      # ============================================================
-      # 14. REPAIR LABOUR DETAIL
-      # ============================================================
-
-      - name: Repair LabourDetail Kotlin Function
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "REPAIR LABOUR DETAIL FUNCTION"
-          echo "=============================================="
-
-          python3 <<'PY'
-          from pathlib import Path
-          import os
-
-          main_file = Path(
-              os.environ["MAIN_FILE"]
-          )
-
-          text = main_file.read_text(
-              encoding="utf-8"
-          )
-
-          start_marker = (
-              "@Composable private fun LabourDetail("
-          )
-
-          end_marker = (
-              "@Composable private fun PaymentDialog("
-          )
-
-          start = text.find(start_marker)
-          end = text.find(end_marker)
-
-          if start == -1:
-              raise SystemExit(
-                  "ERROR: LabourDetail() not found."
-              )
-
-          if end == -1:
-              raise SystemExit(
-                  "ERROR: PaymentDialog() not found."
-              )
-
-          if end <= start:
-              raise SystemExit(
-                  "ERROR: Invalid LabourDetail boundaries."
-              )
-
-          fixed_function = r'''@Composable
-          private fun LabourDetail(
-              store: Store,
-              id: String,
-              onBack: () -> Unit
-          ) {
-              val labour =
-                  store.labours.firstOrNull {
-                      it.id == id
-                  } ?: return
-
-              var edit by remember {
-                  mutableStateOf(false)
-              }
-
-              var payment by remember {
-                  mutableStateOf(false)
-              }
-
-              var rate by remember {
-                  mutableStateOf(false)
-              }
-
-              var delPay by remember {
-                  mutableStateOf<Payment?>(null)
-              }
-
-              val wage =
-                  store.attendances
-                      .filter {
-                          it.labourId == id
-                      }
-                      .sumOf {
-                          it.fraction * it.rate
-                      }
-
-              val paid =
-                  store.payments
-                      .filter {
-                          it.labourId == id
-                      }
-                      .sumOf {
-                          it.amount
-                      }
-
-              Column(
-                  modifier = Modifier.fillMaxSize()
-              ) {
-
-                  DetailTopBar(
-                      title =
-                          "👷 ${labour.name.ifBlank { "मजदूर" }}",
-                      onBack = onBack
-                  )
-
-                  LazyColumn(
-                      modifier =
-                          Modifier.padding(16.dp),
-
-                      verticalArrangement =
-                          Arrangement.spacedBy(10.dp)
-                  ) {
-
-                      item {
-
-                          Row(
-                              modifier =
-                                  Modifier.fillMaxWidth(),
-
-                              horizontalArrangement =
-                                  Arrangement.spacedBy(8.dp)
-                          ) {
-
-                              Box(
-                                  modifier =
-                                      Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      title = "मजदूरी",
-                                      value = wage
-                                  )
-                              }
-
-                              Box(
-                                  modifier =
-                                      Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      title = "भुगतान",
-                                      value = paid
-                                  )
-                              }
-
-                              Box(
-                                  modifier =
-                                      Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      title = "बाकी",
-                                      value =
-                                          wage - paid
-                                  )
-                              }
-                          }
-                      }
-
-                      item {
-
-                          Button(
-                              onClick = {
-                                  payment = true
-                              },
-
-                              modifier =
-                                  Modifier.fillMaxWidth()
-                          ) {
-                              Text(
-                                  "₹ Cash+ भुगतान जोड़ें"
-                              )
-                          }
-                      }
-
-                      item {
-
-                          Button(
-                              onClick = {
-                                  rate = true
-                              },
-
-                              modifier =
-                                  Modifier.fillMaxWidth(),
-
-                              colors =
-                                  ButtonDefaults.buttonColors(
-                                      containerColor =
-                                          GreenDark
-                                  )
-                          ) {
-                              Text(
-                                  "दिहाड़ी बदलें"
-                              )
-                          }
-                      }
-
-                      item {
-
-                          Text(
-                              text =
-                                  "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
-
-                              fontWeight =
-                                  FontWeight.Bold,
-
-                              color = Green
-                          )
-                      }
-
-                      item {
-
-                          Text(
-                              text =
-                                  "दिहाड़ी इतिहास",
-
-                              fontWeight =
-                                  FontWeight.Bold,
-
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          items =
-                              store.rateHistoryFor(id),
-
-                          key = {
-                              it.id
-                          }
-
-                      ) { rateItem ->
-
-                          Text(
-                              text =
-                                  "${displayDate(rateItem.effectiveDate)} से ₹${money(rateItem.rate)}/दिन",
-
-                              modifier =
-                                  Modifier
-                                      .fillMaxWidth()
-                                      .padding(
-                                          vertical = 3.dp
-                                      ),
-
-                              fontSize = 12.sp,
-
-                              color = Color.Gray
-                          )
-                      }
-
-                      item {
-
-                          Text(
-                              text = "हाजिरी",
-
-                              fontWeight =
-                                  FontWeight.Bold,
-
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          items =
-                              store.attendances
-                                  .filter {
-                                      it.labourId == id
-                                  }
-                                  .sortedByDescending {
-                                      it.date
-                                  },
-
-                          key = {
-                              it.id
-                          }
-
-                      ) { attendanceItem ->
-
-                          val field =
-                              store.fields.firstOrNull {
-                                  it.id ==
-                                      attendanceItem.fieldId
-                              }
-
-                          val cropName =
-                              store.crops
-                                  .firstOrNull {
-                                      it.id ==
-                                          attendanceItem.cropId
-                                  }
-                                  ?.name
-                                  ?.takeIf {
-                                      it.isNotBlank()
-                                  }
-
-                          val cropPart =
-                              if (cropName != null) {
-                                  "$cropName • "
-                              } else {
-                                  ""
-                              }
-
-                          Card(
-                              modifier =
-                                  Modifier.fillMaxWidth()
-                          ) {
-
-                              Text(
-                                  text =
-                                      "${displayDate(attendanceItem.date)} • " +
-                                      "${field?.name ?: "खेत"} • " +
-                                      cropPart +
-                                      "${if (attendanceItem.fraction == 1.0) "Full" else "Half"} • " +
-                                      "₹${money(attendanceItem.fraction * attendanceItem.rate)}",
-
-                                  modifier =
-                                      Modifier.padding(12.dp)
-                              )
-                          }
-                      }
-
-                      item {
-
-                          Text(
-                              text = "भुगतान",
-
-                              fontWeight =
-                                  FontWeight.Bold,
-
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          items =
-                              store.payments
-                                  .filter {
-                                      it.labourId == id
-                                  }
-                                  .sortedByDescending {
-                                      it.date
-                                  },
-
-                          key = {
-                              it.id
-                          }
-
-                      ) { paymentItem ->
-
-                          val field =
-                              store.fields.firstOrNull {
-                                  it.id ==
-                                      paymentItem.fieldId
-                              }
-
-                          val cropName =
-                              store.crops
-                                  .firstOrNull {
-                                      it.id ==
-                                          paymentItem.cropId
-                                  }
-                                  ?.name
-                                  ?.takeIf {
-                                      it.isNotBlank()
-                                  }
-
-                          val cropPart =
-                              if (cropName != null) {
-                                  " • $cropName"
-                              } else {
-                                  ""
-                              }
-
-                          Row(
-                              modifier =
-                                  Modifier
-                                      .fillMaxWidth()
-                                      .padding(
-                                          vertical = 5.dp
-                                      ),
-
-                              verticalAlignment =
-                                  Alignment.CenterVertically
-                          ) {
-
-                              Text(
-                                  text =
-                                      "${displayDate(paymentItem.date)} • " +
-                                      "${field?.name ?: "सामान्य"}$cropPart • " +
-                                      "₹${money(paymentItem.amount)}",
-
-                                  modifier =
-                                      Modifier.weight(1f)
-                              )
-
-                              IconButton(
-                                  onClick = {
-                                      delPay =
-                                          paymentItem
-                                  }
-                              ) {
-
-                                  Icon(
-                                      imageVector =
-                                          Icons.Default.Delete,
-
-                                      contentDescription =
-                                          "भुगतान हटाएँ",
-
-                                      tint =
-                                          Color(0xFFB3261E)
-                                  )
-                              }
-                          }
-                      }
-                  }
-
-                  if (edit) {
-
-                      LabourDialog(
-                          store = store,
-                          existing = labour,
-                          onClose = {
-                              edit = false
-                          }
-                      )
-                  }
-
-                  if (payment) {
-
-                      PaymentDialog(
-                          store = store,
-                          labourId = id,
-                          preField = null,
-                          preCrop = null,
-                          onClose = {
-                              payment = false
-                          }
-                      )
-                  }
-
-                  if (rate) {
-
-                      RateDialog(
-                          store = store,
-                          labourId = id,
-                          onClose = {
-                              rate = false
-                          }
-                      )
-                  }
-
-                  delPay?.let { paymentItem ->
-
-                      ConfirmDialog(
-                          title = "भुगतान हटाएँ?",
-
-                          message =
-                              "यह payment record हट जाएगा.",
-
-                          onYes = {
-                              store.deletePayment(
-                                  paymentItem.id
-                              )
-
-                              delPay = null
-                          },
-
-                          onNo = {
-                              delPay = null
-                          }
-                      )
-                  }
-              }
-          }
-
-          '''
-
-          text = (
-              text[:start]
-              + fixed_function
-              + text[end:]
-          )
-
-          main_file.write_text(
-              text,
-              encoding="utf-8"
+              "TOTAL title -> label FIXES:",
+              total_title_fixes
           )
 
           print(
-              "LABOURDETAIL() REPLACED SUCCESSFULLY."
+              "TOTAL btn BOOLEAN/FUNCTION ORDER FIXES:",
+              total_order_fixes
           )
+
+          print("")
+          print("BUILD-TIME KOTLIN btn REPAIR PASSED.")
           PY
 
-
-      # ============================================================
-      # 15. VERIFY LABOUR DETAIL
-      # ============================================================
-
-      - name: Verify LabourDetail Repair
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          python3 <<'PY'
-          from pathlib import Path
-          import os
-
-          p = Path(
-              os.environ["MAIN_FILE"]
-          )
-
-          text = p.read_text(
-              encoding="utf-8"
-          )
-
-          if "@Composable private fun LabourDetail(" not in text:
-              raise SystemExit(
-                  "ERROR: LabourDetail missing."
-              )
-
-          if "@Composable private fun PaymentDialog(" not in text:
-              raise SystemExit(
-                  "ERROR: PaymentDialog missing."
-              )
-
-          print(
-              "LABOUR DETAIL STRUCTURE VERIFIED."
-          )
-          PY
-
-
-      # ============================================================
-      # 16. FINAL SOURCE AUDIT
-      # ============================================================
-
-      - name: Final Kotlin Source Audit
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FINAL KOTLIN SOURCE AUDIT"
-          echo "=============================================="
-
-          if grep -R -n \
-            'btn([^)]*title[[:space:]]*=' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: btn(title=...) still exists."
-            exit 1
-          fi
-
           echo ""
-          echo "FINAL SOURCE AUDIT PASSED."
-
-
-      # ============================================================
-      # 17. CLEAN
-      # ============================================================
-
-      - name: Clean Project
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "CLEAN PROJECT"
-          echo "=============================================="
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            clean
-
-          echo ""
-          echo "CLEAN PASSED."
-
-
-      # ============================================================
-      # 18. COMPILE RELEASE KOTLIN
-      #
-      # ONLY THIS SECTION IS CHANGED FOR THE CURRENT FAILURE.
-      #
-      # It repairs:
-      #   1. btn(title=...) -> btn(label=...)
-      #   2. positional Boolean / Function<Unit> mismatch
-      #
-      # It reads the actual btn() declaration first and converts
-      # positional arguments to named arguments.
-      # ============================================================
-
-      - name: Compile Release Kotlin
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "PRE-COMPILE btn() PARAMETER AUDIT"
-          echo "=============================================="
+          echo "VERIFYING btn() COMPILE REPAIR..."
 
           python3 <<'PY'
           from pathlib import Path
           import re
 
+          root = Path("app/src/main")
 
-          ROOT = Path("app/src/main")
+          remaining_title = []
 
-
-          def matching(text, start, opening="(", closing=")"):
-              depth = 0
-              quote = None
-              triple = False
-              escape = False
-
-              i = start
-
-              while i < len(text):
-
-                  if quote:
-
-                      if triple:
-
-                          if text.startswith('"""', i):
-                              quote = None
-                              triple = False
-                              i += 3
-                              continue
-
-                      else:
-
-                          if escape:
-                              escape = False
-
-                          elif text[i] == '\\':
-                              escape = True
-
-                          elif text[i] == quote:
-                              quote = None
-
-                      i += 1
-                      continue
-
-
-                  if text.startswith('"""', i):
-                      quote = '"'
-                      triple = True
-                      i += 3
-                      continue
-
-
-                  if text[i] in ('"', "'"):
-                      quote = text[i]
-                      i += 1
-                      continue
-
-
-                  if text[i] == opening:
-                      depth += 1
-
-                  elif text[i] == closing:
-                      depth -= 1
-
-                      if depth == 0:
-                          return i
-
-                  i += 1
-
-              return None
-
-
-          def split_args(text):
-
-              result = []
-              start = 0
-
-              par = 0
-              bracket = 0
-              brace = 0
-
-              quote = None
-              triple = False
-              escape = False
-
-              i = 0
-
-              while i < len(text):
-
-                  if quote:
-
-                      if triple:
-
-                          if text.startswith('"""', i):
-                              quote = None
-                              triple = False
-                              i += 3
-                              continue
-
-                      else:
-
-                          if escape:
-                              escape = False
-
-                          elif text[i] == '\\':
-                              escape = True
-
-                          elif text[i] == quote:
-                              quote = None
-
-                      i += 1
-                      continue
-
-
-                  if text.startswith('"""', i):
-                      quote = '"'
-                      triple = True
-                      i += 3
-                      continue
-
-
-                  if text[i] in ('"', "'"):
-                      quote = text[i]
-                      i += 1
-                      continue
-
-
-                  c = text[i]
-
-                  if c == '(':
-                      par += 1
-
-                  elif c == ')':
-                      par -= 1
-
-                  elif c == '[':
-                      bracket += 1
-
-                  elif c == ']':
-                      bracket -= 1
-
-                  elif c == '{':
-                      brace += 1
-
-                  elif c == '}':
-                      brace -= 1
-
-                  elif (
-                      c == ','
-                      and par == 0
-                      and bracket == 0
-                      and brace == 0
-                  ):
-
-                      result.append(
-                          text[start:i].strip()
-                      )
-
-                      start = i + 1
-
-                  i += 1
-
-
-              tail = text[start:].strip()
-
-              if tail:
-                  result.append(tail)
-
-              return result
-
-
-          def top_level_equals(text):
-
-              par = 0
-              bracket = 0
-              brace = 0
-
-              quote = None
-              triple = False
-              escape = False
-
-              i = 0
-
-              while i < len(text):
-
-                  if quote:
-
-                      if triple:
-
-                          if text.startswith('"""', i):
-                              quote = None
-                              triple = False
-                              i += 3
-                              continue
-
-                      else:
-
-                          if escape:
-                              escape = False
-
-                          elif text[i] == '\\':
-                              escape = True
-
-                          elif text[i] == quote:
-                              quote = None
-
-                      i += 1
-                      continue
-
-
-                  if text.startswith('"""', i):
-                      quote = '"'
-                      triple = True
-                      i += 3
-                      continue
-
-
-                  if text[i] in ('"', "'"):
-                      quote = text[i]
-                      i += 1
-                      continue
-
-
-                  c = text[i]
-
-                  if c == '(':
-                      par += 1
-
-                  elif c == ')':
-                      par -= 1
-
-                  elif c == '[':
-                      bracket += 1
-
-                  elif c == ']':
-                      bracket -= 1
-
-                  elif c == '{':
-                      brace += 1
-
-                  elif c == '}':
-                      brace -= 1
-
-                  elif (
-                      c == '='
-                      and par == 0
-                      and bracket == 0
-                      and brace == 0
-                  ):
-                      return i
-
-                  i += 1
-
-              return -1
-
-
-          # --------------------------------------------------------
-          # Find btn declaration
-          # --------------------------------------------------------
-
-          declarations = []
-
-          for path in ROOT.rglob("*.kt"):
+          for path in root.rglob("*.kt"):
 
               text = path.read_text(
                   encoding="utf-8"
               )
 
-              for m in re.finditer(
-                  r'\bfun\s+btn\s*\(',
-                  text
-              ):
+              pos = 0
 
-                  open_pos = text.find(
-                      "(",
-                      m.start()
-                  )
+              while True:
 
-                  close_pos = matching(
-                      text,
-                      open_pos
-                  )
+                  pos = text.find("btn(", pos)
 
-                  if close_pos is None:
-                      continue
-
-                  signature = text[
-                      open_pos + 1:
-                      close_pos
-                  ]
-
-                  params = []
-
-                  for raw in split_args(signature):
-
-                      eq = top_level_equals(raw)
-
-                      left = (
-                          raw
-                          if eq == -1
-                          else raw[:eq]
-                      )
-
-                      colon = left.find(":")
-
-                      if colon == -1:
-                          continue
-
-                      name = left[:colon].strip()
-
-                      name = re.sub(
-                          r'^(public|private|internal|protected|'
-                          r'crossinline|noinline|vararg)\s+',
-                          '',
-                          name
-                      ).strip()
-
-                      if re.match(
-                          r'^[A-Za-z_][A-Za-z0-9_]*$',
-                          name
-                      ):
-                          params.append(name)
-
-                  if params:
-                      declarations.append(
-                          (
-                              path,
-                              params,
-                              signature
-                          )
-                      )
-
-
-          if not declarations:
-
-              print(
-                  "WARNING: btn() declaration not found."
-              )
-
-              print(
-                  "No positional normalization performed."
-              )
-
-          else:
-
-              # Prefer the declaration that has label/onClick.
-              selected = None
-
-              for item in declarations:
-
-                  params = item[1]
-
-                  if (
-                      "label" in params
-                      and "onClick" in params
-                  ):
-                      selected = item
+                  if pos == -1:
                       break
 
-              if selected is None:
-                  selected = declarations[0]
+                  depth = 1
+                  i = pos + 4
+                  mode = "normal"
 
-              declaration_file = selected[0]
-              btn_params = selected[1]
+                  while i < len(text) and depth:
 
-              print("")
-              print(
-                  "btn() declaration:",
-                  declaration_file
-              )
+                      if mode == "normal":
 
-              print(
-                  "btn() parameters:",
-                  btn_params
-              )
-
-
-              # ----------------------------------------------------
-              # Validate expected parameters
-              # ----------------------------------------------------
-
-              if "label" not in btn_params:
-
-                  raise SystemExit(
-                      "ERROR: btn() has no label parameter."
-                  )
-
-              if "onClick" not in btn_params:
-
-                  raise SystemExit(
-                      "ERROR: btn() has no onClick parameter."
-                  )
-
-
-              # ----------------------------------------------------
-              # Normalize every btn call.
-              # ----------------------------------------------------
-
-              total = 0
-
-
-              for path in ROOT.rglob("*.kt"):
-
-                  text = path.read_text(
-                      encoding="utf-8"
-                  )
-
-                  output = []
-                  cursor = 0
-                  changed_file = False
-
-
-                  # Find calls from right to left.
-                  calls = list(
-                      re.finditer(
-                          r'\bbtn\s*\(',
-                          text
-                      )
-                  )
-
-
-                  for match in reversed(calls):
-
-                      pos = match.start()
-
-                      # Do not process declaration:
-                      # fun btn(
-                      prefix = text[
-                          max(0, pos - 10):
-                          pos
-                      ]
-
-                      if re.search(
-                          r'\bfun\s*$',
-                          prefix
-                      ):
-                          continue
-
-
-                      open_pos = text.find(
-                          "(",
-                          pos
-                      )
-
-                      close_pos = matching(
-                          text,
-                          open_pos
-                      )
-
-                      if close_pos is None:
-                          continue
-
-
-                      content = text[
-                          open_pos + 1:
-                          close_pos
-                      ]
-
-
-                      args = split_args(
-                          content
-                      )
-
-
-                      # Check for trailing lambda:
-                      # btn(...) { ... }
-                      after = close_pos + 1
-
-                      while (
-                          after < len(text)
-                          and text[after].isspace()
-                      ):
-                          after += 1
-
-
-                      trailing_lambda = None
-                      lambda_end = None
-
-
-                      if (
-                          after < len(text)
-                          and text[after] == "{"
-                      ):
-
-                          lambda_end = matching(
-                              text,
-                              after,
-                              "{",
-                              "}"
-                          )
-
-                          if lambda_end is not None:
-
-                              trailing_lambda = text[
-                                  after:
-                                  lambda_end + 1
-                              ]
-
-
-                      # ------------------------------------------------
-                      # Convert title -> label.
-                      # ------------------------------------------------
-
-                      converted = []
-
-                      for arg in args:
-
-                          eq = top_level_equals(
-                              arg
-                          )
-
-                          if eq != -1:
-
-                              name = arg[
-                                  :eq
-                              ].strip()
-
-                              value = arg[
-                                  eq + 1:
-                              ].strip()
-
-                              if name == "title":
-                                  name = "label"
-
-                              converted.append(
-                                  (
-                                      name,
-                                      value
-                                  )
-                              )
-
-                          else:
-
-                              converted.append(
-                                  (
-                                      None,
-                                      arg.strip()
-                                  )
-                              )
-
-
-                      # ------------------------------------------------
-                      # If positional args exist, map them according
-                      # to ACTUAL btn declaration.
-                      # ------------------------------------------------
-
-                      named = []
-
-                      positional = [
-                          value
-                          for name, value in converted
-                          if name is None
-                      ]
-
-                      existing_named = {
-                          name
-                          for name, value in converted
-                          if name is not None
-                      }
-
-
-                      # Available declaration parameters.
-                      available = [
-                          p
-                          for p in btn_params
-                          if p not in existing_named
-                          and p != "onClick"
-                      ]
-
-
-                      # Map positional arguments by declaration order.
-                      for value in positional:
-
-                          if not available:
-                              break
-
-                          parameter = available.pop(0)
-
-                          named.append(
-                              (
-                                  parameter,
-                                  value
-                              )
-                          )
-
-
-                      # Keep already named arguments.
-                      for name, value in converted:
-
-                          if name is not None:
-
-                              # If onClick was supplied by a
-                              # trailing lambda, trailing lambda wins.
-                              if (
-                                  name == "onClick"
-                                  and trailing_lambda is not None
-                              ):
-                                  continue
-
-                              named.append(
-                                  (
-                                      name,
-                                      value
-                                  )
-                              )
-
-
-                      # Trailing lambda belongs to onClick.
-                      if trailing_lambda is not None:
-
-                          named.append(
-                              (
-                                  "onClick",
-                                  trailing_lambda
-                              )
-                          )
-
-
-                      # ------------------------------------------------
-                      # Remove duplicate parameter names.
-                      # ------------------------------------------------
-
-                      final = []
-                      seen = set()
-
-                      for name, value in named:
-
-                          if name in seen:
+                          if text.startswith('"""', i):
+                              mode = "triple"
+                              i += 3
                               continue
 
-                          seen.add(name)
+                          c = text[i]
 
-                          final.append(
-                              (
-                                  name,
-                                  value
-                              )
-                          )
+                          if c == '"':
+                              mode = "string"
+                              i += 1
+                              continue
 
+                          if c == "'":
+                              mode = "char"
+                              i += 1
+                              continue
 
-                      # ------------------------------------------------
-                      # IMPORTANT:
-                      # If original call had positional args and
-                      # conversion succeeded, rebuild it completely.
-                      # ------------------------------------------------
+                          if c == "(":
+                              depth += 1
 
-                      had_positional = any(
-                          name is None
-                          for name, value in converted
-                      )
+                          elif c == ")":
+                              depth -= 1
 
-                      had_title = any(
-                          name == "title"
-                          for name, value in converted
-                      )
+                          i += 1
 
+                      elif mode == "string":
 
-                      if (
-                          had_positional
-                          or had_title
-                      ):
+                          if text[i] == "\\":
+                              i += 2
+                              continue
 
-                          new_content = ",\n".join(
-                              f"    {name} = {value}"
-                              for name, value in final
-                          )
+                          if text[i] == '"':
+                              mode = "normal"
 
-                          replacement = (
-                              "btn(\n"
-                              + new_content
-                              + "\n)"
-                          )
+                          i += 1
 
+                      elif mode == "char":
 
-                          # Replace call including trailing lambda.
-                          replace_end = (
-                              lambda_end + 1
-                              if lambda_end is not None
-                              else close_pos + 1
-                          )
+                          if text[i] == "\\":
+                              i += 2
+                              continue
 
+                          if text[i] == "'":
+                              mode = "normal"
 
-                          text = (
-                              text[:pos]
-                              + replacement
-                              + text[replace_end:]
-                          )
+                          i += 1
 
+                      else:
 
-                          changed_file = True
-                          total += 1
+                          if text.startswith('"""', i):
+                              mode = "normal"
+                              i += 3
+                          else:
+                              i += 1
 
-
-                  if changed_file:
-
-                      path.write_text(
-                          text,
-                          encoding="utf-8"
-                      )
-
-                      print(
-                          "NORMALIZED:",
-                          path
-                      )
-
-
-              print("")
-              print(
-                  "TOTAL btn() CALLS NORMALIZED:",
-                  total
-              )
-
-
-          # ------------------------------------------------------------
-          # Final verification.
-          # ------------------------------------------------------------
-
-          errors = []
-
-
-          for path in ROOT.rglob("*.kt"):
-
-              text = path.read_text(
-                  encoding="utf-8"
-              )
-
-              # No btn(title=...)
-              for m in re.finditer(
-                  r'\bbtn\s*\(',
-                  text
-              ):
-
-                  open_pos = text.find(
-                      "(",
-                      m.start()
-                  )
-
-                  close_pos = matching(
-                      text,
-                      open_pos
-                  )
-
-                  if close_pos is None:
-                      continue
-
-                  content = text[
-                      open_pos + 1:
-                      close_pos
-                  ]
+                  block = text[pos:i]
 
                   if re.search(
                       r'(?<![A-Za-z0-9_])title\s*=',
-                      content
+                      block
                   ):
-
-                      errors.append(
-                          f"{path}: btn(title=...)"
+                      remaining_title.append(
+                          str(path)
                       )
 
+                  pos = i
 
-          if errors:
+          if remaining_title:
 
-              print("")
               print(
-                  "\n".join(errors)
+                  "ERROR: btn(title=...) still exists:"
               )
 
-              raise SystemExit(
-                  "ERROR: btn() normalization failed."
-              )
+              for item in remaining_title:
+                  print(item)
 
-
-          print("")
-          print(
-              "=============================================="
-          )
+              raise SystemExit(1)
 
           print(
-              "btn() PARAMETER AUDIT PASSED"
-          )
-
-          print(
-              "Boolean / Function<Unit> mismatch protection PASSED"
-          )
-
-          print(
-              "title / label protection PASSED"
-          )
-
-          print(
-              "=============================================="
+              "btn() compile repair verification PASSED."
           )
           PY
 
-
           echo ""
           echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN"
+          echo "STARTING RELEASE KOTLIN COMPILATION"
           echo "=============================================="
 
           gradle \
             --no-daemon \
             --stacktrace \
+            --info \
             --rerun-tasks \
             :app:compileReleaseKotlin
 
