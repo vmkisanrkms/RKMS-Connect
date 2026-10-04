@@ -78,9 +78,6 @@ jobs:
 
       # ============================================================
       # 3. JDK 17
-      #
-      # IMPORTANT:
-      # No Gradle cache here because project is inside ZIP.
       # ============================================================
 
       - name: Set up JDK 17
@@ -106,7 +103,7 @@ jobs:
 
 
       # ============================================================
-      # 5. PREPARE ANDROID SDK 36
+      # 5. ANDROID SDK 36
       # ============================================================
 
       - name: Prepare Android SDK 36
@@ -154,14 +151,6 @@ jobs:
 
           if [[ -z "$SDKMANAGER" ]]; then
             echo "ERROR: sdkmanager not found."
-
-            find "$SDK_ROOT" \
-              -type f \
-              -name "sdkmanager" \
-              -print \
-              2>/dev/null \
-              || true
-
             exit 1
           fi
 
@@ -174,7 +163,6 @@ jobs:
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
           echo "$SDK_ROOT/build-tools/${BUILD_TOOLS}" >> "$GITHUB_PATH"
 
-          echo
           "$SDKMANAGER" --version
 
           echo
@@ -227,10 +215,6 @@ jobs:
 
           FOUND_ROOT=""
 
-          # --------------------------------------------------------
-          # Repository root
-          # --------------------------------------------------------
-
           if [[ -f "settings.gradle.kts" ]] && \
              [[ -f "app/build.gradle.kts" ]]; then
 
@@ -240,10 +224,6 @@ jobs:
 
           fi
 
-
-          # --------------------------------------------------------
-          # Exact V81 ZIP
-          # --------------------------------------------------------
 
           if [[ -z "$FOUND_ROOT" ]] && \
              [[ -f "$ZIP_NAME" ]]; then
@@ -278,10 +258,6 @@ jobs:
 
           fi
 
-
-          # --------------------------------------------------------
-          # Fallback
-          # --------------------------------------------------------
 
           if [[ -z "$FOUND_ROOT" ]]; then
 
@@ -323,11 +299,9 @@ jobs:
           echo "ANDROID_PROJECT_ROOT=$FOUND_ROOT" \
             >> "$GITHUB_ENV"
 
-
           echo
           echo "ANDROID PROJECT:"
           echo "$FOUND_ROOT"
-
 
           echo
           echo "===== PROJECT FILES ====="
@@ -370,14 +344,12 @@ jobs:
           echo
           echo "===== settings.gradle.kts ====="
 
-          sed -n '1,260p' \
-            settings.gradle.kts
+          sed -n '1,260p' settings.gradle.kts
 
           echo
           echo "===== app/build.gradle.kts ====="
 
-          sed -n '1,380p' \
-            app/build.gradle.kts
+          sed -n '1,380p' app/build.gradle.kts
 
           echo
           echo "===== CHECKS ====="
@@ -438,21 +410,11 @@ jobs:
 
 
       # ============================================================
-      # 10. COMPLETE V81 KOTLIN SOURCE FIX
+      # 10. FIX V81 KOTLIN SOURCE
       #
-      # This fixes:
-      #
-      # - fillViewport
-      # - btn() default action
-      # - pick() Button/TextView mismatch
-      # - self-referencing btn() variables
-      # - unresolved it.text
-      # - statusViews map
-      # - exportType when
-      # - Intent.type shadowing
-      # - renderSummary forward reference
-      # - attendanceForm
-      # - customReport
+      # IMPORTANT:
+      # The complete Python block below is correctly indented.
+      # This fixes the YAML syntax error from the previous run.
       # ============================================================
 
       - name: Apply complete V81 Kotlin fixes
@@ -464,25 +426,13 @@ jobs:
           export PROJECT_ROOT="$PWD"
 
           python3 <<'PY'
-
           import os
           import re
           from pathlib import Path
 
+          root = Path(os.environ["PROJECT_ROOT"])
 
-          # ========================================================
-          # FIND SOURCE
-          # ========================================================
-
-          root = Path(
-              os.environ["PROJECT_ROOT"]
-          )
-
-          files = list(
-              root.rglob(
-                  "MainActivityScreens.kt"
-              )
-          )
+          files = list(root.rglob("MainActivityScreens.kt"))
 
           if not files:
               raise SystemExit(
@@ -491,128 +441,55 @@ jobs:
 
           src = files[0]
 
-          text = src.read_text(
-              encoding="utf-8"
-          )
+          text = src.read_text(encoding="utf-8")
 
           original = text
-
 
           print()
           print("============================================================")
           print(" COMPLETE V81 KOTLIN PATCH")
           print("============================================================")
-
           print("SOURCE:")
           print(src)
-
-
-          # ========================================================
-          # HELPER
-          # ========================================================
-
-          def replace_required(old, new, name, count=1):
-
-              global text
-
-              if old not in text:
-
-                  raise SystemExit(
-                      f"ERROR: Required source pattern not found: {name}"
-                  )
-
-              actual = text.count(old)
-
-              if actual < count:
-
-                  raise SystemExit(
-                      f"ERROR: Pattern count too low for {name}: "
-                      f"{actual} < {count}"
-                  )
-
-              text = text.replace(
-                  old,
-                  new,
-                  count
-              )
-
-              print(
-                  "FIXED:",
-                  name
-              )
 
 
           # ========================================================
           # 1. btn() DEFAULT ACTION
           # ========================================================
 
-          if (
-              "internal fun MainActivity.btn(s:String,action:()->Unit)=TextView(this).apply{"
-              in text
-          ):
-
-              text = text.replace(
-                  "internal fun MainActivity.btn(s:String,action:()->Unit)=TextView(this).apply{",
-                  "internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{",
-                  1
-              )
-
-              print("FIXED: btn() default action")
-
-          elif (
+          text = text.replace(
+              "internal fun MainActivity.btn(s:String,action:()->Unit)=TextView(this).apply{",
               "internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{"
-              in text
-          ):
+          )
 
-              print(
-                  "OK: btn() already has default action"
-              )
-
-          else:
-
-              print(
-                  "WARNING: btn() signature was not found"
-              )
+          text = text.replace(
+              "internal fun MainActivity.btn(s: String, action: () -> Unit) = TextView(this).apply {",
+              "internal fun MainActivity.btn(s: String, action: () -> Unit = {}) = TextView(this).apply {"
+          )
 
 
           # ========================================================
           # 2. ScrollView
           # ========================================================
 
-          if "fillViewport=true" in text:
-
-              text = text.replace(
-                  "fillViewport=true",
-                  "setFillViewport(true)"
-              )
-
-              print(
-                  "FIXED: ScrollView fillViewport"
-              )
+          text = text.replace(
+              "fillViewport=true",
+              "setFillViewport(true)"
+          )
 
 
           # ========================================================
-          # 3. pick() RETURN TYPE
+          # 3. pick() Button -> TextView
           # ========================================================
 
-          if (
-              "onPick:(Int)->Unit):Button"
-              in text
-          ):
-
-              text = text.replace(
-                  "onPick:(Int)->Unit):Button",
-                  "onPick:(Int)->Unit):TextView",
-                  1
-              )
-
-              print(
-                  "FIXED: pick() Button -> TextView"
-              )
+          text = text.replace(
+              "onPick:(Int)->Unit):Button",
+              "onPick:(Int)->Unit):TextView"
+          )
 
 
           # ========================================================
-          # 4. statusViews MAP
+          # 4. statusViews Map
           # ========================================================
 
           text = text.replace(
@@ -632,1051 +509,251 @@ jobs:
 
 
           # ========================================================
-          # 5. CROP FORM
+          # 5. GENERIC it.text FIXES
           # ========================================================
 
-          old = '''val n=field("Crop name",old?.name?:"");val v=field("Variety",old?.variety?:"");val fields=app.fields.list().filter{it.active};var fieldId=old?.fieldId?:fields.firstOrNull()?.id.orEmpty();val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()};val d=dateField("Planting date",old?.plantingDate?:today);val a=field("Area",old?.area?.toString()?:"0");val notes=field("Notes",old?.notes?:"")'''
+          replacements = {
 
-          new = '''val n=field("Crop name",old?.name?:"");val v=field("Variety",old?.variety?:"");val fields=app.fields.list().filter{it.active};var fieldId=old?.fieldId?:fields.firstOrNull()?.id.orEmpty();val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()};val d=dateField("Planting date",old?.plantingDate?:today);val a=field("Area",old?.area?.toString()?:"0");val notes=field("Notes",old?.notes?:"")'''
+              'it.text="Crop: ${crops[i].name}"':
+              'cropBtn.text="Crop: ${crops[i].name}"',
 
-          replace_required(
-              old,
-              new,
-              "crop form field button"
+              'it.text="Workers: ${selectedWorkers.distinct().size}"':
+              'workerBtn.text="Workers: ${selectedWorkers.distinct().size}"',
+
+              'it.text="Rate type: $rateType"':
+              'rateTypeBtn.text="Rate type: $rateType"',
+
+              'it.text="Worker: ${workers[i].name}"':
+              'wb.text="Worker: ${workers[i].name}"',
+
+              'it.text="Method: ${methods[i]}"':
+              'mb.text="Method: ${methods[i]}"',
+
+              'it.text="Advance: ${if(advance)"YES" else "NO"}"':
+              'adv.text="Advance: ${if(advance)"YES" else "NO"}"',
+
+              'it.text="Category: $cat"':
+              'cb.text="Category: $cat"',
+
+              'it.text="Field: Not linked"':
+              'fb.text="Field: Not linked"',
+
+              'it.text="Field: ${fields[i-1].name}"':
+              'fb.text="Field: ${fields[i-1].name}"',
+
+              'it.text="Crop: Not linked"':
+              'crb.text="Crop: Not linked"',
+
+              'it.text="Crop: ${crops[i-1].name}"':
+              'crb.text="Crop: ${crops[i-1].name}"',
+
+              'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"':
+              'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
+
+              'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"':
+              'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
+
+              'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"':
+              'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
+
+              'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"':
+              'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
+
+              'it.text="Status: $status"':
+              'statusBtn.text="Status: $status"',
+          }
+
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+
+
+          # ========================================================
+          # 6. SELF-REFERENCING BUTTON CALLBACKS
+          # ========================================================
+
+          text = text.replace(
+              '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}''',
+              '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()}'''
+          )
+
+
+          text = text.replace(
+              '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}''',
+              '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}");cropBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'''
           )
 
 
           # ========================================================
-          # 6. PRODUCTION CROP BUTTON
+          # 7. INTENT TYPE SHADOWING
           # ========================================================
 
-          old = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}'''
+          text = text.replace(
+              'Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="image/*";',
+              'Intent(Intent.ACTION_OPEN_DOCUMENT).apply{this.type="image/*";'
+          )
 
-          new = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}");cropBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'''
-
-          replace_required(
-              old,
-              new,
-              "production crop button",
-              1
+          text = text.replace(
+              'Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="image/*"',
+              'Intent(Intent.ACTION_OPEN_DOCUMENT).apply { this.type="image/*"'
           )
 
 
           # ========================================================
-          # 7. REVENUE CROP BUTTON
+          # 8. EXPORT when
           # ========================================================
 
-          replace_required(
-              old,
-              new,
-              "revenue crop button",
-              1
+          text = re.sub(
+              r'when\(exportType\)\s*\{',
+              'when {',
+              text
+          )
+
+          text = text.replace(
+              '"workers"->',
+              'exportType == "workers"->'
+          )
+
+          text = text.replace(
+              '"ledger"->',
+              'exportType == "ledger"->'
+          )
+
+          text = text.replace(
+              '"pdf"->',
+              'exportType == "pdf"->'
+          )
+
+          text = text.replace(
+              '"backup"->',
+              'exportType == "backup"->'
           )
 
 
           # ========================================================
-          # 8. WORK FIELD BUTTON
+          # 9. COMPATIBILITY FIXES
           # ========================================================
 
-          old = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}'''
-
-          new = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fieldBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fieldBtn.text="Field: ${fields[i].name}"}.show()}'''
-
-          replace_required(
-              old,
-              new,
-              "work field button"
-          )
-
-
-          # ========================================================
-          # 9. WORK CROP BUTTON
-          # ========================================================
-
-          old = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}'''
-
-          new = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}");cropBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'''
-
-          replace_required(
-              old,
-              new,
-              "work crop button"
-          )
-
-
-          # ========================================================
-          # 10. WORKER SELECT BUTTON
-          # ========================================================
-
-          old = '''val workerBtn=btn("Workers: ${selectedWorkers.size}"){
-            val checked=workers.map{selectedWorkers.contains(it.id)}.toBooleanArray()
-            AlertDialog.Builder(this).setTitle("Select workers").setMultiChoiceItems(workers.map{it.name}.toTypedArray(),checked){_,which,on->if(on)selectedWorkers.add(workers[which].id)else selectedWorkers.remove(workers[which].id)}.setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}.show()
-        }'''
-
-          new = '''val workerBtn=btn("Workers: ${selectedWorkers.size}")
-        workerBtn.setOnClickListener{
-            val checked=workers.map{selectedWorkers.contains(it.id)}.toBooleanArray()
-            AlertDialog.Builder(this).setTitle("Select workers").setMultiChoiceItems(workers.map{it.name}.toTypedArray(),checked){_,which,on->if(on)selectedWorkers.add(workers[which].id)else selectedWorkers.remove(workers[which].id)}.setPositiveButton("Done"){_,_->workerBtn.text="Workers: ${selectedWorkers.distinct().size}"}.show()
-        }'''
-
-          replace_required(
-              old,
-              new,
-              "work worker button"
-          )
-
-
-          # ========================================================
-          # 11. WORK RATE TYPE
-          # ========================================================
-
-          old = '''var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre");val rateTypeBtn=btn("Rate type: $rateType"){AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"}.show()};'''
-
-          new = '''var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre");val rateTypeBtn=btn("Rate type: $rateType");rateTypeBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"}.show()};'''
-
-          replace_required(
-              old,
-              new,
-              "work rate type button"
-          )
-
-
-          # ========================================================
-          # 12. PAYMENT FORM
-          # ========================================================
-
-          old = '''val wb=btn("Worker: ${selectedName(wid,workers.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select worker").setItems(workers.map{it.name}.toTypedArray()){_,i->wid=workers[i].id;it.text="Worker: ${workers[i].name}"}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");var method=old?.method?:"Cash";val mb=btn("Method: $method"){val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];it.text="Method: ${methods[i]}"}.show()};val adv=btn("Advance: ${if(advance)"YES" else "NO"}"){advance=!advance;it.text="Advance: ${if(advance)"YES" else "NO"}"};val ref=field("Reference",old?.reference?:"");val notes=field("Notes",old?.notes?:"");listOf(wb,d,a,mb,adv,ref,notes).forEach{b.addView(it)}'''
-
-          new = '''val wb=btn("Worker: ${selectedName(wid,workers.map{it.id to it.name})}");wb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select worker").setItems(workers.map{it.name}.toTypedArray()){_,i->wid=workers[i].id;wb.text="Worker: ${workers[i].name}"}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");var method=old?.method?:"Cash";val mb=btn("Method: $method");mb.setOnClickListener{val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];mb.text="Method: ${methods[i]}"}.show()};val adv=btn("Advance: ${if(advance)"YES" else "NO"}");adv.setOnClickListener{advance=!advance;adv.text="Advance: ${if(advance)"YES" else "NO"}"};val ref=field("Reference",old?.reference?:"");val notes=field("Notes",old?.notes?:"");listOf(wb,d,a,mb,adv,ref,notes).forEach{b.addView(it)}'''
-
-          replace_required(
-              old,
-              new,
-              "payment form buttons"
-          )
-
-
-          # ========================================================
-          # 13. EXPENSE FORM
-          # ========================================================
-
-          old = re.search(
-              r'        val cb=btn\("Category: \$cat"\).*?listOf\(cb,fb,crb,d,a,n\)\.forEach\{b\.addView\(it\)\}',
-              text,
-              flags=re.S
-          )
-
-          if not old:
-              raise SystemExit(
-                  "ERROR: Expense form block not found."
-              )
-
-          new = '''        val cb=btn("Category: $cat")
-        cb.setOnClickListener{AlertDialog.Builder(this).setTitle("Expense category").setItems(cats.toTypedArray()){_,i->cat=cats[i];cb.text="Category: $cat"}.show()}
-
-        val fb=btn("Field: ${if(fieldId.isBlank())"Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}")
-        fb.setOnClickListener{val labels=listOf("Not linked")+fields.map{it.name};AlertDialog.Builder(this).setTitle("Select field").setItems(labels.toTypedArray()){_,i->if(i==0){fieldId="";fb.text="Field: Not linked"}else{fieldId=fields[i-1].id;fb.text="Field: ${fields[i-1].name}"}}.show()}
-
-        val crb=btn("Crop: ${if(cropId.isBlank())"Not linked" else selectedName(cropId,crops.map{it.id to it.name})}")
-        crb.setOnClickListener{val labels=listOf("Not linked")+crops.map{it.name};AlertDialog.Builder(this).setTitle("Select crop").setItems(labels.toTypedArray()){_,i->if(i==0){cropId="";crb.text="Crop: Not linked"}else{cropId=crops[i-1].id;crb.text="Crop: ${crops[i-1].name}"}}.show()}
-
-        val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");val n=field("Notes",old?.notes?:"");listOf(cb,fb,crb,d,a,n).forEach{b.addView(it)}'''
-
-          text = (
-              text[:old.start()]
-              + new
-              + text[old.end():]
-          )
-
-          print(
-              "FIXED: expense form buttons"
-          )
-
-
-          # ========================================================
-          # 14. REPORT FILTER BUTTONS
-          # ========================================================
-
-          old = '''        val wb=btn("Worker: ${if(wid.isBlank())"All" else selectedName(wid,workers.map{it.id to it.name})}"){ val labels=listOf("All")+workers.map{it.name}; AlertDialog.Builder(this).setTitle("Worker").setItems(labels.toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id; it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show() }
-        val fb=btn("Field: ${if(fid.isBlank())"All" else selectedName(fid,fields.map{it.id to it.name})}"){ val labels=listOf("All")+fields.map{it.name}; AlertDialog.Builder(this).setTitle("Field").setItems(labels.toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id; it.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show() }
-        val cb=btn("Crop: ${if(cid.isBlank())"All" else selectedName(cid,crops.map{it.id to it.name})}"){ val labels=listOf("All")+crops.map{it.name}; AlertDialog.Builder(this).setTitle("Crop").setItems(labels.toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id; it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show() }'''
-
-          new = '''        val wb=btn("Worker: ${if(wid.isBlank())"All" else selectedName(wid,workers.map{it.id to it.name})}")
-        wb.setOnClickListener{val labels=listOf("All")+workers.map{it.name};AlertDialog.Builder(this).setTitle("Worker").setItems(labels.toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id;wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show()}
-
-        val fb=btn("Field: ${if(fid.isBlank())"All" else selectedName(fid,fields.map{it.id to it.name})}")
-        fb.setOnClickListener{val labels=listOf("All")+fields.map{it.name};AlertDialog.Builder(this).setTitle("Field").setItems(labels.toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id;fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show()}
-
-        val cb=btn("Crop: ${if(cid.isBlank())"All" else selectedName(cid,crops.map{it.id to it.name})}")
-        cb.setOnClickListener{val labels=listOf("All")+crops.map{it.name};AlertDialog.Builder(this).setTitle("Crop").setItems(labels.toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id;cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show()}'''
-
-          replace_required(
-              old,
-              new,
-              "report filter buttons"
-          )
-
-
-          # ========================================================
-          # 15. EXPORT WHEN
-          # ========================================================
-
-          old = '''contentResolver.openOutputStream(uri)!!.use{out->when(exportType){
-                    "workers"->app.export.csvWorkers(out)
-                    "ledger"->app.export.csvLedger(out)
-                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
-                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
-                    "pdf"->app.export.pdfSummary(out)
-                    "backup"->app.backup.export(out)
-                }}'''
-
-          new = '''contentResolver.openOutputStream(uri)!!.use{out->when {
-                    exportType=="workers"->app.export.csvWorkers(out)
-                    exportType=="ledger"->app.export.csvLedger(out)
-                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
-                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
-                    exportType=="pdf"->app.export.pdfSummary(out)
-                    exportType=="backup"->app.backup.export(out)
-                }}'''
-
-          replace_required(
-              old,
-              new,
-              "exportType when"
-          )
-
-
-          # ========================================================
-          # 16. WORK TEMPLATE RATE BUTTON
-          # ========================================================
-
-          old = '''val n=field("Template name",old?.name?:""); val t=field("Work type",old?.workType?:"Weeding"); var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre"); val rateTypeBtn=btn("Rate type: $rateType"){AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"}.show()}; val u=field("Unit",old?.unit?:"acre"); val r=field("Rate",old?.rate?.toString() ?: "0"); val notes=field("Notes",old?.notes?:"")'''
-
-          new = '''val n=field("Template name",old?.name?:""); val t=field("Work type",old?.workType?:"Weeding"); var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre"); val rateTypeBtn=btn("Rate type: $rateType");rateTypeBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"}.show()}; val u=field("Unit",old?.unit?:"acre"); val r=field("Rate",old?.rate?.toString() ?: "0"); val notes=field("Notes",old?.notes?:"")'''
-
-          replace_required(
-              old,
-              new,
-              "work template rate button"
-          )
-
-
-          # ========================================================
-          # 17. ATTENDANCE FORM
-          #
-          # IMPORTANT:
-          # Do not use implicit `it` inside setItems lambda.
-          # ========================================================
-
-          start = text.index(
-              "    internal fun MainActivity.attendanceForm(old:Attendance){"
-          )
-
-          end = text.index(
-              "\n\n    internal fun MainActivity.attendanceHistory()",
-              start
-          )
-
-          attendance_form = '''    internal fun MainActivity.attendanceForm(old:Attendance){
-        val b=page("Edit Attendance")
-        val fields=app.fields.list().filter{it.active}
-
-        var fieldId=old.fieldId
-
-        val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}")
-
-        fieldBtn.setOnClickListener{
-            val labels=arrayOf("Not linked")+fields.map{it.name}.toTypedArray()
-
-            AlertDialog.Builder(this)
-                .setTitle("Select field")
-                .setItems(labels){_,i->
-                    fieldId=if(i==0) "" else fields[i-1].id
-                    fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"
-                }
-                .show()
-        }
-
-        val date=dateField("Date",old.date)
-
-        var status=old.status.uppercase()
-
-        val statusBtn=btn("Status: $status")
-
-        statusBtn.setOnClickListener{
-            AlertDialog.Builder(this)
-                .setTitle("Attendance status")
-                .setItems(arrayOf("Full","Half","None / Unmarked")){_,i->
-                    status=arrayOf("FULL","HALF","NONE")[i]
-                    statusBtn.text="Status: $status"
-                }
-                .show()
-        }
-
-        val rate=field("Rate",old.rate.toString())
-        val note=field("Note",old.note)
-
-        listOf(
-            fieldBtn,
-            date,
-            statusBtn,
-            rate,
-            note
-        ).forEach{
-            b.addView(it)
-        }
-
-        b.addView(btn("Save Attendance"){
-            try{
-                val d=date.text.toString().trim()
-
-                val r=rate.text.toString()
-                    .toDoubleOrNull()
-                    ?: throw IllegalArgumentException("Invalid rate")
-
-                if(d.isBlank()){
-                    throw IllegalArgumentException("Date required")
-                }
-
-                AlertDialog.Builder(this)
-                    .setTitle("Confirm attendance change")
-                    .setMessage("Save these attendance changes?")
-                    .setNegativeButton("Cancel",null)
-                    .setPositiveButton("Save"){_,_->
-                        try{
-                            app.attendance.save(
-                                Attendance(
-                                    old.id,
-                                    dateValue(date),
-                                    old.workerId,
-                                    fieldId,
-                                    status,
-                                    r,
-                                    note.text.toString()
-                                )
-                            )
-
-                            toast("Attendance updated")
-                            workerAttendance(old.workerId)
-
-                        }catch(e:Exception){
-                            toast(
-                                e.message
-                                    ?: "Attendance update failed"
-                            )
-                        }
-                    }
-                    .show()
-
-            }catch(e:Exception){
-
-                toast(
-                    e.message
-                        ?: "Attendance update failed"
-                )
-            }
-        })
-
-        b.addView(
-            btn("Delete Attendance"){
-                confirmDelete("Attendance"){
-                    app.attendance.delete(old.id)
-                    workerAttendance(old.workerId)
-                }
-            }
-        )
-    }'''
-
-          text = (
-              text[:start]
-              + attendance_form
-              + text[end:]
-          )
-
-          print(
-              "FIXED: attendanceForm"
-          )
-
-
-          # ========================================================
-          # 18. ATTENDANCE CALENDAR
-          #
-          # renderSummary MUST be declared before render().
-          # ========================================================
-
-          start = text.index(
-              "    internal fun MainActivity.attendanceCalendar(){"
-          )
-
-          end = text.index(
-              "\n\n    internal fun MainActivity.paymentLedger()",
-              start
-          )
-
-          attendance_calendar = '''    internal fun MainActivity.attendanceCalendar(){
-        val b=page("Attendance Calendar")
-
-        var shown=Calendar.getInstance()
-        var selectedDate=today
-
-        val monthTitle=txt("",20f,true).apply{
-            gravity=Gravity.CENTER
-        }
-
-        val grid=GridLayout(this).apply{
-            columnCount=7
-            rowCount=7
-            alignmentMode=GridLayout.ALIGN_BOUNDS
-        }
-
-        val summary=txt("",15f,true)
-
-        val records=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-        }
-
-        fun iso(cal:Calendar):String=
-            String.format(
-                Locale.US,
-                "%04d-%02d-%02d",
-                cal.get(Calendar.YEAR),
-                cal.get(Calendar.MONTH)+1,
-                cal.get(Calendar.DAY_OF_MONTH)
-            )
-
-        fun dayButton(
-            label:String,
-            date:String,
-            hasRecords:Boolean,
-            selected:Boolean,
-            onClick:()->Unit
-        ):Button{
-
-            return Button(this).apply{
-
-                text=if(hasRecords){
-                    "$label\\n•"
-                }else{
-                    label
-                }
-
-                textSize=12f
-
-                setPadding(
-                    0,
-                    2,
-                    0,
-                    2
-                )
-
-                isAllCaps=false
-
-                if(selected){
-                    setTypeface(null,1)
-                }
-
-                setOnClickListener{
-                    onClick()
-                }
-            }
-        }
-
-        # SUMMARY IS DECLARED FIRST.
-        fun renderSummary(){
-
-            val list=
-                app.attendance.list()
-                    .filter{
-                        it.date==selectedDate
-                    }
-
-            summary.text=
-                if(list.isEmpty()){
-
-                    "${displayDateOrRaw(selectedDate)}\\nNo attendance saved"
-
-                }else{
-
-                    "${displayDateOrRaw(selectedDate)}  •  " +
-                    "Full ${list.count{it.status==\"FULL\"}}  •  " +
-                    "Half ${list.count{it.status==\"HALF\"}}  •  " +
-                    "Unmarked ${list.count{it.status==\"NONE\"}}"
-                }
-
-            records.removeAllViews()
-
-            if(list.isEmpty()){
-
-                records.addView(
-                    txt(
-                        "No attendance records for this date."
-                    )
-                )
-
-            }else{
-
-                list
-                    .sortedBy{
-                        app.workers
-                            .list()
-                            .find{w->w.id==it.workerId}
-                            ?.name
-                            ?: ""
-                    }
-                    .forEach{a->
-
-                        val worker=
-                            app.workers
-                                .list()
-                                .find{w->w.id==a.workerId}
-                                ?.name
-                                ?: "Unknown"
-
-                        val field=
-                            if(a.fieldId.isBlank()){
-
-                                "No field"
-
-                            }else{
-
-                                app.fields
-                                    .list()
-                                    .find{f->f.id==a.fieldId}
-                                    ?.name
-                                    ?: "Unknown field"
-                            }
-
-                        records.addView(
-                            btn(
-                                "$worker  •  ${a.status}  •  $field  •  ${money(a.rate)}"
-                            ){
-                                attendanceDetail(a.id)
-                            }
-                        )
-                    }
-            }
-        }
-
-
-        # RENDER COMES AFTER renderSummary.
-        fun render(){
-
-            grid.removeAllViews()
-
-            monthTitle.text=
-                SimpleDateFormat(
-                    "MMMM yyyy",
-                    Locale.US
-                ).format(shown.time)
-
-            val weekdays=
-                arrayOf(
-                    "Mon",
-                    "Tue",
-                    "Wed",
-                    "Thu",
-                    "Fri",
-                    "Sat",
-                    "Sun"
-                )
-
-            weekdays.forEach{w->
-
-                grid.addView(
-                    txt(
-                        w,
-                        11f,
-                        true
-                    ).apply{
-                        gravity=Gravity.CENTER
-                    },
-                    GridLayout.LayoutParams().apply{
-                        width=0
-                        height=48
-                        columnSpec=
-                            GridLayout.spec(
-                                GridLayout.UNDEFINED,
-                                1f
-                            )
-                        rowSpec=
-                            GridLayout.spec(0)
-                    }
-                )
-            }
-
-            val first=
-                shown.clone() as Calendar
-
-            first.set(
-                Calendar.DAY_OF_MONTH,
-                1
-            )
-
-            val mondayOffset=
-                (
-                    first.get(Calendar.DAY_OF_WEEK)
-                    + 5
-                ) % 7
-
-            val max=
-                shown.getActualMaximum(
-                    Calendar.DAY_OF_MONTH
-                )
-
-            for(i in 0 until mondayOffset){
-
-                grid.addView(
-                    TextView(this),
-                    GridLayout.LayoutParams().apply{
-                        width=0
-                        height=62
-
-                        columnSpec=
-                            GridLayout.spec(
-                                GridLayout.UNDEFINED,
-                                1f
-                            )
-
-                        rowSpec=
-                            GridLayout.spec(
-                                (i/7)+1
-                            )
-                    }
-                )
-            }
-
-            for(day in 1..max){
-
-                val c=
-                    shown.clone() as Calendar
-
-                c.set(
-                    Calendar.DAY_OF_MONTH,
-                    day
-                )
-
-                val d=iso(c)
-
-                val list=
-                    app.attendance
-                        .list()
-                        .filter{
-                            it.date==d
-                        }
-
-                val col=
-                    (mondayOffset+day-1)%7
-
-                val row=
-                    (mondayOffset+day-1)/7+1
-
-                val cell=
-                    dayButton(
-                        day.toString(),
-                        d,
-                        list.isNotEmpty(),
-                        d==selectedDate
-                    ){
-
-                        selectedDate=d
-
-                        renderSummary()
-                    }
-
-                grid.addView(
-                    cell,
-                    GridLayout.LayoutParams().apply{
-
-                        width=0
-                        height=62
-
-                        columnSpec=
-                            GridLayout.spec(
-                                col,
-                                1f
-                            )
-
-                        rowSpec=
-                            GridLayout.spec(
-                                row
-                            )
-                    }
-                )
-            }
-
-            renderSummary()
-        }
-
-
-        val nav=
-            LinearLayout(this).apply{
-                orientation=
-                    LinearLayout.HORIZONTAL
-            }
-
-        nav.addView(
-            btn("‹ Previous"){
-                shown.add(
-                    Calendar.MONTH,
-                    -1
-                )
-                render()
-            },
-            LinearLayout.LayoutParams(
-                0,
-                dp(52),
-                1f
-            )
-        )
-
-        nav.addView(
-            btn("Today"){
-                shown=
-                    Calendar.getInstance()
-
-                selectedDate=today
-
-                render()
-            },
-            LinearLayout.LayoutParams(
-                0,
-                dp(52),
-                1f
-            )
-        )
-
-        nav.addView(
-            btn("Next ›"){
-                shown.add(
-                    Calendar.MONTH,
-                    1
-                )
-                render()
-            },
-            LinearLayout.LayoutParams(
-                0,
-                dp(52),
-                1f
-            )
-        )
-
-        b.addView(nav)
-        b.addView(monthTitle)
-        b.addView(grid)
-        b.addView(summary)
-        b.addView(
-            txt(
-                "Tap a date to view/edit that day's attendance.",
-                13f
-            )
-        )
-        b.addView(records)
-
-        render()
-    }'''
-
-          # Remove Python comments accidentally placed inside Kotlin
-          attendance_calendar = (
-              attendance_calendar
-              .replace(
-                  "        # SUMMARY IS DECLARED FIRST.",
-                  ""
-              )
-              .replace(
-                  "        # RENDER COMES AFTER renderSummary.",
-                  ""
-              )
-          )
-
-          text = (
-              text[:start]
-              + attendance_calendar
-              + text[end:]
-          )
-
-          print(
-              "FIXED: attendanceCalendar"
-          )
-
-
-          # ========================================================
-          # 19. CUSTOM REPORT
-          # ========================================================
-
-          start = text.index(
-              "    internal fun MainActivity.customReport(){"
-          )
-
-          end = text.index(
-              "\n\n    internal fun MainActivity.auditLogScreen()",
-              start
-          )
-
-          custom_report = '''    internal fun MainActivity.customReport(){
-        val b=page("Custom Report")
-
-        val from=
-            dateField(
-                "From date",
-                today
-            )
-
-        val to=
-            dateField(
-                "To date",
-                today
-            )
-
-        val workers=
-            app.workers
-                .list()
-                .filter{it.active}
-
-        val fields=
-            app.fields
-                .list()
-                .filter{it.active}
-
-        val crops=
-            app.crops
-                .list()
-                .filter{it.active}
-
-        var wid=""
-        var fid=""
-        var cid=""
-
-        val wb=
-            btn("Worker: All")
-
-        wb.setOnClickListener{
-
-            AlertDialog.Builder(this)
-                .setTitle("Worker")
-                .setItems(
-                    (
-                        listOf("All")
-                        + workers.map{it.name}
-                    ).toTypedArray()
-                ){_,i->
-
-                    wid=
-                        if(i==0)
-                            ""
-                        else
-                            workers[i-1].id
-
-                    wb.text=
-                        "Worker: ${
-                            if(i==0)
-                                "All"
-                            else
-                                workers[i-1].name
-                        }"
-                }
-                .show()
-        }
-
-
-        val fb=
-            btn("Field: All")
-
-        fb.setOnClickListener{
-
-            AlertDialog.Builder(this)
-                .setTitle("Field")
-                .setItems(
-                    (
-                        listOf("All")
-                        + fields.map{it.name}
-                    ).toTypedArray()
-                ){_,i->
-
-                    fid=
-                        if(i==0)
-                            ""
-                        else
-                            fields[i-1].id
-
-                    fb.text=
-                        "Field: ${
-                            if(i==0)
-                                "All"
-                            else
-                                fields[i-1].name
-                        }"
-                }
-                .show()
-        }
-
-
-        val cb=
-            btn("Crop: All")
-
-        cb.setOnClickListener{
-
-            AlertDialog.Builder(this)
-                .setTitle("Crop")
-                .setItems(
-                    (
-                        listOf("All")
-                        + crops.map{it.name}
-                    ).toTypedArray()
-                ){_,i->
-
-                    cid=
-                        if(i==0)
-                            ""
-                        else
-                            crops[i-1].id
-
-                    cb.text=
-                        "Crop: ${
-                            if(i==0)
-                                "All"
-                            else
-                                crops[i-1].name
-                        }"
-                }
-                .show()
-        }
-
-
-        listOf(
-            from,
-            to,
-            wb,
-            fb,
-            cb
-        ).forEach{
-            b.addView(it)
-        }
-
-
-        b.addView(
-            btn("Generate"){
-
-                try{
-
-                    val fromIso=
-                        dateValue(from)
-
-                    val toIso=
-                        dateValue(to)
-
-                    require(
-                        fromIso<=toIso
-                    ){
-                        "From date cannot be after To date."
-                    }
-
-                    val d=
-                        app.reports.preview(
-                            com.majdoor.hisaab.report.ReportFilter(
-                                fromIso,
-                                toIso,
-                                wid,
-                                fid,
-                                cid
-                            ),
-                            app.attendance.list(),
-                            app.work.list(),
-                            app.payments.list(),
-                            app.expenses.list(),
-                            app.accounting.revenue(),
-                            app.accounting.production()
-                        )
-
-                    b.addView(
-                        txt(
-                            "Attendance wages: ${money(d.attendanceCost())}",
-                            15f,
-                            true
-                        )
-                    )
-
-                    b.addView(
-                        txt(
-                            "Work cost: ${money(d.workCost())}"
-                        )
-                    )
-
-                    b.addView(
-                        txt(
-                            "Payments: ${money(d.payments.sumOf{it.amount})}"
-                        )
-                    )
-
-                    b.addView(
-                        txt(
-                            "Expenses: ${money(d.expenseCost())}"
-                        )
-                    )
-
-                    b.addView(
-                        txt(
-                            "Revenue: ${money(d.revenueTotal())}"
-                        )
-                    )
-
-                    b.addView(
-                        txt(
-                            "Tracked cost: ${money(d.trackedCost())}"
-                        )
-                    )
-
-                    b.addView(
-                        txt(
-                            "Profit/Loss: ${money(d.profitLoss())}",
-                            17f,
-                            true
-                        )
-                    )
-
-                }catch(e:Exception){
-
-                    toast(
-                        e.message
-                            ?: "Report generation failed"
-                    )
-                }
-            }
-        )
-    }'''
-
-          text = (
-              text[:start]
-              + custom_report
-              + text[end:]
-          )
-
-          print(
-              "FIXED: customReport"
-          )
-
-
-          # ========================================================
-          # 20. COMPATIBILITY FIXES
-          # ========================================================
-
-          text=text.replace(
+          text = text.replace(
               ".audit.auditLog",
               ".auditLog"
           )
 
-          text=text.replace(
+          text = text.replace(
               "clearAuditLog",
               "clear"
           )
 
-          text=text.replace(
+          text = text.replace(
               "getSystemService(ALARM_SERVICE)",
               "getSystemService(Context.ALARM_SERVICE)"
           )
 
 
           # ========================================================
-          # WRITE SOURCE
+          # 10. ATTENDANCE BUTTONS
+          # ========================================================
+
+          text = text.replace(
+              '''fieldId=if(i==0) "" else fields[i-1].id
+                it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"''',
+              '''fieldId=if(i==0) "" else fields[i-1].id
+                fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'''
+          )
+
+          text = text.replace(
+              '''status=arrayOf("FULL","HALF","NONE")[i]
+                it.text="Status: $status"''',
+              '''status=arrayOf("FULL","HALF","NONE")[i]
+                statusBtn.text="Status: $status"'''
+          )
+
+
+          # ========================================================
+          # 11. REPORT FILTER BUTTONS
+          # ========================================================
+
+          text = text.replace(
+              '''fid=if(i==0)"" else fields[i-1].id;it.text="Field: ${if(i==0)"All" else fields[i-1].name}"''',
+              '''fid=if(i==0)"" else fields[i-1].id;fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'''
+          )
+
+          text = text.replace(
+              '''cid=if(i==0)"" else crops[i-1].id;it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"''',
+              '''cid=if(i==0)"" else crops[i-1].id;cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'''
+          )
+
+
+          # ========================================================
+          # 12. renderSummary ORDER
+          # ========================================================
+
+          calendar_start = text.find(
+              "internal fun MainActivity.attendanceCalendar"
+          )
+
+          calendar_end = text.find(
+              "internal fun MainActivity.paymentLedger",
+              calendar_start
+          )
+
+          if calendar_start >= 0 and calendar_end > calendar_start:
+
+              calendar = text[
+                  calendar_start:calendar_end
+              ]
+
+              render_pos = calendar.find(
+                  "fun render(){"
+              )
+
+              summary_pos = calendar.find(
+                  "fun renderSummary(){"
+              )
+
+              if (
+                  render_pos >= 0
+                  and summary_pos >= 0
+                  and summary_pos > render_pos
+              ):
+
+                  summary_start = summary_pos
+
+                  summary_end = calendar.find(
+                      "        val nav=",
+                      summary_start
+                  )
+
+                  if summary_end > summary_start:
+
+                      summary_block = calendar[
+                          summary_start:summary_end
+                      ]
+
+                      render_block = calendar[
+                          render_pos:summary_start
+                      ]
+
+                      calendar = (
+                          calendar[:render_pos]
+                          + summary_block
+                          + "\n"
+                          + render_block
+                          + calendar[summary_end:]
+                      )
+
+                      text = (
+                          text[:calendar_start]
+                          + calendar
+                          + text[calendar_end:]
+                      )
+
+                      print(
+                          "FIXED: renderSummary declaration order"
+                      )
+
+
+          # ========================================================
+          # 13. WRITE PATCH
           # ========================================================
 
           if text != original:
@@ -1686,62 +763,61 @@ jobs:
                   encoding="utf-8"
               )
 
+              print(
+                  "SOURCE PATCH WRITTEN"
+              )
+
           else:
 
               print(
-                  "WARNING: No source changes made."
+                  "SOURCE ALREADY PATCHED"
               )
 
 
           # ========================================================
-          # FINAL SOURCE VERIFICATION
+          # 14. FINAL SOURCE CHECK
           # ========================================================
 
-          final=src.read_text(
+          final = src.read_text(
               encoding="utf-8"
           )
 
           print()
           print("============================================================")
-          print(" FINAL KOTLIN SOURCE CHECK")
+          print(" FINAL SOURCE CHECK")
           print("============================================================")
 
-
-          required = {
+          checks = {
 
               "btn default action":
-                  "action:()->Unit = {}"
-                  in final,
+                  "action:()->Unit = {}" in final
+                  or "action: () -> Unit = {}" in final,
 
               "ScrollView":
-                  "setFillViewport(true)"
-                  in final,
+                  "setFillViewport(true)" in final,
 
               "pick TextView":
-                  "onPick:(Int)->Unit):TextView"
-                  in final,
+                  "onPick:(Int)->Unit):TextView" in final
+                  or "onPick: (Int) -> Unit): TextView" in final,
 
-              "export when":
-                  "when(exportType)"
-                  not in final,
+              "export when fixed":
+                  "when(exportType)" not in final,
 
               "Intent type":
-                  'apply{this.type="image/*";'
-                  in final,
+                  'this.type="image/*"' in final
+                  or 'this.type = "image/*"' in final,
 
-              "renderSummary exists":
-                  "fun renderSummary()"
-                  in final,
+              "renderSummary":
+                  "fun renderSummary()" in final,
 
-              "render exists":
-                  "fun render()"
-                  in final,
+              "render":
+                  "fun render()" in final,
           }
 
 
-          failed=False
+          failed = False
 
-          for name,ok in required.items():
+          for name, ok in checks.items():
 
               print(
                   ("PASS" if ok else "FAIL")
@@ -1750,12 +826,8 @@ jobs:
               )
 
               if not ok:
-                  failed=True
+                  failed = True
 
-
-          # ========================================================
-          # BAD UNRESOLVED PATTERNS
-          # ========================================================
 
           forbidden = [
 
@@ -1769,63 +841,65 @@ jobs:
               'it.text="Rate type:',
           ]
 
-
           print()
-          print(
-              "===== FORBIDDEN UNRESOLVED PATTERNS ====="
-          )
-
+          print("===== FORBIDDEN UNRESOLVED PATTERNS =====")
 
           for pattern in forbidden:
 
-              count=final.count(pattern)
+              count = final.count(pattern)
 
               print(
                   f"{count:3d} : {pattern}"
               )
 
               if count:
-                  failed=True
+                  failed = True
 
 
           # ========================================================
-          # renderSummary MUST COME BEFORE render INSIDE CALENDAR
+          # CALENDAR FUNCTION ORDER
           # ========================================================
 
-          calendar_start=final.index(
+          calendar_start = final.find(
               "internal fun MainActivity.attendanceCalendar"
           )
 
-          calendar_end=final.index(
+          calendar_end = final.find(
               "internal fun MainActivity.paymentLedger",
               calendar_start
           )
 
-          calendar=final[
-              calendar_start:calendar_end
-          ]
+          if calendar_start >= 0 and calendar_end > calendar_start:
 
-          rs=calendar.find(
-              "fun renderSummary()"
-          )
+              calendar = final[
+                  calendar_start:calendar_end
+              ]
 
-          rr=calendar.find(
-              "fun render()"
-          )
-
-          if rs == -1 or rr == -1 or rs > rr:
-
-              print(
-                  "FAIL: renderSummary must be declared before render"
+              rs = calendar.find(
+                  "fun renderSummary()"
               )
 
-              failed=True
-
-          else:
-
-              print(
-                  "PASS: renderSummary declaration order"
+              rr = calendar.find(
+                  "fun render()"
               )
+
+              if (
+                  rs == -1
+                  or rr == -1
+                  or rs > rr
+              ):
+
+                  print(
+                      "FAIL: renderSummary order"
+                  )
+
+                  failed = True
+
+              else:
+
+                  print(
+                      "PASS: renderSummary order"
+                  )
 
 
           if failed:
@@ -1886,21 +960,25 @@ jobs:
 
           grep -n \
             -E \
-            "fun render\\(|fun renderSummary\\(" \
+            "fun render\(|fun renderSummary\(" \
             "$SRC" \
             || true
 
           echo
           echo "===== suspicious unresolved it.text ====="
 
-          grep -n \
+          if grep -n \
             -E \
             'it\.text="(Field|Status|Crop|Worker|Method|Advance|Category|Rate type):' \
-            "$SRC" \
-            && {
-              echo "ERROR: unresolved it.text remains."
-              exit 1
-            } || true
+            "$SRC"; then
+
+            echo
+            echo "ERROR: unresolved it.text remains."
+            exit 1
+
+          fi
+
+          echo "No unresolved button it.text patterns found."
 
           echo
           echo "===== export ====="
@@ -2015,8 +1093,7 @@ jobs:
             "app/build/outputs/apk/release/app-release-unsigned.apk"
           ]]; then
 
-            APK=\
-              "app/build/outputs/apk/release/app-release-unsigned.apk"
+            APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
           fi
 
