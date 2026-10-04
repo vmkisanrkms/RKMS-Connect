@@ -165,7 +165,7 @@ jobs:
 
 
       # ============================================================
-      # 6. LOCATE / EXTRACT V81 PROJECT
+      # 6. LOCATE / EXTRACT V81
       # ============================================================
 
       - name: Locate and extract V81 project
@@ -218,21 +218,17 @@ jobs:
 
             fi
 
-
             echo
             echo "Using V81 ZIP:"
             echo "$ZIP_PATH"
-
 
             rm -rf "$PWD/extracted_project"
 
             mkdir -p "$PWD/extracted_project"
 
-
             unzip -q \
               "$ZIP_PATH" \
               -d "$PWD/extracted_project"
-
 
             FOUND_ROOT="$(
               find "$PWD/extracted_project" \
@@ -310,7 +306,7 @@ jobs:
 
 
       # ============================================================
-      # 8. VERIFY PROJECT CONFIGURATION
+      # 8. VERIFY PROJECT
       # ============================================================
 
       - name: Verify project configuration
@@ -322,51 +318,32 @@ jobs:
           test -f settings.gradle.kts
           test -f app/build.gradle.kts
 
-          echo "===== settings.gradle.kts ====="
-
-          sed -n '1,260p' settings.gradle.kts
-
-
-          echo
-          echo "===== app/build.gradle.kts ====="
-
-          sed -n '1,420p' app/build.gradle.kts
-
-
-          echo
-          echo "===== CONFIGURATION CHECK ====="
-
           grep -q \
             'com.majdoor.hisaab' \
             app/build.gradle.kts
-
 
           grep -Eq \
             'compileSdk.*36|compileSdk = 36' \
             app/build.gradle.kts
 
-
           grep -Eq \
             'targetSdk.*36|targetSdk = 36' \
             app/build.gradle.kts
-
 
           grep -Eq \
             'versionCode.*77|versionCode = 77' \
             app/build.gradle.kts
 
-
           grep -Eq \
             'versionName.*1.77.0|versionName = "1.77.0"' \
             app/build.gradle.kts
-
 
           echo
           echo "PROJECT CONFIGURATION PASSED"
 
 
       # ============================================================
-      # 9. LOCATE MAINACTIVITYSCREENS
+      # 9. LOCATE SOURCE
       # ============================================================
 
       - name: Locate MainActivityScreens
@@ -383,19 +360,12 @@ jobs:
               | head -n 1
           )"
 
-
           if [[ -z "$SRC" ]]; then
-
             echo "ERROR: MainActivityScreens.kt not found."
-
             exit 1
-
           fi
 
-
-          echo "MAIN_ACTIVITY_SCREENS=$SRC" \
-            >> "$GITHUB_ENV"
-
+          echo "MAIN_ACTIVITY_SCREENS=$SRC" >> "$GITHUB_ENV"
 
           echo
           echo "SOURCE:"
@@ -403,10 +373,15 @@ jobs:
 
 
       # ============================================================
-      # 10. DEFINITIVE V81 KOTLIN FIX
+      # 10. DEFINITIVE SOURCE REPAIR
+      #
+      # IMPORTANT:
+      # No lateinit local variables.
+      # No btnRef().
+      # Explicit lambda button parameter is used.
       # ============================================================
 
-      - name: Apply definitive V81 Kotlin fixes
+      - name: Definitive V81 Kotlin source repair
         working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
         shell: bash
         run: |
@@ -424,7 +399,6 @@ jobs:
 
 
           if not src.exists():
-
               raise SystemExit(
                   f"ERROR: Source not found: {src}"
               )
@@ -436,7 +410,7 @@ jobs:
 
 
           print("============================================================")
-          print(" DEFINITIVE V81 KOTLIN FIX")
+          print(" DEFINITIVE V81 KOTLIN SOURCE REPAIR")
           print("============================================================")
 
 
@@ -465,7 +439,6 @@ jobs:
               "setFillViewport(true)"
           )
 
-
           text = text.replace(
               "fillViewport = true",
               "setFillViewport(true)"
@@ -473,17 +446,17 @@ jobs:
 
 
           # ========================================================
-          # 3. pick() RETURN TYPE
+          # 3. pick() MUST RETURN TextView
           # ========================================================
 
           text = text.replace(
-              "onPick:(Int)->Unit):Button {",
-              "onPick:(Int)->Unit):TextView {"
+              "internal fun MainActivity.pick(title:String, labels:List<String>, current:Int=-1, onPick:(Int)->Unit):Button {",
+              "internal fun MainActivity.pick(title:String, labels:List<String>, current:Int=-1, onPick:(Int)->Unit):TextView {"
           )
 
 
           # ========================================================
-          # 4. ATTENDANCE statusViews MAP
+          # 4. statusViews IS A MAP
           # ========================================================
 
           text = text.replace(
@@ -491,12 +464,10 @@ jobs:
               'statusViews.values.forEach{it.text="FULL"}'
           )
 
-
           text = text.replace(
               'statusViews.forEach{it.text="HALF"}',
               'statusViews.values.forEach{it.text="HALF"}'
           )
-
 
           text = text.replace(
               'statusViews.forEach{it.text=AttendanceRules.UNMARKED}',
@@ -505,285 +476,241 @@ jobs:
 
 
           # ========================================================
-          # 5. CROP FORM
+          # 5. FIX ALL SINGLE-LINE btn() + it.text CALLBACKS
+          #
+          # Example:
+          #
+          # btn("Crop"){ ... it.text="Crop" }
+          #
+          # becomes:
+          #
+          # btn("Crop"){button-> ... button.text="Crop" }
+          #
+          # This fixes nested-lambda shadowing.
           # ========================================================
 
-          text = text.replace(
-              'val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}',
-              'lateinit var fb: TextView;fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()}'
-          )
+          def patch_button_line(line):
+
+              if "=btn(" not in line:
+                  return line
+
+              if "it.text=" not in line:
+                  return line
 
 
-          # ========================================================
-          # 6. PRODUCTION FORM
-          # ========================================================
+              positions = []
 
-          text = text.replace(
-              'val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}',
-              'lateinit var cropBtn: TextView;cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'
-          )
+              search_pos = 0
 
 
-          # ========================================================
-          # 7. WORK FORM
-          # ========================================================
+              while True:
 
-          text = text.replace(
-              'val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}',
-              'lateinit var fieldBtn: TextView;fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fieldBtn.text="Field: ${fields[i].name}"}.show()}'
-          )
+                  k = line.find(
+                      "=btn(",
+                      search_pos
+                  )
 
 
-          # ========================================================
-          # 8. REVENUE FORM
-          # ========================================================
-
-          # Same cropBtn pattern may occur more than once.
-          text = text.replace(
-              'val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}',
-              'lateinit var cropBtn: TextView;cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'
-          )
+                  if k < 0:
+                      break
 
 
-          # ========================================================
-          # 9. WORKER BUTTON
-          # ========================================================
+                  start = k + len("=btn(")
 
-          text = text.replace(
-              'val workerBtn=btn("Workers: ${selectedWorkers.size}"){',
-              'lateinit var workerBtn: TextView;workerBtn=btn("Workers: ${selectedWorkers.size}"){'
-          )
+                  depth = 1
 
+                  in_string = False
 
-          text = text.replace(
-              '.setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}',
-              '.setPositiveButton("Done"){_,_->workerBtn.text="Workers: ${selectedWorkers.distinct().size}"}'
-          )
+                  escaped = False
+
+                  i = start
 
 
-          # ========================================================
-          # 10. WORK RATE TYPE BUTTON
-          # ========================================================
+                  while i < len(line):
 
-          text = text.replace(
-              'var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre");val rateTypeBtn=btn("Rate type: $rateType"){',
-              'var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre");lateinit var rateTypeBtn: TextView;rateTypeBtn=btn("Rate type: $rateType"){'
-          )
+                      ch = line[i]
 
 
-          text = text.replace(
-              'rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"',
-              'rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"'
-          )
+                      if in_string:
+
+                          if escaped:
+                              escaped = False
+
+                          elif ch == "\\":
+                              escaped = True
+
+                          elif ch == '"':
+                              in_string = False
 
 
-          # ========================================================
-          # 11. PAYMENT FORM
-          # ========================================================
+                      else:
 
-          payment_old = '''        val wb=btn("Worker: ${selectedName(wid,workers.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select worker").setItems(workers.map{it.name}.toTypedArray()){_,i->wid=workers[i].id;it.text="Worker: ${workers[i].name}"}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");var method=old?.method?:"Cash";val mb=btn("Method: $method"){val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];it.text="Method: ${methods[i]}"}.show()};val adv=btn("Advance: ${if(advance)"YES" else "NO"}"){advance=!advance;it.text="Advance: ${if(advance)"YES" else "NO"}"};val ref=field("Reference",old?.reference?:"");val notes=field("Notes",old?.notes?:"");listOf(wb,d,a,mb,adv,ref,notes).forEach{b.addView(it)}'''
+                          if ch == '"':
+                              in_string = True
 
-          payment_new = '''        lateinit var wb: TextView;wb=btn("Worker: ${selectedName(wid,workers.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select worker").setItems(workers.map{it.name}.toTypedArray()){_,i->wid=workers[i].id;wb.text="Worker: ${workers[i].name}"}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");var method=old?.method?:"Cash";lateinit var mb: TextView;mb=btn("Method: $method"){val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];mb.text="Method: ${methods[i]}"}.show()};lateinit var adv: TextView;adv=btn("Advance: ${if(advance)"YES" else "NO"}"){advance=!advance;adv.text="Advance: ${if(advance)"YES" else "NO"}"};val ref=field("Reference",old?.reference?:"");val notes=field("Notes",old?.notes?:"");listOf(wb,d,a,mb,adv,ref,notes).forEach{b.addView(it)}'''
+                          elif ch == '(':
+                              depth += 1
 
-          if payment_old in text:
-              text = text.replace(
-                  payment_old,
-                  payment_new,
-                  1
+                          elif ch == ')':
+
+                              depth -= 1
+
+                              if depth == 0:
+
+                                  j = i + 1
+
+
+                                  while (
+                                      j < len(line)
+                                      and line[j].isspace()
+                                  ):
+                                      j += 1
+
+
+                                  if (
+                                      j < len(line)
+                                      and line[j] == '{'
+                                  ):
+
+                                      positions.append(j)
+
+
+                                  break
+
+
+                      i += 1
+
+
+                  search_pos = start
+
+
+              # Insert from right to left.
+              for pos in reversed(positions):
+
+                  if not line.startswith(
+                      "{button->",
+                      pos
+                  ):
+
+                      line = (
+                          line[:pos + 1]
+                          + "button->"
+                          + line[pos + 1:]
+                      )
+
+
+              line = line.replace(
+                  "it.text=",
+                  "button.text="
               )
 
 
-          # ========================================================
-          # 12. EXPENSE FORM
-          # ========================================================
-
-          expense_old = '''        val cb=btn("Category: $cat"){AlertDialog.Builder(this).setTitle("Expense category").setItems(cats.toTypedArray()){_,i->cat=cats[i];it.text="Category: $cat"}.show()};val fb=btn("Field: ${if(fieldId.isBlank())"Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){val labels=listOf("Not linked")+fields.map{it.name};AlertDialog.Builder(this).setTitle("Select field").setItems(labels.toTypedArray()){_,i->if(i==0){fieldId="";it.text="Field: Not linked"}else{fieldId=fields[i-1].id;it.text="Field: ${fields[i-1].name}"}}.show()};val crb=btn("Crop: ${if(cropId.isBlank())"Not linked" else selectedName(cropId,crops.map{it.id to it.name})}"){val labels=listOf("Not linked")+crops.map{it.name};AlertDialog.Builder(this).setTitle("Select crop").setItems(labels.toTypedArray()){_,i->if(i==0){cropId="";it.text="Crop: Not linked"}else{cropId=crops[i-1].id;it.text="Crop: ${crops[i-1].name}"}}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:(""));val n=field("Notes",old?.notes?:"");listOf(cb,fb,crb,d,a,n).forEach{b.addView(it)}'''
-
-          expense_new = '''        lateinit var cb: TextView;cb=btn("Category: $cat"){AlertDialog.Builder(this).setTitle("Expense category").setItems(cats.toTypedArray()){_,i->cat=cats[i];cb.text="Category: $cat"}.show()};lateinit var fb: TextView;fb=btn("Field: ${if(fieldId.isBlank())"Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){val labels=listOf("Not linked")+fields.map{it.name};AlertDialog.Builder(this).setTitle("Select field").setItems(labels.toTypedArray()){_,i->if(i==0){fieldId="";fb.text="Field: Not linked"}else{fieldId=fields[i-1].id;fb.text="Field: ${fields[i-1].name}"}}.show()};lateinit var crb: TextView;crb=btn("Crop: ${if(cropId.isBlank())"Not linked" else selectedName(cropId,crops.map{it.id to it.name})}"){val labels=listOf("Not linked")+crops.map{it.name};AlertDialog.Builder(this).setTitle("Select crop").setItems(labels.toTypedArray()){_,i->if(i==0){cropId="";crb.text="Crop: Not linked"}else{cropId=crops[i-1].id;crb.text="Crop: ${crops[i-1].name}"}}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:(""));val n=field("Notes",old?.notes?:"");listOf(cb,fb,crb,d,a,n).forEach{b.addView(it)}'''
-
-          if expense_old in text:
-              text = text.replace(
-                  expense_old,
-                  expense_new,
-                  1
-              )
+              return line
 
 
-          # ========================================================
-          # 13. REPORT FILTERS
-          # ========================================================
-
-          text = text.replace(
-              'val wb=btn("Worker: ${if(wid.isBlank())"All" else selectedName(wid,workers.map{it.id to it.name})}"){ val labels=listOf("All")+workers.map{it.name}; AlertDialog.Builder(this).setTitle("Worker").setItems(labels.toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id; it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show() }',
-              'lateinit var wb: TextView;wb=btn("Worker: ${if(wid.isBlank())"All" else selectedName(wid,workers.map{it.id to it.name})}"){ val labels=listOf("All")+workers.map{it.name}; AlertDialog.Builder(this).setTitle("Worker").setItems(labels.toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id; wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show() }'
-          )
+          lines = text.splitlines()
 
 
-          text = text.replace(
-              'val fb=btn("Field: ${if(fid.isBlank())"All" else selectedName(fid,fields.map{it.id to it.name})}"){ val labels=listOf("All")+fields.map{it.name}; AlertDialog.Builder(this).setTitle("Field").setItems(labels.toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id; it.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show() }',
-              'lateinit var fb: TextView;fb=btn("Field: ${if(fid.isBlank())"All" else selectedName(fid,fields.map{it.id to it.name})}"){ val labels=listOf("All")+fields.map{it.name}; AlertDialog.Builder(this).setTitle("Field").setItems(labels.toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id; fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show() }'
-          )
+          for i, line in enumerate(lines):
+
+              if (
+                  "=btn(" in line
+                  and "it.text=" in line
+              ):
+
+                  lines[i] = patch_button_line(
+                      line
+                  )
 
 
-          text = text.replace(
-              'val cb=btn("Crop: ${if(cid.isBlank())"All" else selectedName(cid,crops.map{it.id to it.name})}"){ val labels=listOf("All")+crops.map{it.name}; AlertDialog.Builder(this).setTitle("Crop").setItems(labels.toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id; it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show() }',
-              'lateinit var cb: TextView;cb=btn("Crop: ${if(cid.isBlank())"All" else selectedName(cid,crops.map{it.id to it.name})}"){ val labels=listOf("All")+crops.map{it.name}; AlertDialog.Builder(this).setTitle("Crop").setItems(labels.toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id; cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show() }'
-          )
+          text = "\n".join(lines) + "\n"
 
 
           # ========================================================
-          # 14. INTENT TYPE SHADOWING
-          # ========================================================
-
-          text = re.sub(
-              r'(\.apply\s*\{\s*)type\s*=\s*"image/\*"',
-              r'\1this.type="image/*"',
-              text
-          )
-
-
-          text = re.sub(
-              r'(\.apply\s*\{\s*)type\s*=\s*"application/zip"',
-              r'\1this.type="application/zip"',
-              text
-          )
-
-
-          text = re.sub(
-              r'(\.apply\s*\{\s*)type\s*=\s*"\*/\*"',
-              r'\1this.type="*/*"',
-              text
-          )
-
-
-          # ========================================================
-          # 15. AUDIT COMPATIBILITY
+          # 6. MULTI-LINE WORKER BUTTON
           # ========================================================
 
           text = text.replace(
-              ".audit.auditLog",
-              ".auditLog"
+              'val workerBtn=btn("Workers: ${selectedWorkers.size}"){\n',
+              'val workerBtn=btn("Workers: ${selectedWorkers.size}"){button->\n'
           )
 
 
           text = text.replace(
-              "clearAuditLog",
-              "clear"
-          )
-
-
-          text = text.replace(
-              "getSystemService(ALARM_SERVICE)",
-              "getSystemService(Context.ALARM_SERVICE)"
+              'setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}',
+              'setPositiveButton("Done"){_,_->button.text="Workers: ${selectedWorkers.distinct().size}"}'
           )
 
 
           # ========================================================
-          # 16. ATTENDANCE FORM BUTTONS
+          # 7. MULTI-LINE ATTENDANCE FIELD BUTTON
           # ========================================================
 
           text = text.replace(
-              '            val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){',
-              '            lateinit var fieldBtn: TextView;fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){'
+              'val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){\n',
+              'val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){button->\n'
           )
 
 
           text = text.replace(
-              '            val statusBtn=btn("Status: $status"){',
-              '            lateinit var statusBtn: TextView;statusBtn=btn("Status: $status"){'
+              'val statusBtn=btn("Status: $status"){\n',
+              'val statusBtn=btn("Status: $status"){button->\n'
           )
 
 
           text = text.replace(
-              'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
-              'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'
+              '                it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
+              '                button.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'
           )
 
 
           text = text.replace(
-              'it.text="Status: $status"',
-              'statusBtn.text="Status: $status"'
-          )
-
-
-          # ========================================================
-          # 17. WORK TEMPLATE
-          # ========================================================
-
-          text = text.replace(
-              'var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre"); val rateTypeBtn=btn("Rate type: $rateType"){',
-              'var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre"); lateinit var rateTypeBtn: TextView; rateTypeBtn=btn("Rate type: $rateType"){'
+              '                it.text="Status: $status"',
+              '                button.text="Status: $status"'
           )
 
 
           # ========================================================
-          # 18. CUSTOM REPORT
+          # 8. DEFINITIVE EXPORT FIX
           # ========================================================
 
-          text = text.replace(
-              'val wb=btn("Worker: All"){AlertDialog.Builder(this).setTitle("Worker").setItems((listOf("All")+workers.map{it.name}).toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id;it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show()}',
-              'lateinit var wb: TextView;wb=btn("Worker: All"){AlertDialog.Builder(this).setTitle("Worker").setItems((listOf("All")+workers.map{it.name}).toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id;wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show()}'
+          export_pattern = (
+              r'contentResolver\.openOutputStream\(uri\)!!'
+              r'\.use\{out->when\(exportType\)\{.*?\n'
+              r'\s*\}\}'
           )
 
 
-          text = text.replace(
-              'val fb=btn("Field: All"){AlertDialog.Builder(this).setTitle("Field").setItems((listOf("All")+fields.map{it.name}).toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id;it.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show()}',
-              'lateinit var fb: TextView;fb=btn("Field: All"){AlertDialog.Builder(this).setTitle("Field").setItems((listOf("All")+fields.map{it.name}).toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id;fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show()}'
-          )
-
-
-          text = text.replace(
-              'val cb=btn("Crop: All"){AlertDialog.Builder(this).setTitle("Crop").setItems((listOf("All")+crops.map{it.name}).toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id;it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show()}',
-              'lateinit var cb: TextView;cb=btn("Crop: All"){AlertDialog.Builder(this).setTitle("Crop").setItems((listOf("All")+crops.map{it.name}).toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id;cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show()}'
-          )
-
-
-          # ========================================================
-          # 19. DEFINITIVE EXPORT FIX
-          # ========================================================
-
-          export_start = text.find(
-              "contentResolver.openOutputStream(uri)!!.use{out->when(exportType){"
-          )
-
-
-          export_end = text.find(
-              "            } else if(req==1002){",
-              export_start
-          )
-
-
-          if export_start < 0:
-              raise SystemExit(
-                  "ERROR: Export block start not found."
-              )
-
-
-          if export_end < 0:
-              raise SystemExit(
-                  "ERROR: Export block end not found."
-              )
-
-
-          export_block = '''contentResolver.openOutputStream(uri)!!.use{out->when {
-                    exportType == "workers"->app.export.csvWorkers(out)
-                    exportType == "ledger"->app.export.csvLedger(out)
-                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
-                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
-                    exportType == "pdf"->app.export.pdfSummary(out)
-                    exportType == "backup"->app.backup.export(out)
+          export_replacement = '''contentResolver.openOutputStream(uri)!!.use{out->when {
+                    exportType == "workers" -> app.export.csvWorkers(out)
+                    exportType == "ledger" -> app.export.csvLedger(out)
+                    exportType.startsWith("report:") -> app.export.csvReport(exportType.removePrefix("report:"),out)
+                    exportType.startsWith("reportpdf:") -> app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
+                    exportType == "pdf" -> app.export.pdfSummary(out)
+                    exportType == "backup" -> app.backup.export(out)
                 }}'''
 
 
-          text = (
-              text[:export_start]
-              + export_block
-              + text[export_end:]
+          text, export_count = re.subn(
+              export_pattern,
+              export_replacement,
+              text,
+              count=1,
+              flags=re.S
+          )
+
+
+          print(
+              "Export blocks repaired:",
+              export_count
           )
 
 
           # ========================================================
-          # 20. RENDER SUMMARY FORWARD REFERENCE
+          # 9. ATTENDANCE CALENDAR
+          #
+          # renderSummary() must be declared before render()
+          # because these are local functions.
           # ========================================================
 
           calendar_start = text.find(
@@ -808,7 +735,20 @@ jobs:
               ]
 
 
-              def find_function_end(source, start):
+              render_start = calendar.find(
+                  "        fun render(){"
+              )
+
+
+              summary_start = calendar.find(
+                  "        fun renderSummary(){"
+              )
+
+
+              def function_end(
+                  source,
+                  start
+              ):
 
                   brace_start = source.find(
                       "{",
@@ -822,34 +762,48 @@ jobs:
 
                   depth = 0
 
+                  in_string = False
+
+                  escaped = False
+
 
                   for pos in range(
                       brace_start,
                       len(source)
                   ):
 
-                      if source[pos] == "{":
-                          depth += 1
+                      ch = source[pos]
 
-                      elif source[pos] == "}":
 
-                          depth -= 1
+                      if in_string:
 
-                          if depth == 0:
-                              return pos + 1
+                          if escaped:
+                              escaped = False
+
+                          elif ch == "\\":
+                              escaped = True
+
+                          elif ch == '"':
+                              in_string = False
+
+
+                      else:
+
+                          if ch == '"':
+                              in_string = True
+
+                          elif ch == "{":
+                              depth += 1
+
+                          elif ch == "}":
+
+                              depth -= 1
+
+                              if depth == 0:
+                                  return pos + 1
 
 
                   return -1
-
-
-              render_start = calendar.find(
-                  "        fun render(){"
-              )
-
-
-              summary_start = calendar.find(
-                  "        fun renderSummary(){"
-              )
 
 
               if (
@@ -857,13 +811,13 @@ jobs:
                   and summary_start > render_start
               ):
 
-                  render_end = find_function_end(
+                  render_end = function_end(
                       calendar,
                       render_start
                   )
 
 
-                  summary_end = find_function_end(
+                  summary_end = function_end(
                       calendar,
                       summary_start
                   )
@@ -903,7 +857,54 @@ jobs:
 
 
           # ========================================================
-          # 21. SAVE SOURCE
+          # 10. AUDIT COMPATIBILITY
+          # ========================================================
+
+          text = text.replace(
+              ".audit.auditLog",
+              ".auditLog"
+          )
+
+
+          text = text.replace(
+              "clearAuditLog",
+              "clear"
+          )
+
+
+          text = text.replace(
+              "getSystemService(ALARM_SERVICE)",
+              "getSystemService(Context.ALARM_SERVICE)"
+          )
+
+
+          # ========================================================
+          # 11. INTENT TYPE SHADOWING
+          # ========================================================
+
+          text = re.sub(
+              r'(\.apply\s*\{\s*)type\s*=\s*"image/\*"',
+              r'\1this.type="image/*"',
+              text
+          )
+
+
+          text = re.sub(
+              r'(\.apply\s*\{\s*)type\s*=\s*"application/zip"',
+              r'\1this.type="application/zip"',
+              text
+          )
+
+
+          text = re.sub(
+              r'(\.apply\s*\{\s*)type\s*=\s*"\*/\*"',
+              r'\1this.type="*/*"',
+              text
+          )
+
+
+          # ========================================================
+          # 12. SAVE
           # ========================================================
 
           src.write_text(
@@ -914,7 +915,7 @@ jobs:
 
           print()
           print("============================================================")
-          print(" DEFINITIVE V81 SOURCE PATCH COMPLETED")
+          print(" SOURCE REPAIR COMPLETED")
           print("============================================================")
           print(src)
 
@@ -922,10 +923,13 @@ jobs:
 
 
       # ============================================================
-      # 11. FINAL SOURCE AUDIT
+      # 11. HARD SOURCE VALIDATION BEFORE GRADLE
+      #
+      # If anything old remains, fail HERE with exact reason.
+      # It will NOT reach compile with a known broken source.
       # ============================================================
 
-      - name: Final Kotlin source audit
+      - name: Hard Kotlin source validation
         working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
         shell: bash
         run: |
@@ -933,9 +937,8 @@ jobs:
 
           SRC="$MAIN_ACTIVITY_SCREENS"
 
-
           echo "============================================================"
-          echo " FINAL KOTLIN SOURCE AUDIT"
+          echo " HARD KOTLIN SOURCE VALIDATION"
           echo "============================================================"
 
 
@@ -943,99 +946,57 @@ jobs:
 
 
           echo
-          echo "===== BTN ====="
+          echo "1. btn()"
 
-          grep -n \
-            "fun MainActivity.btn" \
-            "$SRC" \
-            || true
-
-
-          echo
-          echo "===== PICK ====="
-
-          grep -n \
-            "fun MainActivity.pick" \
-            "$SRC" \
-            || true
-
-
-          echo
-          echo "===== WORKER BUTTON ====="
-
-          grep -n \
-            "workerBtn" \
-            "$SRC" \
-            || true
-
-
-          echo
-          echo "===== EXPORT ====="
-
-          grep -n \
-            -A12 \
-            -B2 \
-            "openOutputStream(uri)" \
+          grep -q \
+            'fun MainActivity.btn(s:String,action:()->Unit = {})' \
             "$SRC"
 
-
-          # --------------------------------------------------------
-          # OLD EXPORT
-          # --------------------------------------------------------
-
-          if grep -Eq \
-            'when[[:space:]]*\([[:space:]]*exportType[[:space:]]*\)' \
-            "$SRC"; then
-
-            echo "ERROR: when(exportType) still exists."
-
-            exit 1
-
-          fi
+          echo "PASS"
 
 
-          echo "PASS: export when fixed."
-
-
-          # --------------------------------------------------------
-          # OLD fillViewport
-          # --------------------------------------------------------
+          echo
+          echo "2. fillViewport"
 
           if grep -Eq \
             'fillViewport[[:space:]]*=' \
             "$SRC"; then
 
-            echo "ERROR: old fillViewport assignment remains."
-
+            echo "ERROR: fillViewport assignment remains."
             exit 1
 
           fi
 
+          echo "PASS"
 
-          echo "PASS: ScrollView fixed."
+
+          echo
+          echo "3. pick()"
+
+          grep -q \
+            'fun MainActivity.pick.*):TextView' \
+            "$SRC"
+
+          echo "PASS"
 
 
-          # --------------------------------------------------------
-          # btnRef MUST NOT EXIST
-          # --------------------------------------------------------
+          echo
+          echo "4. old export syntax"
 
-          if grep -q \
-            "btnRef(" \
+          if grep -Eq \
+            'when[[:space:]]*\([[:space:]]*exportType[[:space:]]*\)' \
             "$SRC"; then
 
-            echo "ERROR: btnRef() found."
-
+            echo "ERROR: when(exportType) remains."
             exit 1
 
           fi
 
+          echo "PASS"
 
-          echo "PASS: btnRef not present."
 
-
-          # --------------------------------------------------------
-          # unresolved it.text
-          # --------------------------------------------------------
+          echo
+          echo "5. unresolved it.text"
 
           REMAINING_IT="$(
             grep -n \
@@ -1051,88 +1012,165 @@ jobs:
 
             echo
             echo "ERROR: unresolved it.text remains:"
-
             echo "$REMAINING_IT"
 
             exit 1
 
           fi
 
-
-          echo "PASS: no unresolved it.text."
-
-
-          # --------------------------------------------------------
-          # workerBtn declaration
-          # --------------------------------------------------------
-
-          grep -q \
-            'lateinit var workerBtn: TextView' \
-            "$SRC"
+          echo "PASS"
 
 
-          grep -q \
-            'workerBtn.text="Workers:' \
-            "$SRC"
+          echo
+          echo "6. local lateinit"
+
+          if grep -n \
+            'lateinit var' \
+            "$SRC"; then
+
+            echo
+            echo "ERROR: local lateinit declaration remains."
+            exit 1
+
+          fi
+
+          echo "PASS"
 
 
-          echo "PASS: workerBtn declaration."
-
-
-          # --------------------------------------------------------
-          # payment buttons
-          # --------------------------------------------------------
+          echo
+          echo "7. workerBtn"
 
           grep -q \
-            'lateinit var wb: TextView' \
+            'val workerBtn=btn("Workers:' \
             "$SRC"
-
 
           grep -q \
-            'lateinit var mb: TextView' \
+            'button.text="Workers:' \
             "$SRC"
 
+          echo "PASS"
+
+
+          echo
+          echo "8. attendance field button"
 
           grep -q \
-            'lateinit var adv: TextView' \
+            'val fieldBtn=btn("Field:' \
             "$SRC"
-
-
-          echo "PASS: payment button declarations."
-
-
-          # --------------------------------------------------------
-          # rateType button
-          # --------------------------------------------------------
 
           grep -q \
-            'rateTypeBtn.text=' \
+            'button.text="Field:' \
             "$SRC"
 
+          echo "PASS"
 
-          echo "PASS: rateTypeBtn."
 
-
-          # --------------------------------------------------------
-          # renderSummary
-          # --------------------------------------------------------
+          echo
+          echo "9. attendance status button"
 
           grep -q \
-            'fun renderSummary()' \
+            'val statusBtn=btn("Status:' \
             "$SRC"
 
+          grep -q \
+            'button.text="Status: $status"' \
+            "$SRC"
 
-          echo "PASS: renderSummary."
+          echo "PASS"
+
+
+          echo
+          echo "10. renderSummary"
+
+          SUMMARY_LINE="$(
+            grep -n \
+              'fun renderSummary()' \
+              "$SRC" \
+              | head -n 1 \
+              | cut -d: -f1
+          )"
+
+
+          RENDER_LINE="$(
+            awk '
+              /internal fun MainActivity.attendanceCalendar/ {
+                in_cal=1
+              }
+
+              in_cal && /fun render\(\)/ {
+                print NR
+                exit
+              }
+            ' "$SRC"
+          )"
+
+
+          if [[ -z "$SUMMARY_LINE" || -z "$RENDER_LINE" ]]; then
+            echo "ERROR: attendance calendar functions missing."
+            exit 1
+          fi
+
+
+          if (( SUMMARY_LINE >= RENDER_LINE )); then
+            echo "ERROR: renderSummary() is still after render()."
+            exit 1
+          fi
+
+
+          echo "PASS"
 
 
           echo
           echo "============================================================"
-          echo " FINAL SOURCE AUDIT PASSED"
+          echo " HARD SOURCE VALIDATION PASSED"
           echo "============================================================"
 
 
       # ============================================================
-      # 12. GRADLE ENVIRONMENT
+      # 12. PRINT IMPORTANT SOURCE LINES
+      # ============================================================
+
+      - name: Show repaired Kotlin source
+        working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SRC="$MAIN_ACTIVITY_SCREENS"
+
+          echo "===== ATTENDANCE FORM ====="
+
+          grep -n \
+            -A18 \
+            -B3 \
+            'attendanceForm' \
+            "$SRC" \
+            | head -60
+
+
+          echo
+          echo "===== WORK FORM ====="
+
+          grep -n \
+            -A20 \
+            -B3 \
+            'workForm' \
+            "$SRC" \
+            | head -80
+
+
+          echo
+          echo "===== EXPORT ====="
+
+          grep -n \
+            -A10 \
+            -B2 \
+            'openOutputStream(uri)' \
+            "$SRC"
+
+
+      # ============================================================
+      # 13. VERIFY GRADLE
       # ============================================================
 
       - name: Verify Gradle environment
@@ -1142,22 +1180,18 @@ jobs:
           set -euo pipefail
 
           echo "===== JAVA ====="
-
           java -version
-
 
           echo
           echo "===== GRADLE ====="
-
           gradle --version
-
 
           echo
           echo "GRADLE ENVIRONMENT PASSED"
 
 
       # ============================================================
-      # 13. CLEAN
+      # 14. CLEAN
       # ============================================================
 
       - name: Clean project
@@ -1170,19 +1204,19 @@ jobs:
           echo " CLEAN PROJECT"
           echo "============================================================"
 
-
           gradle \
             --no-daemon \
             --stacktrace \
             clean
-
 
           echo
           echo "CLEAN PASSED"
 
 
       # ============================================================
-      # 14. COMPILE RELEASE KOTLIN
+      # 15. COMPILE RELEASE KOTLIN
+      #
+      # THIS IS THE FIXED COMPILE STEP
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -1195,10 +1229,89 @@ jobs:
           echo " COMPILE RELEASE KOTLIN"
           echo "============================================================"
 
+          echo
+          echo "SOURCE:"
+          echo "$MAIN_ACTIVITY_SCREENS"
+
+          echo
+          echo "KOTLIN COMPILER PRE-CHECK..."
+
+          test -f "$MAIN_ACTIVITY_SCREENS"
+
+          if grep -Eq \
+            'when[[:space:]]*\([[:space:]]*exportType[[:space:]]*\)' \
+            "$MAIN_ACTIVITY_SCREENS"; then
+
+            echo "ERROR: Broken export when(exportType) still exists."
+            exit 1
+
+          fi
+
+
+          REMAINING_IT="$(
+            grep -n \
+              'it.text=' \
+              "$MAIN_ACTIVITY_SCREENS" \
+              | grep -v \
+                'statusViews.values.forEach' \
+              || true
+          )"
+
+
+          if [[ -n "$REMAINING_IT" ]]; then
+
+            echo "ERROR: Broken nested it.text remains:"
+            echo "$REMAINING_IT"
+
+            exit 1
+
+          fi
+
+
+          if grep -n \
+            'lateinit var' \
+            "$MAIN_ACTIVITY_SCREENS"; then
+
+            echo "ERROR: Local lateinit remains."
+            exit 1
+
+          fi
+
+
+          grep -q \
+            'val fieldBtn=btn' \
+            "$MAIN_ACTIVITY_SCREENS"
+
+
+          grep -q \
+            'val statusBtn=btn' \
+            "$MAIN_ACTIVITY_SCREENS"
+
+
+          grep -q \
+            'button.text="Field:' \
+            "$MAIN_ACTIVITY_SCREENS"
+
+
+          grep -q \
+            'button.text="Status: $status"' \
+            "$MAIN_ACTIVITY_SCREENS"
+
+
+          echo
+          echo "KOTLIN SOURCE PRE-CHECK PASSED."
+
+
+          echo
+          echo "============================================================"
+          echo " RUNNING REAL GRADLE KOTLIN COMPILER"
+          echo "============================================================"
+
 
           gradle \
             --no-daemon \
             --stacktrace \
+            --rerun-tasks \
             :app:compileReleaseKotlin
 
 
@@ -1209,7 +1322,7 @@ jobs:
 
 
       # ============================================================
-      # 15. ASSEMBLE RELEASE APK
+      # 16. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1222,16 +1335,13 @@ jobs:
           echo " ASSEMBLE RELEASE APK"
           echo "============================================================"
 
-
           gradle \
             --no-daemon \
             --stacktrace \
             :app:assembleRelease
 
-
           echo
           echo "===== GENERATED APK FILES ====="
-
 
           find \
             app/build/outputs/apk \
@@ -1242,7 +1352,7 @@ jobs:
 
 
       # ============================================================
-      # 16. LOCATE RELEASE APK
+      # 17. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate release APK
@@ -1252,7 +1362,6 @@ jobs:
           set -euo pipefail
 
           APK=""
-
 
           if [[ -f \
             "app/build/outputs/apk/release/app-release-unsigned.apk"
@@ -1314,12 +1423,11 @@ jobs:
           echo "RELEASE APK:"
           echo "$APK"
 
-
           ls -lh "$APK"
 
 
       # ============================================================
-      # 17. VERIFY APK PACKAGE / VERSION
+      # 18. VERIFY PACKAGE / VERSION
       # ============================================================
 
       - name: Verify APK package and version
@@ -1330,40 +1438,34 @@ jobs:
 
           AAPT="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt"
 
-
           BADGING="$(
             "$AAPT" \
               dump badging \
               "$RELEASE_APK"
           )"
 
-
           echo "$BADGING" \
             | grep -E \
               "package: name=|versionCode=|versionName="
-
 
           echo "$BADGING" \
             | grep -q \
               "name='${PACKAGE_NAME}'"
 
-
           echo "$BADGING" \
             | grep -q \
               "versionCode='${VERSION_CODE}'"
 
-
           echo "$BADGING" \
             | grep -q \
               "versionName='${VERSION_NAME}'"
-
 
           echo
           echo "APK PACKAGE / VERSION PASSED"
 
 
       # ============================================================
-      # 18. PREPARE RELEASE SIGNING
+      # 19. PREPARE SIGNING
       # ============================================================
 
       - name: Prepare release signing
@@ -1380,57 +1482,50 @@ jobs:
           echo " PREPARE RELEASE SIGNING"
           echo "============================================================"
 
+          test -n "${KEYSTORE_BASE64:-}" \
+            || {
+              echo "ERROR: KEYSTORE_BASE64 missing."
+              exit 1
+            }
 
-          if [[ -z "${KEYSTORE_BASE64:-}" ]]; then
-            echo "ERROR: KEYSTORE_BASE64 secret missing."
-            exit 1
-          fi
+          test -n "${KEYSTORE_PASSWORD:-}" \
+            || {
+              echo "ERROR: KEYSTORE_PASSWORD missing."
+              exit 1
+            }
 
+          test -n "${KEY_ALIAS:-}" \
+            || {
+              echo "ERROR: KEY_ALIAS missing."
+              exit 1
+            }
 
-          if [[ -z "${KEYSTORE_PASSWORD:-}" ]]; then
-            echo "ERROR: KEYSTORE_PASSWORD secret missing."
-            exit 1
-          fi
-
-
-          if [[ -z "${KEY_ALIAS:-}" ]]; then
-            echo "ERROR: KEY_ALIAS secret missing."
-            exit 1
-          fi
-
-
-          if [[ -z "${KEY_PASSWORD:-}" ]]; then
-            echo "ERROR: KEY_PASSWORD secret missing."
-            exit 1
-          fi
-
+          test -n "${KEY_PASSWORD:-}" \
+            || {
+              echo "ERROR: KEY_PASSWORD missing."
+              exit 1
+            }
 
           SIGN_DIR="$RUNNER_TEMP/release-signing"
 
-
-          mkdir -p \
-            "$SIGN_DIR"
-
+          mkdir -p "$SIGN_DIR"
 
           echo "$KEYSTORE_BASE64" \
             | base64 --decode \
             > "$SIGN_DIR/release.keystore"
 
-
           test -s \
             "$SIGN_DIR/release.keystore"
 
-
           echo "KEYSTORE_PATH=$SIGN_DIR/release.keystore" \
             >> "$GITHUB_ENV"
-
 
           echo
           echo "KEYSTORE READY"
 
 
       # ============================================================
-      # 19. ZIPALIGN
+      # 20. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1438,20 +1533,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " ZIPALIGN RELEASE APK"
-          echo "============================================================"
-
-
           ZIPALIGN="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign"
-
 
           mkdir -p \
             "$RUNNER_TEMP/apk"
 
-
           ALIGNED="$RUNNER_TEMP/apk/Majdoor-Hisaab-PRO-${VERSION_NAME}-aligned.apk"
-
 
           "$ZIPALIGN" \
             -f \
@@ -1460,23 +1547,19 @@ jobs:
             "$ANDROID_PROJECT_ROOT/$RELEASE_APK" \
             "$ALIGNED"
 
-
           test -s "$ALIGNED"
-
 
           echo "ZIPALIGNED_APK=$ALIGNED" \
             >> "$GITHUB_ENV"
 
-
           ls -lh "$ALIGNED"
-
 
           echo
           echo "ZIPALIGN PASSED"
 
 
       # ============================================================
-      # 20. SIGN RELEASE APK
+      # 21. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1488,16 +1571,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " SIGN RELEASE APK"
-          echo "============================================================"
-
-
           APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
 
-
           SIGNED="$RUNNER_TEMP/apk/Majdoor-Hisaab-PRO-${VERSION_NAME}-Release-Signed.apk"
-
 
           "$APKSIGNER" sign \
             --ks "$KEYSTORE_PATH" \
@@ -1507,23 +1583,19 @@ jobs:
             --out "$SIGNED" \
             "$ZIPALIGNED_APK"
 
-
           test -s "$SIGNED"
-
 
           echo "SIGNED_APK=$SIGNED" \
             >> "$GITHUB_ENV"
 
-
           ls -lh "$SIGNED"
-
 
           echo
           echo "APK SIGNED"
 
 
       # ============================================================
-      # 21. VERIFY SIGNATURE
+      # 22. VERIFY SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -1531,26 +1603,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " VERIFY APK SIGNATURE"
-          echo "============================================================"
-
-
           APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
-
 
           "$APKSIGNER" \
             verify \
             --verbose \
             "$SIGNED_APK"
 
-
           echo
           echo "APK SIGNATURE VERIFIED"
 
 
       # ============================================================
-      # 22. FINAL APK VALIDATION
+      # 23. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK validation
@@ -1558,13 +1623,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " FINAL APK VALIDATION"
-          echo "============================================================"
-
-
           AAPT="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt"
-
 
           BADGING="$(
             "$AAPT" \
@@ -1572,32 +1631,26 @@ jobs:
               "$SIGNED_APK"
           )"
 
-
           echo "$BADGING" \
             | grep -E \
               "package: name=|versionCode=|versionName="
-
 
           echo "$BADGING" \
             | grep -q \
               "name='${PACKAGE_NAME}'"
 
-
           echo "$BADGING" \
             | grep -q \
               "versionCode='${VERSION_CODE}'"
-
 
           echo "$BADGING" \
             | grep -q \
               "versionName='${VERSION_NAME}'"
 
-
           echo
           echo "APK SIZE:"
 
           ls -lh "$SIGNED_APK"
-
 
           echo
           echo "SHA256:"
@@ -1605,13 +1658,12 @@ jobs:
           sha256sum \
             "$SIGNED_APK"
 
-
           echo
           echo "FINAL APK VALIDATION PASSED"
 
 
       # ============================================================
-      # 23. PREPARE FINAL RELEASE ARTIFACT
+      # 24. PREPARE FINAL ARTIFACT
       # ============================================================
 
       - name: Prepare final release artifact
@@ -1619,49 +1671,36 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " PREPARE FINAL RELEASE ARTIFACT"
-          echo "============================================================"
-
-
           FINAL_DIR="$GITHUB_WORKSPACE/final-release"
-
 
           mkdir -p \
             "$FINAL_DIR"
 
-
           FINAL_APK="$FINAL_DIR/Majdoor-Hisaab-PRO-${VERSION_NAME}-Release-Signed.apk"
-
 
           cp \
             "$SIGNED_APK" \
             "$FINAL_APK"
 
-
           sha256sum \
             "$FINAL_APK" \
             > "$FINAL_DIR/SHA256SUMS.txt"
 
-
           echo
           echo "===== FINAL RELEASE ====="
-
 
           ls -lh \
             "$FINAL_DIR"
 
-
           echo
           echo "===== SHA256 ====="
-
 
           cat \
             "$FINAL_DIR/SHA256SUMS.txt"
 
 
       # ============================================================
-      # 24. UPLOAD SIGNED APK
+      # 25. UPLOAD
       # ============================================================
 
       - name: Upload signed Release APK
@@ -1676,7 +1715,7 @@ jobs:
 
 
       # ============================================================
-      # 25. FINAL VERIFICATION
+      # 26. FINAL VERIFICATION
       # ============================================================
 
       - name: Final release verification
