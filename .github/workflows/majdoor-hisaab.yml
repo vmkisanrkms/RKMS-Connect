@@ -54,18 +54,19 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " REPOSITORY"
+          echo " MAJDOOR HISAAB PRO - V81"
           echo "============================================================"
 
           pwd
 
           echo
+          echo "===== Repository ====="
           ls -la
 
           echo
-          echo "ZIP / GRADLE FILES"
+          echo "===== ZIP / GRADLE FILES ====="
 
-          find . -maxdepth 4 -type f \
+          find . -maxdepth 5 -type f \
             \( \
               -iname "*.zip" \
               -o -iname "*.gradle" \
@@ -79,10 +80,7 @@ jobs:
       # 3. JDK 17
       #
       # IMPORTANT:
-      # NO GRADLE CACHE HERE.
-      #
-      # Project is inside V81 ZIP, so setup-java must not search
-      # repository for Gradle files at this stage.
+      # No Gradle cache here because project is inside ZIP.
       # ============================================================
 
       - name: Set up JDK 17
@@ -101,10 +99,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " JAVA"
-          echo "============================================================"
-
           java -version
 
           echo
@@ -112,16 +106,7 @@ jobs:
 
 
       # ============================================================
-      # 5. ANDROID SDK
-      #
-      # DO NOT use:
-      #
-      # android-actions/setup-android@v3
-      #
-      # because previous run failed trying to install old package
-      # named "tools".
-      #
-      # GitHub runner already contains Android SDK.
+      # 5. PREPARE ANDROID SDK 36
       # ============================================================
 
       - name: Prepare Android SDK 36
@@ -130,7 +115,7 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " ANDROID SDK"
+          echo " ANDROID SDK 36"
           echo "============================================================"
 
           if [[ -n "${ANDROID_HOME:-}" ]]; then
@@ -144,7 +129,7 @@ jobs:
           echo "SDK_ROOT=$SDK_ROOT"
 
           if [[ ! -d "$SDK_ROOT" ]]; then
-            echo "ERROR: Android SDK directory not found."
+            echo "ERROR: Android SDK not found."
             exit 1
           fi
 
@@ -187,21 +172,18 @@ jobs:
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$SDK_ROOT/build-tools/${BUILD_TOOLS}" >> "$GITHUB_PATH"
 
           echo
-          echo "SDKMANAGER VERSION"
-
           "$SDKMANAGER" --version
 
           echo
-          echo "ACCEPT LICENSES"
+          echo "Accepting Android SDK licenses..."
 
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           echo
-          echo "INSTALL REQUIRED SDK PACKAGES"
+          echo "Installing required packages..."
 
           "$SDKMANAGER" \
             "platform-tools" \
@@ -209,7 +191,7 @@ jobs:
             "build-tools;${BUILD_TOOLS}"
 
           echo
-          echo "VERIFY SDK"
+          echo "Verifying SDK..."
 
           test -d \
             "$SDK_ROOT/platforms/android-${ANDROID_API}"
@@ -218,20 +200,20 @@ jobs:
             "$SDK_ROOT/build-tools/${BUILD_TOOLS}"
 
           test -x \
-            "$SDK_ROOT/platform-tools/adb"
-
-          test -x \
             "$SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt"
 
           test -x \
             "$SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
+
+          test -x \
+            "$SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
           echo
           echo "ANDROID SDK 36 READY"
 
 
       # ============================================================
-      # 6. LOCATE / EXTRACT V81
+      # 6. LOCATE / EXTRACT V81 ZIP
       # ============================================================
 
       - name: Locate Android project
@@ -246,7 +228,7 @@ jobs:
           FOUND_ROOT=""
 
           # --------------------------------------------------------
-          # Case 1: project already at repository root
+          # Repository root
           # --------------------------------------------------------
 
           if [[ -f "settings.gradle.kts" ]] && \
@@ -254,13 +236,13 @@ jobs:
 
             FOUND_ROOT="$PWD"
 
-            echo "Android project found at repository root."
+            echo "Project found at repository root."
 
           fi
 
 
           # --------------------------------------------------------
-          # Case 2: exact V81 ZIP
+          # Exact V81 ZIP
           # --------------------------------------------------------
 
           if [[ -z "$FOUND_ROOT" ]] && \
@@ -273,7 +255,8 @@ jobs:
 
             mkdir -p extracted_project
 
-            unzip -q "$ZIP_NAME" \
+            unzip -q \
+              "$ZIP_NAME" \
               -d extracted_project
 
             FOUND_ROOT="$(
@@ -297,7 +280,7 @@ jobs:
 
 
           # --------------------------------------------------------
-          # Case 3: fallback search
+          # Fallback
           # --------------------------------------------------------
 
           if [[ -z "$FOUND_ROOT" ]]; then
@@ -322,20 +305,12 @@ jobs:
           fi
 
 
-          # --------------------------------------------------------
-          # Final validation
-          # --------------------------------------------------------
-
           if [[ -z "$FOUND_ROOT" ]]; then
 
-            echo
             echo "ERROR: Android project not found."
 
-            echo
-            echo "Available files:"
-
             find "$PWD" \
-              -maxdepth 5 \
+              -maxdepth 6 \
               -type f \
               -print \
               | head -500
@@ -355,7 +330,7 @@ jobs:
 
 
           echo
-          echo "PROJECT STRUCTURE:"
+          echo "===== PROJECT FILES ====="
 
           find "$FOUND_ROOT" \
             -maxdepth 3 \
@@ -366,12 +341,6 @@ jobs:
 
       # ============================================================
       # 7. GRADLE
-      #
-      # IMPORTANT:
-      # Gradle setup is AFTER ZIP extraction.
-      #
-      # This prevents setup-java/setup-gradle cache from failing
-      # because repository initially contains only ZIP.
       # ============================================================
 
       - name: Set up Gradle
@@ -392,71 +361,46 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " SETTINGS"
+          echo " PROJECT CONFIGURATION"
           echo "============================================================"
+
+          test -f settings.gradle.kts
+          test -f app/build.gradle.kts
+
+          echo
+          echo "===== settings.gradle.kts ====="
 
           sed -n '1,260p' \
             settings.gradle.kts
 
-
           echo
-          echo "============================================================"
-          echo " APP BUILD GRADLE"
-          echo "============================================================"
+          echo "===== app/build.gradle.kts ====="
 
           sed -n '1,380p' \
             app/build.gradle.kts
 
-
           echo
-          echo "============================================================"
-          echo " CONFIGURATION CHECK"
-          echo "============================================================"
+          echo "===== CHECKS ====="
 
           grep -q \
             'com.majdoor.hisaab' \
-            app/build.gradle.kts \
-            || {
-              echo "ERROR: package name missing."
-              exit 1
-            }
-
+            app/build.gradle.kts
 
           grep -Eq \
             'compileSdk.*36|compileSdk = 36' \
-            app/build.gradle.kts \
-            || {
-              echo "ERROR: compileSdk 36 missing."
-              exit 1
-            }
-
+            app/build.gradle.kts
 
           grep -Eq \
             'targetSdk.*36|targetSdk = 36' \
-            app/build.gradle.kts \
-            || {
-              echo "ERROR: targetSdk 36 missing."
-              exit 1
-            }
-
+            app/build.gradle.kts
 
           grep -Eq \
             'versionCode.*77|versionCode = 77' \
-            app/build.gradle.kts \
-            || {
-              echo "ERROR: versionCode 77 missing."
-              exit 1
-            }
-
+            app/build.gradle.kts
 
           grep -Eq \
             'versionName.*1.77.0|versionName = "1.77.0"' \
-            app/build.gradle.kts \
-            || {
-              echo "ERROR: versionName 1.77.0 missing."
-              exit 1
-            }
-
+            app/build.gradle.kts
 
           echo
           echo "PROJECT CONFIGURATION PASSED"
@@ -488,15 +432,30 @@ jobs:
           echo "MAIN_ACTIVITY_SCREENS=$SRC" \
             >> "$GITHUB_ENV"
 
+          echo
           echo "SOURCE:"
           echo "$SRC"
 
 
       # ============================================================
-      # 10. APPLY V81 KOTLIN FIXES
+      # 10. COMPLETE V81 KOTLIN SOURCE FIX
+      #
+      # This fixes:
+      #
+      # - fillViewport
+      # - btn() default action
+      # - pick() Button/TextView mismatch
+      # - self-referencing btn() variables
+      # - unresolved it.text
+      # - statusViews map
+      # - exportType when
+      # - Intent.type shadowing
+      # - renderSummary forward reference
+      # - attendanceForm
+      # - customReport
       # ============================================================
 
-      - name: Apply V81 Kotlin compile fixes
+      - name: Apply complete V81 Kotlin fixes
         working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
         shell: bash
         run: |
@@ -505,8 +464,15 @@ jobs:
           export PROJECT_ROOT="$PWD"
 
           python3 <<'PY'
+
           import os
+          import re
           from pathlib import Path
+
+
+          # ========================================================
+          # FIND SOURCE
+          # ========================================================
 
           root = Path(
               os.environ["PROJECT_ROOT"]
@@ -531,48 +497,82 @@ jobs:
 
           original = text
 
+
           print()
           print("============================================================")
-          print(" APPLY V81 SOURCE FIXES")
+          print(" COMPLETE V81 KOTLIN PATCH")
           print("============================================================")
 
+          print("SOURCE:")
           print(src)
+
+
+          # ========================================================
+          # HELPER
+          # ========================================================
+
+          def replace_required(old, new, name, count=1):
+
+              global text
+
+              if old not in text:
+
+                  raise SystemExit(
+                      f"ERROR: Required source pattern not found: {name}"
+                  )
+
+              actual = text.count(old)
+
+              if actual < count:
+
+                  raise SystemExit(
+                      f"ERROR: Pattern count too low for {name}: "
+                      f"{actual} < {count}"
+                  )
+
+              text = text.replace(
+                  old,
+                  new,
+                  count
+              )
+
+              print(
+                  "FIXED:",
+                  name
+              )
 
 
           # ========================================================
           # 1. btn() DEFAULT ACTION
           # ========================================================
 
-          replacements = [
+          if (
+              "internal fun MainActivity.btn(s:String,action:()->Unit)=TextView(this).apply{"
+              in text
+          ):
 
-              (
+              text = text.replace(
                   "internal fun MainActivity.btn(s:String,action:()->Unit)=TextView(this).apply{",
-                  "internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{"
-              ),
+                  "internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{",
+                  1
+              )
 
-              (
-                  "internal fun MainActivity.btn(s: String, action: () -> Unit) = TextView(this).apply {",
-                  "internal fun MainActivity.btn(s: String, action: () -> Unit = {}) = TextView(this).apply {"
-              ),
+              print("FIXED: btn() default action")
 
-          ]
+          elif (
+              "internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{"
+              in text
+          ):
 
-          for old, new in replacements:
+              print(
+                  "OK: btn() already has default action"
+              )
 
-              if old in text:
+          else:
 
-                  text = text.replace(
-                      old,
-                      new,
-                      1
-                  )
-
-                  print(
-                      "FIXED btn():",
-                      old
-                  )
-
-                  break
+              print(
+                  "WARNING: btn() signature was not found"
+              )
 
 
           # ========================================================
@@ -587,15 +587,18 @@ jobs:
               )
 
               print(
-                  "FIXED ScrollView fillViewport"
+                  "FIXED: ScrollView fillViewport"
               )
 
 
           # ========================================================
-          # 3. pick() Button -> TextView
+          # 3. pick() RETURN TYPE
           # ========================================================
 
-          if "onPick:(Int)->Unit):Button" in text:
+          if (
+              "onPick:(Int)->Unit):Button"
+              in text
+          ):
 
               text = text.replace(
                   "onPick:(Int)->Unit):Button",
@@ -604,153 +607,221 @@ jobs:
               )
 
               print(
-                  "FIXED pick() return type"
+                  "FIXED: pick() Button -> TextView"
               )
 
 
           # ========================================================
-          # 4. statusViews Map
-          # ========================================================
-
-          map_fixes = {
-
-              'statusViews.forEach{it.text="FULL"}':
-              'statusViews.values.forEach{it.text="FULL"}',
-
-              'statusViews.forEach{it.text="HALF"}':
-              'statusViews.values.forEach{it.text="HALF"}',
-
-              'statusViews.forEach{it.text=AttendanceRules.UNMARKED}':
-              'statusViews.values.forEach{it.text=AttendanceRules.UNMARKED}',
-          }
-
-          for old, new in map_fixes.items():
-
-              if old in text:
-
-                  text = text.replace(
-                      old,
-                      new
-                  )
-
-                  print(
-                      "FIXED:",
-                      old
-                  )
-
-
-          # ========================================================
-          # 5. WRONG it.text
-          # ========================================================
-
-          button_fixes = {
-
-              'cropId=crops[i].id;it.text="Crop: ${crops[i].name}"':
-              'cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"',
-
-              'setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}':
-              'setPositiveButton("Done"){_,_->workerBtn.text="Workers: ${selectedWorkers.distinct().size}"}',
-
-              'rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"':
-              'rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"',
-
-              'wid=workers[i].id;it.text="Worker: ${workers[i].name}"':
-              'wid=workers[i].id;wb.text="Worker: ${workers[i].name}"',
-
-              'method=methods[i];it.text="Method: ${methods[i]}"':
-              'method=methods[i];mb.text="Method: ${methods[i]}"',
-
-              'advance=!advance;it.text="Advance: ${if(advance)"YES" else "NO"}"':
-              'advance=!advance;adv.text="Advance: ${if(advance)"YES" else "NO"}"',
-
-              'cat=cats[i];it.text="Category: $cat"':
-              'cat=cats[i];cb.text="Category: $cat"',
-
-              'fieldId="";it.text="Field: Not linked"':
-              'fieldId="";fb.text="Field: Not linked"',
-
-              'fieldId=fields[i-1].id;it.text="Field: ${fields[i-1].name}"':
-              'fieldId=fields[i-1].id;fb.text="Field: ${fields[i-1].name}"',
-
-              'cropId="";it.text="Crop: Not linked"':
-              'cropId="";crb.text="Crop: Not linked"',
-
-              'cropId=crops[i-1].id;it.text="Crop: ${crops[i-1].name}"':
-              'cropId=crops[i-1].id;crb.text="Crop: ${crops[i-1].name}"',
-
-              'wid=if(i==0)"" else workers[i-1].id;it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"':
-              'wid=if(i==0)"" else workers[i-1].id;wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
-
-              'fid=if(i==0)"" else fields[i-1].id;it.text="Field: ${if(i==0)"All" else fields[i-1].name}"':
-              'fid=if(i==0)"" else fields[i-1].id;fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
-
-              'cid=if(i==0)"" else crops[i-1].id;it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"':
-              'cid=if(i==0)"" else crops[i-1].id;cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
-          }
-
-          for old, new in button_fixes.items():
-
-              if old in text:
-
-                  text = text.replace(
-                      old,
-                      new
-                  )
-
-                  print(
-                      "FIXED:",
-                      old[:100]
-                  )
-
-
-          # ========================================================
-          # 6. FIELD BUTTON MULTILINE
+          # 4. statusViews MAP
           # ========================================================
 
           text = text.replace(
-              '''fieldId=if(i==0) "" else fields[i-1].id
-                it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"''',
-
-              '''fieldId=if(i==0) "" else fields[i-1].id
-                fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'''
+              'statusViews.forEach{it.text="FULL"}',
+              'statusViews.values.forEach{it.text="FULL"}'
           )
 
+          text = text.replace(
+              'statusViews.forEach{it.text="HALF"}',
+              'statusViews.values.forEach{it.text="HALF"}'
+          )
 
           text = text.replace(
-              '''fieldId=if(i==0) "" else fields[i-1].id;it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"''',
-
-              '''fieldId=if(i==0) "" else fields[i-1].id;fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'''
+              'statusViews.forEach{it.text=AttendanceRules.UNMARKED}',
+              'statusViews.values.forEach{it.text=AttendanceRules.UNMARKED}'
           )
 
 
           # ========================================================
-          # 7. ATTENDANCE STATUS
+          # 5. CROP FORM
           # ========================================================
 
-          text = text.replace(
-              '''status=arrayOf("FULL","HALF","NONE")[i]
-                it.text="Status: $status"''',
+          old = '''val n=field("Crop name",old?.name?:"");val v=field("Variety",old?.variety?:"");val fields=app.fields.list().filter{it.active};var fieldId=old?.fieldId?:fields.firstOrNull()?.id.orEmpty();val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()};val d=dateField("Planting date",old?.plantingDate?:today);val a=field("Area",old?.area?.toString()?:"0");val notes=field("Notes",old?.notes?:"")'''
 
-              '''status=arrayOf("FULL","HALF","NONE")[i]
-                statusBtn.text="Status: $status"'''
+          new = '''val n=field("Crop name",old?.name?:"");val v=field("Variety",old?.variety?:"");val fields=app.fields.list().filter{it.active};var fieldId=old?.fieldId?:fields.firstOrNull()?.id.orEmpty();val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()};val d=dateField("Planting date",old?.plantingDate?:today);val a=field("Area",old?.area?.toString()?:"0");val notes=field("Notes",old?.notes?:"")'''
+
+          replace_required(
+              old,
+              new,
+              "crop form field button"
           )
 
 
           # ========================================================
-          # 8. INTENT TYPE
+          # 6. PRODUCTION CROP BUTTON
           # ========================================================
 
-          text = text.replace(
-              'Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="image/*";',
-              'Intent(Intent.ACTION_OPEN_DOCUMENT).apply{this.type="image/*";'
+          old = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}'''
+
+          new = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}");cropBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'''
+
+          replace_required(
+              old,
+              new,
+              "production crop button",
+              1
           )
 
 
           # ========================================================
-          # 9. EXPORT WHEN
+          # 7. REVENUE CROP BUTTON
           # ========================================================
 
-          old_export = '''contentResolver.openOutputStream(uri)!!.use{out->when(exportType){
+          replace_required(
+              old,
+              new,
+              "revenue crop button",
+              1
+          )
+
+
+          # ========================================================
+          # 8. WORK FIELD BUTTON
+          # ========================================================
+
+          old = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}'''
+
+          new = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fieldBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fieldBtn.text="Field: ${fields[i].name}"}.show()}'''
+
+          replace_required(
+              old,
+              new,
+              "work field button"
+          )
+
+
+          # ========================================================
+          # 9. WORK CROP BUTTON
+          # ========================================================
+
+          old = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}'''
+
+          new = '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}");cropBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'''
+
+          replace_required(
+              old,
+              new,
+              "work crop button"
+          )
+
+
+          # ========================================================
+          # 10. WORKER SELECT BUTTON
+          # ========================================================
+
+          old = '''val workerBtn=btn("Workers: ${selectedWorkers.size}"){
+            val checked=workers.map{selectedWorkers.contains(it.id)}.toBooleanArray()
+            AlertDialog.Builder(this).setTitle("Select workers").setMultiChoiceItems(workers.map{it.name}.toTypedArray(),checked){_,which,on->if(on)selectedWorkers.add(workers[which].id)else selectedWorkers.remove(workers[which].id)}.setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}.show()
+        }'''
+
+          new = '''val workerBtn=btn("Workers: ${selectedWorkers.size}")
+        workerBtn.setOnClickListener{
+            val checked=workers.map{selectedWorkers.contains(it.id)}.toBooleanArray()
+            AlertDialog.Builder(this).setTitle("Select workers").setMultiChoiceItems(workers.map{it.name}.toTypedArray(),checked){_,which,on->if(on)selectedWorkers.add(workers[which].id)else selectedWorkers.remove(workers[which].id)}.setPositiveButton("Done"){_,_->workerBtn.text="Workers: ${selectedWorkers.distinct().size}"}.show()
+        }'''
+
+          replace_required(
+              old,
+              new,
+              "work worker button"
+          )
+
+
+          # ========================================================
+          # 11. WORK RATE TYPE
+          # ========================================================
+
+          old = '''var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre");val rateTypeBtn=btn("Rate type: $rateType"){AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"}.show()};'''
+
+          new = '''var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre");val rateTypeBtn=btn("Rate type: $rateType");rateTypeBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"}.show()};'''
+
+          replace_required(
+              old,
+              new,
+              "work rate type button"
+          )
+
+
+          # ========================================================
+          # 12. PAYMENT FORM
+          # ========================================================
+
+          old = '''val wb=btn("Worker: ${selectedName(wid,workers.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select worker").setItems(workers.map{it.name}.toTypedArray()){_,i->wid=workers[i].id;it.text="Worker: ${workers[i].name}"}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");var method=old?.method?:"Cash";val mb=btn("Method: $method"){val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];it.text="Method: ${methods[i]}"}.show()};val adv=btn("Advance: ${if(advance)"YES" else "NO"}"){advance=!advance;it.text="Advance: ${if(advance)"YES" else "NO"}"};val ref=field("Reference",old?.reference?:"");val notes=field("Notes",old?.notes?:"");listOf(wb,d,a,mb,adv,ref,notes).forEach{b.addView(it)}'''
+
+          new = '''val wb=btn("Worker: ${selectedName(wid,workers.map{it.id to it.name})}");wb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select worker").setItems(workers.map{it.name}.toTypedArray()){_,i->wid=workers[i].id;wb.text="Worker: ${workers[i].name}"}.show()};val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");var method=old?.method?:"Cash";val mb=btn("Method: $method");mb.setOnClickListener{val methods=arrayOf("Cash","Bank","UPI");AlertDialog.Builder(this).setTitle("Payment method").setItems(methods){_,i->method=methods[i];mb.text="Method: ${methods[i]}"}.show()};val adv=btn("Advance: ${if(advance)"YES" else "NO"}");adv.setOnClickListener{advance=!advance;adv.text="Advance: ${if(advance)"YES" else "NO"}"};val ref=field("Reference",old?.reference?:"");val notes=field("Notes",old?.notes?:"");listOf(wb,d,a,mb,adv,ref,notes).forEach{b.addView(it)}'''
+
+          replace_required(
+              old,
+              new,
+              "payment form buttons"
+          )
+
+
+          # ========================================================
+          # 13. EXPENSE FORM
+          # ========================================================
+
+          old = re.search(
+              r'        val cb=btn\("Category: \$cat"\).*?listOf\(cb,fb,crb,d,a,n\)\.forEach\{b\.addView\(it\)\}',
+              text,
+              flags=re.S
+          )
+
+          if not old:
+              raise SystemExit(
+                  "ERROR: Expense form block not found."
+              )
+
+          new = '''        val cb=btn("Category: $cat")
+        cb.setOnClickListener{AlertDialog.Builder(this).setTitle("Expense category").setItems(cats.toTypedArray()){_,i->cat=cats[i];cb.text="Category: $cat"}.show()}
+
+        val fb=btn("Field: ${if(fieldId.isBlank())"Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}")
+        fb.setOnClickListener{val labels=listOf("Not linked")+fields.map{it.name};AlertDialog.Builder(this).setTitle("Select field").setItems(labels.toTypedArray()){_,i->if(i==0){fieldId="";fb.text="Field: Not linked"}else{fieldId=fields[i-1].id;fb.text="Field: ${fields[i-1].name}"}}.show()}
+
+        val crb=btn("Crop: ${if(cropId.isBlank())"Not linked" else selectedName(cropId,crops.map{it.id to it.name})}")
+        crb.setOnClickListener{val labels=listOf("Not linked")+crops.map{it.name};AlertDialog.Builder(this).setTitle("Select crop").setItems(labels.toTypedArray()){_,i->if(i==0){cropId="";crb.text="Crop: Not linked"}else{cropId=crops[i-1].id;crb.text="Crop: ${crops[i-1].name}"}}.show()}
+
+        val d=dateField("Date",old?.date?:today);val a=field("Amount",old?.amount?.toString()?:"");val n=field("Notes",old?.notes?:"");listOf(cb,fb,crb,d,a,n).forEach{b.addView(it)}'''
+
+          text = (
+              text[:old.start()]
+              + new
+              + text[old.end():]
+          )
+
+          print(
+              "FIXED: expense form buttons"
+          )
+
+
+          # ========================================================
+          # 14. REPORT FILTER BUTTONS
+          # ========================================================
+
+          old = '''        val wb=btn("Worker: ${if(wid.isBlank())"All" else selectedName(wid,workers.map{it.id to it.name})}"){ val labels=listOf("All")+workers.map{it.name}; AlertDialog.Builder(this).setTitle("Worker").setItems(labels.toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id; it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show() }
+        val fb=btn("Field: ${if(fid.isBlank())"All" else selectedName(fid,fields.map{it.id to it.name})}"){ val labels=listOf("All")+fields.map{it.name}; AlertDialog.Builder(this).setTitle("Field").setItems(labels.toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id; it.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show() }
+        val cb=btn("Crop: ${if(cid.isBlank())"All" else selectedName(cid,crops.map{it.id to it.name})}"){ val labels=listOf("All")+crops.map{it.name}; AlertDialog.Builder(this).setTitle("Crop").setItems(labels.toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id; it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show() }'''
+
+          new = '''        val wb=btn("Worker: ${if(wid.isBlank())"All" else selectedName(wid,workers.map{it.id to it.name})}")
+        wb.setOnClickListener{val labels=listOf("All")+workers.map{it.name};AlertDialog.Builder(this).setTitle("Worker").setItems(labels.toTypedArray()){_,i->wid=if(i==0)"" else workers[i-1].id;wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"}.show()}
+
+        val fb=btn("Field: ${if(fid.isBlank())"All" else selectedName(fid,fields.map{it.id to it.name})}")
+        fb.setOnClickListener{val labels=listOf("All")+fields.map{it.name};AlertDialog.Builder(this).setTitle("Field").setItems(labels.toTypedArray()){_,i->fid=if(i==0)"" else fields[i-1].id;fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"}.show()}
+
+        val cb=btn("Crop: ${if(cid.isBlank())"All" else selectedName(cid,crops.map{it.id to it.name})}")
+        cb.setOnClickListener{val labels=listOf("All")+crops.map{it.name};AlertDialog.Builder(this).setTitle("Crop").setItems(labels.toTypedArray()){_,i->cid=if(i==0)"" else crops[i-1].id;cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"}.show()}'''
+
+          replace_required(
+              old,
+              new,
+              "report filter buttons"
+          )
+
+
+          # ========================================================
+          # 15. EXPORT WHEN
+          # ========================================================
+
+          old = '''contentResolver.openOutputStream(uri)!!.use{out->when(exportType){
                     "workers"->app.export.csvWorkers(out)
                     "ledger"->app.export.csvLedger(out)
                     exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
@@ -759,112 +830,853 @@ jobs:
                     "backup"->app.backup.export(out)
                 }}'''
 
-          new_export = '''contentResolver.openOutputStream(uri)!!.use{out->when {
-                    exportType == "workers"->app.export.csvWorkers(out)
-                    exportType == "ledger"->app.export.csvLedger(out)
+          new = '''contentResolver.openOutputStream(uri)!!.use{out->when {
+                    exportType=="workers"->app.export.csvWorkers(out)
+                    exportType=="ledger"->app.export.csvLedger(out)
                     exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
                     exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
-                    exportType == "pdf"->app.export.pdfSummary(out)
-                    exportType == "backup"->app.backup.export(out)
+                    exportType=="pdf"->app.export.pdfSummary(out)
+                    exportType=="backup"->app.backup.export(out)
                 }}'''
 
-          if old_export in text:
-
-              text = text.replace(
-                  old_export,
-                  new_export,
-                  1
-              )
-
-              print(
-                  "FIXED exportType when"
-              )
+          replace_required(
+              old,
+              new,
+              "exportType when"
+          )
 
 
           # ========================================================
-          # 10. COMPATIBILITY
+          # 16. WORK TEMPLATE RATE BUTTON
           # ========================================================
 
-          compatibility = {
+          old = '''val n=field("Template name",old?.name?:""); val t=field("Work type",old?.workType?:"Weeding"); var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre"); val rateTypeBtn=btn("Rate type: $rateType"){AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"}.show()}; val u=field("Unit",old?.unit?:"acre"); val r=field("Rate",old?.rate?.toString() ?: "0"); val notes=field("Notes",old?.notes?:"")'''
 
-              ".audit.auditLog":
-              ".auditLog",
+          new = '''val n=field("Template name",old?.name?:""); val t=field("Work type",old?.workType?:"Weeding"); var rateType=app.calculation.normalize(old?.rateType?:"QUANTITY",old?.unit?:"acre"); val rateTypeBtn=btn("Rate type: $rateType");rateTypeBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select rate type").setItems(app.calculation.rateTypes().toTypedArray()){_,i->rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"}.show()}; val u=field("Unit",old?.unit?:"acre"); val r=field("Rate",old?.rate?.toString() ?: "0"); val notes=field("Notes",old?.notes?:"")'''
 
-              "clearAuditLog":
-              "clear",
-
-              "getSystemService(ALARM_SERVICE)":
-              "getSystemService(Context.ALARM_SERVICE)",
-          }
-
-          for old, new in compatibility.items():
-
-              if old in text:
-
-                  text = text.replace(
-                      old,
-                      new
-                  )
-
-                  print(
-                      "FIXED:",
-                      old,
-                      "->",
-                      new
-                  )
+          replace_required(
+              old,
+              new,
+              "work template rate button"
+          )
 
 
           # ========================================================
-          # 11. renderSummary
+          # 17. ATTENDANCE FORM
+          #
+          # IMPORTANT:
+          # Do not use implicit `it` inside setItems lambda.
           # ========================================================
 
-          render_marker = "        fun render(){"
-          summary_marker = "        fun renderSummary(){"
-          nav_marker = "        val nav="
+          start = text.index(
+              "    internal fun MainActivity.attendanceForm(old:Attendance){"
+          )
 
-          if (
-              render_marker in text
-              and summary_marker in text
-              and nav_marker in text
-          ):
+          end = text.index(
+              "\n\n    internal fun MainActivity.attendanceHistory()",
+              start
+          )
 
-              r0 = text.index(
-                  render_marker
-              )
+          attendance_form = '''    internal fun MainActivity.attendanceForm(old:Attendance){
+        val b=page("Edit Attendance")
+        val fields=app.fields.list().filter{it.active}
 
-              s0 = text.index(
-                  summary_marker,
-                  r0
-              )
+        var fieldId=old.fieldId
 
-              n0 = text.index(
-                  nav_marker,
-                  s0
-              )
+        val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}")
 
-              render_block = text[
-                  r0:s0
-              ]
+        fieldBtn.setOnClickListener{
+            val labels=arrayOf("Not linked")+fields.map{it.name}.toTypedArray()
 
-              summary_block = text[
-                  s0:n0
-              ]
+            AlertDialog.Builder(this)
+                .setTitle("Select field")
+                .setItems(labels){_,i->
+                    fieldId=if(i==0) "" else fields[i-1].id
+                    fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"
+                }
+                .show()
+        }
 
-              text = (
-                  text[:r0]
-                  + summary_block
-                  + "\n"
-                  + render_block
-                  + text[n0:]
-              )
+        val date=dateField("Date",old.date)
 
-              print(
-                  "FIXED renderSummary order"
-              )
+        var status=old.status.uppercase()
+
+        val statusBtn=btn("Status: $status")
+
+        statusBtn.setOnClickListener{
+            AlertDialog.Builder(this)
+                .setTitle("Attendance status")
+                .setItems(arrayOf("Full","Half","None / Unmarked")){_,i->
+                    status=arrayOf("FULL","HALF","NONE")[i]
+                    statusBtn.text="Status: $status"
+                }
+                .show()
+        }
+
+        val rate=field("Rate",old.rate.toString())
+        val note=field("Note",old.note)
+
+        listOf(
+            fieldBtn,
+            date,
+            statusBtn,
+            rate,
+            note
+        ).forEach{
+            b.addView(it)
+        }
+
+        b.addView(btn("Save Attendance"){
+            try{
+                val d=date.text.toString().trim()
+
+                val r=rate.text.toString()
+                    .toDoubleOrNull()
+                    ?: throw IllegalArgumentException("Invalid rate")
+
+                if(d.isBlank()){
+                    throw IllegalArgumentException("Date required")
+                }
+
+                AlertDialog.Builder(this)
+                    .setTitle("Confirm attendance change")
+                    .setMessage("Save these attendance changes?")
+                    .setNegativeButton("Cancel",null)
+                    .setPositiveButton("Save"){_,_->
+                        try{
+                            app.attendance.save(
+                                Attendance(
+                                    old.id,
+                                    dateValue(date),
+                                    old.workerId,
+                                    fieldId,
+                                    status,
+                                    r,
+                                    note.text.toString()
+                                )
+                            )
+
+                            toast("Attendance updated")
+                            workerAttendance(old.workerId)
+
+                        }catch(e:Exception){
+                            toast(
+                                e.message
+                                    ?: "Attendance update failed"
+                            )
+                        }
+                    }
+                    .show()
+
+            }catch(e:Exception){
+
+                toast(
+                    e.message
+                        ?: "Attendance update failed"
+                )
+            }
+        })
+
+        b.addView(
+            btn("Delete Attendance"){
+                confirmDelete("Attendance"){
+                    app.attendance.delete(old.id)
+                    workerAttendance(old.workerId)
+                }
+            }
+        )
+    }'''
+
+          text = (
+              text[:start]
+              + attendance_form
+              + text[end:]
+          )
+
+          print(
+              "FIXED: attendanceForm"
+          )
 
 
           # ========================================================
-          # WRITE
+          # 18. ATTENDANCE CALENDAR
+          #
+          # renderSummary MUST be declared before render().
+          # ========================================================
+
+          start = text.index(
+              "    internal fun MainActivity.attendanceCalendar(){"
+          )
+
+          end = text.index(
+              "\n\n    internal fun MainActivity.paymentLedger()",
+              start
+          )
+
+          attendance_calendar = '''    internal fun MainActivity.attendanceCalendar(){
+        val b=page("Attendance Calendar")
+
+        var shown=Calendar.getInstance()
+        var selectedDate=today
+
+        val monthTitle=txt("",20f,true).apply{
+            gravity=Gravity.CENTER
+        }
+
+        val grid=GridLayout(this).apply{
+            columnCount=7
+            rowCount=7
+            alignmentMode=GridLayout.ALIGN_BOUNDS
+        }
+
+        val summary=txt("",15f,true)
+
+        val records=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+        }
+
+        fun iso(cal:Calendar):String=
+            String.format(
+                Locale.US,
+                "%04d-%02d-%02d",
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH)+1,
+                cal.get(Calendar.DAY_OF_MONTH)
+            )
+
+        fun dayButton(
+            label:String,
+            date:String,
+            hasRecords:Boolean,
+            selected:Boolean,
+            onClick:()->Unit
+        ):Button{
+
+            return Button(this).apply{
+
+                text=if(hasRecords){
+                    "$label\\n•"
+                }else{
+                    label
+                }
+
+                textSize=12f
+
+                setPadding(
+                    0,
+                    2,
+                    0,
+                    2
+                )
+
+                isAllCaps=false
+
+                if(selected){
+                    setTypeface(null,1)
+                }
+
+                setOnClickListener{
+                    onClick()
+                }
+            }
+        }
+
+        # SUMMARY IS DECLARED FIRST.
+        fun renderSummary(){
+
+            val list=
+                app.attendance.list()
+                    .filter{
+                        it.date==selectedDate
+                    }
+
+            summary.text=
+                if(list.isEmpty()){
+
+                    "${displayDateOrRaw(selectedDate)}\\nNo attendance saved"
+
+                }else{
+
+                    "${displayDateOrRaw(selectedDate)}  •  " +
+                    "Full ${list.count{it.status==\"FULL\"}}  •  " +
+                    "Half ${list.count{it.status==\"HALF\"}}  •  " +
+                    "Unmarked ${list.count{it.status==\"NONE\"}}"
+                }
+
+            records.removeAllViews()
+
+            if(list.isEmpty()){
+
+                records.addView(
+                    txt(
+                        "No attendance records for this date."
+                    )
+                )
+
+            }else{
+
+                list
+                    .sortedBy{
+                        app.workers
+                            .list()
+                            .find{w->w.id==it.workerId}
+                            ?.name
+                            ?: ""
+                    }
+                    .forEach{a->
+
+                        val worker=
+                            app.workers
+                                .list()
+                                .find{w->w.id==a.workerId}
+                                ?.name
+                                ?: "Unknown"
+
+                        val field=
+                            if(a.fieldId.isBlank()){
+
+                                "No field"
+
+                            }else{
+
+                                app.fields
+                                    .list()
+                                    .find{f->f.id==a.fieldId}
+                                    ?.name
+                                    ?: "Unknown field"
+                            }
+
+                        records.addView(
+                            btn(
+                                "$worker  •  ${a.status}  •  $field  •  ${money(a.rate)}"
+                            ){
+                                attendanceDetail(a.id)
+                            }
+                        )
+                    }
+            }
+        }
+
+
+        # RENDER COMES AFTER renderSummary.
+        fun render(){
+
+            grid.removeAllViews()
+
+            monthTitle.text=
+                SimpleDateFormat(
+                    "MMMM yyyy",
+                    Locale.US
+                ).format(shown.time)
+
+            val weekdays=
+                arrayOf(
+                    "Mon",
+                    "Tue",
+                    "Wed",
+                    "Thu",
+                    "Fri",
+                    "Sat",
+                    "Sun"
+                )
+
+            weekdays.forEach{w->
+
+                grid.addView(
+                    txt(
+                        w,
+                        11f,
+                        true
+                    ).apply{
+                        gravity=Gravity.CENTER
+                    },
+                    GridLayout.LayoutParams().apply{
+                        width=0
+                        height=48
+                        columnSpec=
+                            GridLayout.spec(
+                                GridLayout.UNDEFINED,
+                                1f
+                            )
+                        rowSpec=
+                            GridLayout.spec(0)
+                    }
+                )
+            }
+
+            val first=
+                shown.clone() as Calendar
+
+            first.set(
+                Calendar.DAY_OF_MONTH,
+                1
+            )
+
+            val mondayOffset=
+                (
+                    first.get(Calendar.DAY_OF_WEEK)
+                    + 5
+                ) % 7
+
+            val max=
+                shown.getActualMaximum(
+                    Calendar.DAY_OF_MONTH
+                )
+
+            for(i in 0 until mondayOffset){
+
+                grid.addView(
+                    TextView(this),
+                    GridLayout.LayoutParams().apply{
+                        width=0
+                        height=62
+
+                        columnSpec=
+                            GridLayout.spec(
+                                GridLayout.UNDEFINED,
+                                1f
+                            )
+
+                        rowSpec=
+                            GridLayout.spec(
+                                (i/7)+1
+                            )
+                    }
+                )
+            }
+
+            for(day in 1..max){
+
+                val c=
+                    shown.clone() as Calendar
+
+                c.set(
+                    Calendar.DAY_OF_MONTH,
+                    day
+                )
+
+                val d=iso(c)
+
+                val list=
+                    app.attendance
+                        .list()
+                        .filter{
+                            it.date==d
+                        }
+
+                val col=
+                    (mondayOffset+day-1)%7
+
+                val row=
+                    (mondayOffset+day-1)/7+1
+
+                val cell=
+                    dayButton(
+                        day.toString(),
+                        d,
+                        list.isNotEmpty(),
+                        d==selectedDate
+                    ){
+
+                        selectedDate=d
+
+                        renderSummary()
+                    }
+
+                grid.addView(
+                    cell,
+                    GridLayout.LayoutParams().apply{
+
+                        width=0
+                        height=62
+
+                        columnSpec=
+                            GridLayout.spec(
+                                col,
+                                1f
+                            )
+
+                        rowSpec=
+                            GridLayout.spec(
+                                row
+                            )
+                    }
+                )
+            }
+
+            renderSummary()
+        }
+
+
+        val nav=
+            LinearLayout(this).apply{
+                orientation=
+                    LinearLayout.HORIZONTAL
+            }
+
+        nav.addView(
+            btn("‹ Previous"){
+                shown.add(
+                    Calendar.MONTH,
+                    -1
+                )
+                render()
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(52),
+                1f
+            )
+        )
+
+        nav.addView(
+            btn("Today"){
+                shown=
+                    Calendar.getInstance()
+
+                selectedDate=today
+
+                render()
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(52),
+                1f
+            )
+        )
+
+        nav.addView(
+            btn("Next ›"){
+                shown.add(
+                    Calendar.MONTH,
+                    1
+                )
+                render()
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(52),
+                1f
+            )
+        )
+
+        b.addView(nav)
+        b.addView(monthTitle)
+        b.addView(grid)
+        b.addView(summary)
+        b.addView(
+            txt(
+                "Tap a date to view/edit that day's attendance.",
+                13f
+            )
+        )
+        b.addView(records)
+
+        render()
+    }'''
+
+          # Remove Python comments accidentally placed inside Kotlin
+          attendance_calendar = (
+              attendance_calendar
+              .replace(
+                  "        # SUMMARY IS DECLARED FIRST.",
+                  ""
+              )
+              .replace(
+                  "        # RENDER COMES AFTER renderSummary.",
+                  ""
+              )
+          )
+
+          text = (
+              text[:start]
+              + attendance_calendar
+              + text[end:]
+          )
+
+          print(
+              "FIXED: attendanceCalendar"
+          )
+
+
+          # ========================================================
+          # 19. CUSTOM REPORT
+          # ========================================================
+
+          start = text.index(
+              "    internal fun MainActivity.customReport(){"
+          )
+
+          end = text.index(
+              "\n\n    internal fun MainActivity.auditLogScreen()",
+              start
+          )
+
+          custom_report = '''    internal fun MainActivity.customReport(){
+        val b=page("Custom Report")
+
+        val from=
+            dateField(
+                "From date",
+                today
+            )
+
+        val to=
+            dateField(
+                "To date",
+                today
+            )
+
+        val workers=
+            app.workers
+                .list()
+                .filter{it.active}
+
+        val fields=
+            app.fields
+                .list()
+                .filter{it.active}
+
+        val crops=
+            app.crops
+                .list()
+                .filter{it.active}
+
+        var wid=""
+        var fid=""
+        var cid=""
+
+        val wb=
+            btn("Worker: All")
+
+        wb.setOnClickListener{
+
+            AlertDialog.Builder(this)
+                .setTitle("Worker")
+                .setItems(
+                    (
+                        listOf("All")
+                        + workers.map{it.name}
+                    ).toTypedArray()
+                ){_,i->
+
+                    wid=
+                        if(i==0)
+                            ""
+                        else
+                            workers[i-1].id
+
+                    wb.text=
+                        "Worker: ${
+                            if(i==0)
+                                "All"
+                            else
+                                workers[i-1].name
+                        }"
+                }
+                .show()
+        }
+
+
+        val fb=
+            btn("Field: All")
+
+        fb.setOnClickListener{
+
+            AlertDialog.Builder(this)
+                .setTitle("Field")
+                .setItems(
+                    (
+                        listOf("All")
+                        + fields.map{it.name}
+                    ).toTypedArray()
+                ){_,i->
+
+                    fid=
+                        if(i==0)
+                            ""
+                        else
+                            fields[i-1].id
+
+                    fb.text=
+                        "Field: ${
+                            if(i==0)
+                                "All"
+                            else
+                                fields[i-1].name
+                        }"
+                }
+                .show()
+        }
+
+
+        val cb=
+            btn("Crop: All")
+
+        cb.setOnClickListener{
+
+            AlertDialog.Builder(this)
+                .setTitle("Crop")
+                .setItems(
+                    (
+                        listOf("All")
+                        + crops.map{it.name}
+                    ).toTypedArray()
+                ){_,i->
+
+                    cid=
+                        if(i==0)
+                            ""
+                        else
+                            crops[i-1].id
+
+                    cb.text=
+                        "Crop: ${
+                            if(i==0)
+                                "All"
+                            else
+                                crops[i-1].name
+                        }"
+                }
+                .show()
+        }
+
+
+        listOf(
+            from,
+            to,
+            wb,
+            fb,
+            cb
+        ).forEach{
+            b.addView(it)
+        }
+
+
+        b.addView(
+            btn("Generate"){
+
+                try{
+
+                    val fromIso=
+                        dateValue(from)
+
+                    val toIso=
+                        dateValue(to)
+
+                    require(
+                        fromIso<=toIso
+                    ){
+                        "From date cannot be after To date."
+                    }
+
+                    val d=
+                        app.reports.preview(
+                            com.majdoor.hisaab.report.ReportFilter(
+                                fromIso,
+                                toIso,
+                                wid,
+                                fid,
+                                cid
+                            ),
+                            app.attendance.list(),
+                            app.work.list(),
+                            app.payments.list(),
+                            app.expenses.list(),
+                            app.accounting.revenue(),
+                            app.accounting.production()
+                        )
+
+                    b.addView(
+                        txt(
+                            "Attendance wages: ${money(d.attendanceCost())}",
+                            15f,
+                            true
+                        )
+                    )
+
+                    b.addView(
+                        txt(
+                            "Work cost: ${money(d.workCost())}"
+                        )
+                    )
+
+                    b.addView(
+                        txt(
+                            "Payments: ${money(d.payments.sumOf{it.amount})}"
+                        )
+                    )
+
+                    b.addView(
+                        txt(
+                            "Expenses: ${money(d.expenseCost())}"
+                        )
+                    )
+
+                    b.addView(
+                        txt(
+                            "Revenue: ${money(d.revenueTotal())}"
+                        )
+                    )
+
+                    b.addView(
+                        txt(
+                            "Tracked cost: ${money(d.trackedCost())}"
+                        )
+                    )
+
+                    b.addView(
+                        txt(
+                            "Profit/Loss: ${money(d.profitLoss())}",
+                            17f,
+                            true
+                        )
+                    )
+
+                }catch(e:Exception){
+
+                    toast(
+                        e.message
+                            ?: "Report generation failed"
+                    )
+                }
+            }
+        )
+    }'''
+
+          text = (
+              text[:start]
+              + custom_report
+              + text[end:]
+          )
+
+          print(
+              "FIXED: customReport"
+          )
+
+
+          # ========================================================
+          # 20. COMPATIBILITY FIXES
+          # ========================================================
+
+          text=text.replace(
+              ".audit.auditLog",
+              ".auditLog"
+          )
+
+          text=text.replace(
+              "clearAuditLog",
+              "clear"
+          )
+
+          text=text.replace(
+              "getSystemService(ALARM_SERVICE)",
+              "getSystemService(Context.ALARM_SERVICE)"
+          )
+
+
+          # ========================================================
+          # WRITE SOURCE
           # ========================================================
 
           if text != original:
@@ -874,53 +1686,62 @@ jobs:
                   encoding="utf-8"
               )
 
-              print()
-              print(
-                  "SOURCE PATCH COMPLETE"
-              )
-
           else:
 
-              print()
               print(
-                  "SOURCE ALREADY PATCHED"
+                  "WARNING: No source changes made."
               )
 
 
           # ========================================================
-          # FINAL CHECK
+          # FINAL SOURCE VERIFICATION
           # ========================================================
 
-          final = src.read_text(
+          final=src.read_text(
               encoding="utf-8"
           )
 
           print()
           print("============================================================")
-          print(" FINAL SOURCE CHECK")
+          print(" FINAL KOTLIN SOURCE CHECK")
           print("============================================================")
 
-          checks = {
+
+          required = {
 
               "btn default action":
-                  "action:()->Unit = {}" in final,
+                  "action:()->Unit = {}"
+                  in final,
 
-              "setFillViewport":
-                  "setFillViewport(true)" in final,
+              "ScrollView":
+                  "setFillViewport(true)"
+                  in final,
 
               "pick TextView":
-                  "onPick:(Int)->Unit):TextView" in final,
+                  "onPick:(Int)->Unit):TextView"
+                  in final,
 
               "export when":
-                  "exportType.startsWith(\"report:\")" in final,
+                  "when(exportType)"
+                  not in final,
 
-              "Intent this.type":
-                  'apply{this.type="image/*";' in final,
+              "Intent type":
+                  'apply{this.type="image/*";'
+                  in final,
+
+              "renderSummary exists":
+                  "fun renderSummary()"
+                  in final,
+
+              "render exists":
+                  "fun render()"
+                  in final,
           }
 
-          failed = False
 
-          for name, ok in checks.items():
+          failed=False
+
+          for name,ok in required.items():
 
               print(
                   ("PASS" if ok else "FAIL")
@@ -929,29 +1750,104 @@ jobs:
               )
 
               if not ok:
-                  failed = True
+                  failed=True
+
+
+          # ========================================================
+          # BAD UNRESOLVED PATTERNS
+          # ========================================================
+
+          forbidden = [
+
+              'it.text="Field:',
+              'it.text="Status:',
+              'it.text="Crop:',
+              'it.text="Worker:',
+              'it.text="Method:',
+              'it.text="Advance:',
+              'it.text="Category:',
+              'it.text="Rate type:',
+          ]
+
+
+          print()
+          print(
+              "===== FORBIDDEN UNRESOLVED PATTERNS ====="
+          )
+
+
+          for pattern in forbidden:
+
+              count=final.count(pattern)
+
+              print(
+                  f"{count:3d} : {pattern}"
+              )
+
+              if count:
+                  failed=True
+
+
+          # ========================================================
+          # renderSummary MUST COME BEFORE render INSIDE CALENDAR
+          # ========================================================
+
+          calendar_start=final.index(
+              "internal fun MainActivity.attendanceCalendar"
+          )
+
+          calendar_end=final.index(
+              "internal fun MainActivity.paymentLedger",
+              calendar_start
+          )
+
+          calendar=final[
+              calendar_start:calendar_end
+          ]
+
+          rs=calendar.find(
+              "fun renderSummary()"
+          )
+
+          rr=calendar.find(
+              "fun render()"
+          )
+
+          if rs == -1 or rr == -1 or rs > rr:
+
+              print(
+                  "FAIL: renderSummary must be declared before render"
+              )
+
+              failed=True
+
+          else:
+
+              print(
+                  "PASS: renderSummary declaration order"
+              )
 
 
           if failed:
 
               raise SystemExit(
-                  "ERROR: Required source fixes failed."
+                  "ERROR: V81 Kotlin source verification FAILED."
               )
 
 
           print()
           print(
-              "ALL REQUIRED SOURCE CHECKS PASSED"
+              "ALL V81 KOTLIN SOURCE FIXES PASSED"
           )
 
           PY
 
 
       # ============================================================
-      # 11. SOURCE AUDIT
+      # 11. FINAL SOURCE AUDIT
       # ============================================================
 
-      - name: Verify patched Kotlin source
+      - name: Audit patched Kotlin source
         working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
         shell: bash
         run: |
@@ -968,7 +1864,7 @@ jobs:
           echo "$SRC"
 
           echo
-          echo "BTN / PICK:"
+          echo "===== btn / pick ====="
 
           grep -n \
             -E \
@@ -977,7 +1873,7 @@ jobs:
             || true
 
           echo
-          echo "SCROLLVIEW:"
+          echo "===== ScrollView ====="
 
           grep -n \
             -E \
@@ -986,21 +1882,33 @@ jobs:
             || true
 
           echo
-          echo "EXPORT:"
-
-          grep -n \
-            -A15 \
-            -B4 \
-            "openOutputStream" \
-            "$SRC" \
-            || true
-
-          echo
-          echo "RENDER FUNCTIONS:"
+          echo "===== render functions ====="
 
           grep -n \
             -E \
             "fun render\\(|fun renderSummary\\(" \
+            "$SRC" \
+            || true
+
+          echo
+          echo "===== suspicious unresolved it.text ====="
+
+          grep -n \
+            -E \
+            'it\.text="(Field|Status|Crop|Worker|Method|Advance|Category|Rate type):' \
+            "$SRC" \
+            && {
+              echo "ERROR: unresolved it.text remains."
+              exit 1
+            } || true
+
+          echo
+          echo "===== export ====="
+
+          grep -n \
+            -A12 \
+            -B3 \
+            "openOutputStream" \
             "$SRC" \
             || true
 
@@ -1063,7 +1971,7 @@ jobs:
 
 
       # ============================================================
-      # 15. ASSEMBLE RELEASE
+      # 15. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble unsigned Release APK
@@ -1082,9 +1990,10 @@ jobs:
             :app:assembleRelease
 
           echo
-          echo "APK FILES:"
+          echo "===== APK FILES ====="
 
-          find app/build/outputs/apk \
+          find \
+            app/build/outputs/apk \
             -type f \
             -name "*.apk" \
             -print
@@ -1106,12 +2015,17 @@ jobs:
             "app/build/outputs/apk/release/app-release-unsigned.apk"
           ]]; then
 
-            APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+            APK=\
+              "app/build/outputs/apk/release/app-release-unsigned.apk"
 
-          else
+          fi
+
+
+          if [[ -z "$APK" ]]; then
 
             APK="$(
-              find app/build/outputs/apk/release \
+              find \
+                app/build/outputs/apk/release \
                 -type f \
                 -name "*-unsigned.apk" \
                 -print \
@@ -1124,7 +2038,8 @@ jobs:
           if [[ -z "$APK" ]]; then
 
             APK="$(
-              find app/build/outputs/apk/release \
+              find \
+                app/build/outputs/apk/release \
                 -type f \
                 -name "*.apk" \
                 -print \
@@ -1136,9 +2051,10 @@ jobs:
 
           if [[ -z "$APK" ]]; then
 
-            echo "ERROR: APK not found."
+            echo "ERROR: Release APK not found."
 
-            find app/build/outputs/apk \
+            find \
+              app/build/outputs/apk \
               -type f \
               -print \
               || true
@@ -1159,7 +2075,7 @@ jobs:
 
 
       # ============================================================
-      # 17. VERIFY PACKAGE / VERSION
+      # 17. VERIFY APK PACKAGE / VERSION
       # ============================================================
 
       - name: Verify APK package and version
@@ -1171,7 +2087,7 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt"
 
           echo "============================================================"
-          echo " APK VALIDATION"
+          echo " APK PACKAGE / VERSION"
           echo "============================================================"
 
           BADGING="$(
@@ -1213,7 +2129,7 @@ jobs:
 
 
           echo
-          echo "APK PACKAGE/VERSION PASSED"
+          echo "APK PACKAGE / VERSION PASSED"
 
 
       # ============================================================
@@ -1231,51 +2147,42 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " SIGNING"
+          echo " PREPARE SIGNING"
           echo "============================================================"
-
 
           if [[ -z "${KEYSTORE_BASE64:-}" ]]; then
             echo "ERROR: KEYSTORE_BASE64 secret missing."
             exit 1
           fi
 
-
           if [[ -z "${KEYSTORE_PASSWORD:-}" ]]; then
             echo "ERROR: KEYSTORE_PASSWORD secret missing."
             exit 1
           fi
-
 
           if [[ -z "${KEY_ALIAS:-}" ]]; then
             echo "ERROR: KEY_ALIAS secret missing."
             exit 1
           fi
 
-
           if [[ -z "${KEY_PASSWORD:-}" ]]; then
             echo "ERROR: KEY_PASSWORD secret missing."
             exit 1
           fi
 
-
           SIGN_DIR="$RUNNER_TEMP/release-signing"
 
           mkdir -p "$SIGN_DIR"
-
 
           echo "$KEYSTORE_BASE64" \
             | base64 --decode \
             > "$SIGN_DIR/release.keystore"
 
-
           test -s \
             "$SIGN_DIR/release.keystore"
 
-
           echo "KEYSTORE_PATH=$SIGN_DIR/release.keystore" \
             >> "$GITHUB_ENV"
-
 
           echo "KEYSTORE READY"
 
@@ -1294,9 +2201,7 @@ jobs:
           mkdir -p \
             "$RUNNER_TEMP/apk"
 
-
           ALIGNED="$RUNNER_TEMP/apk/Majdoor-Hisaab-PRO-${VERSION_NAME}-aligned.apk"
-
 
           "$ZIPALIGN" \
             -f \
@@ -1305,13 +2210,10 @@ jobs:
             "$ANDROID_PROJECT_ROOT/$RELEASE_APK" \
             "$ALIGNED"
 
-
           test -s "$ALIGNED"
-
 
           echo "ZIPALIGNED_APK=$ALIGNED" \
             >> "$GITHUB_ENV"
-
 
           echo
           echo "ZIPALIGN PASSED"
@@ -1336,7 +2238,6 @@ jobs:
 
           SIGNED="$RUNNER_TEMP/apk/Majdoor-Hisaab-PRO-${VERSION_NAME}-Release-Signed.apk"
 
-
           "$APKSIGNER" sign \
             --ks "$KEYSTORE_PATH" \
             --ks-pass "pass:${KEYSTORE_PASSWORD}" \
@@ -1345,13 +2246,10 @@ jobs:
             --out "$SIGNED" \
             "$ZIPALIGNED_APK"
 
-
           test -s "$SIGNED"
-
 
           echo "SIGNED_APK=$SIGNED" \
             >> "$GITHUB_ENV"
-
 
           echo
           echo "APK SIGNED"
@@ -1371,14 +2269,13 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
 
           echo "============================================================"
-          echo " SIGNATURE VERIFICATION"
+          echo " APK SIGNATURE"
           echo "============================================================"
 
           "$APKSIGNER" \
             verify \
             --verbose \
             "$SIGNED_APK"
-
 
           echo
           echo "APK SIGNATURE VERIFIED"
@@ -1396,7 +2293,7 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt"
 
           echo "============================================================"
-          echo " FINAL APK"
+          echo " FINAL APK VALIDATION"
           echo "============================================================"
 
           "$AAPT" \
@@ -1405,13 +2302,11 @@ jobs:
             | grep -E \
               "package: name=|versionCode=|versionName="
 
-
           echo
           echo "APK SIZE:"
 
           ls -lh \
             "$SIGNED_APK"
-
 
           echo
           echo "SHA256:"
@@ -1421,7 +2316,7 @@ jobs:
 
 
       # ============================================================
-      # 23. FINAL ARTIFACT
+      # 23. PREPARE FINAL ARTIFACT
       # ============================================================
 
       - name: Prepare final release artifact
@@ -1434,27 +2329,23 @@ jobs:
           mkdir -p \
             "$FINAL_DIR"
 
-
           FINAL_APK="$FINAL_DIR/Majdoor-Hisaab-PRO-${VERSION_NAME}-Release-Signed.apk"
-
 
           cp \
             "$SIGNED_APK" \
             "$FINAL_APK"
 
-
           sha256sum \
             "$FINAL_APK" \
             > "$FINAL_DIR/SHA256SUMS.txt"
 
-
+          echo
           echo "============================================================"
-          echo " FINAL RELEASE"
+          echo " FINAL RELEASE ARTIFACT"
           echo "============================================================"
 
           ls -lh \
             "$FINAL_DIR"
-
 
           echo
           cat \
@@ -1488,8 +2379,8 @@ jobs:
           echo
           echo "============================================================"
           echo
-          echo "   MAJDOOR HISAAB PRO"
-          echo "   FINAL SIGNED RELEASE APK"
+          echo "       MAJDOOR HISAAB PRO"
+          echo "       FINAL SIGNED RELEASE APK"
           echo
           echo "============================================================"
           echo
@@ -1508,10 +2399,11 @@ jobs:
 
           echo
           echo "SHA256:"
+
           cat \
             final-release/SHA256SUMS.txt
 
           echo
           echo "============================================================"
-          echo " BUILD COMPLETED SUCCESSFULLY"
+          echo "       BUILD COMPLETED SUCCESSFULLY"
           echo "============================================================"
