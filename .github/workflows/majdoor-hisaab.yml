@@ -69,14 +69,6 @@ jobs:
 
       # ==========================================================
       # 3. PREPARE AND FIND PROJECT
-      #
-      # FIXED:
-      # - Git LFS ZIP support
-      # - exact ZIP search
-      # - safe ZIP copy
-      # - ZIP integrity verification
-      # - Python zip extraction
-      # - detailed diagnostics
       # ==========================================================
 
       - name: Prepare Android project
@@ -324,7 +316,9 @@ jobs:
             if [ -f "extracted/settings.gradle.kts" ] &&
                [ -f "extracted/app/build.gradle.kts" ]; then
 
-              echo "PROJECT_ROOT=extracted"
+              PROJECT_ROOT="extracted"
+
+              echo "PROJECT_ROOT=${PROJECT_ROOT}"
 
               shopt -s dotglob
 
@@ -1664,21 +1658,19 @@ jobs:
       # 14. RESTORE RELEASE KEYSTORE
       #
       # FIXED:
-      # - secret presence checked separately
-      # - base64 whitespace/newline handled
-      # - invalid base64 detected
-      # - keystore validity checked
-      # - alias checked separately
-      # - useful error message
+      # Uses the SAME RELEASE_* secrets that worked
+      # in the previous successful release build.
+      #
+      # NO NEW KEYSTORE IS GENERATED.
       # ==========================================================
 
       - name: Restore release keystore
         working-directory: project
         env:
-          KEYSTORE_B64: ${{ secrets.MH_RELEASE_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.MH_RELEASE_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -1689,63 +1681,48 @@ jobs:
           echo "=========================================="
 
           # ------------------------------------------------------
-          # NEVER PRINT SECRET VALUES
-          # Only report whether each secret exists.
+          # Check all four existing release secrets.
+          # Secret values are NEVER printed.
           # ------------------------------------------------------
 
-          if [ -z "${KEYSTORE_B64:-}" ]; then
-            echo "ERROR: MH_RELEASE_KEYSTORE_BASE64 is empty or unavailable."
-            echo ""
-            echo "Add this repository secret:"
-            echo "MH_RELEASE_KEYSTORE_BASE64"
+          if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ]; then
+            echo "ERROR: RELEASE_KEYSTORE_BASE64 is empty or unavailable."
             exit 1
           fi
 
-          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
-            echo "ERROR: MH_RELEASE_KEYSTORE_PASSWORD is empty or unavailable."
-            echo ""
-            echo "Add this repository secret:"
-            echo "MH_RELEASE_KEYSTORE_PASSWORD"
+          if [ -z "${RELEASE_KEYSTORE_PASSWORD:-}" ]; then
+            echo "ERROR: RELEASE_KEYSTORE_PASSWORD is empty or unavailable."
             exit 1
           fi
 
-          if [ -z "${KEY_PASSWORD:-}" ]; then
-            echo "ERROR: MH_RELEASE_KEY_PASSWORD is empty or unavailable."
-            echo ""
-            echo "Add this repository secret:"
-            echo "MH_RELEASE_KEY_PASSWORD"
+          if [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
+            echo "ERROR: RELEASE_KEY_ALIAS is empty or unavailable."
             exit 1
           fi
 
-          if [ -z "${KEY_ALIAS:-}" ]; then
-            echo "ERROR: MH_RELEASE_KEY_ALIAS is empty or unavailable."
-            echo ""
-            echo "Add this repository secret:"
-            echo "MH_RELEASE_KEY_ALIAS"
+          if [ -z "${RELEASE_KEY_PASSWORD:-}" ]; then
+            echo "ERROR: RELEASE_KEY_PASSWORD is empty or unavailable."
             exit 1
           fi
 
-          echo "KEYSTORE_SECRET=AVAILABLE"
-          echo "KEYSTORE_PASSWORD_SECRET=AVAILABLE"
-          echo "KEY_PASSWORD_SECRET=AVAILABLE"
-          echo "KEY_ALIAS_SECRET=AVAILABLE"
+          echo "RELEASE_KEYSTORE_BASE64=AVAILABLE"
+          echo "RELEASE_KEYSTORE_PASSWORD=AVAILABLE"
+          echo "RELEASE_KEY_ALIAS=AVAILABLE"
+          echo "RELEASE_KEY_PASSWORD=AVAILABLE"
 
 
           # ------------------------------------------------------
-          # Decode Base64 keystore safely.
-          #
-          # Removing CR/LF/space only affects Base64 formatting.
-          # It does NOT expose the secret.
+          # Decode existing release keystore.
           # ------------------------------------------------------
 
-          printf '%s' "$KEYSTORE_B64" \
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
             | tr -d '\r\n\t ' \
             | base64 --decode \
             > release.keystore
 
 
           # ------------------------------------------------------
-          # Keystore file must exist and be non-empty.
+          # Verify decoded file.
           # ------------------------------------------------------
 
           test -s release.keystore
@@ -1755,64 +1732,52 @@ jobs:
           echo "KEYSTORE_SIZE=${KEYSTORE_SIZE} bytes"
 
           if [ "$KEYSTORE_SIZE" -lt 1000 ]; then
-            echo "ERROR: decoded keystore is unexpectedly small."
-            echo "The Base64 secret is probably incorrect."
+            echo "ERROR: decoded release keystore is unexpectedly small."
             rm -f release.keystore
             exit 1
           fi
 
 
           # ------------------------------------------------------
-          # Verify Java keystore.
+          # Verify keystore + store password + alias.
+          # No store type is forced.
           # ------------------------------------------------------
 
           echo ""
-          echo "VERIFYING KEYSTORE..."
+          echo "VERIFYING RELEASE KEYSTORE..."
 
           keytool -list \
             -keystore release.keystore \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
             >/dev/null
 
 
           # ------------------------------------------------------
-          # Verify alias separately.
+          # Verify the private signing key password.
+          #
+          # This creates only a temporary CSR in RUNNER_TEMP.
+          # It does NOT modify the original keystore.
           # ------------------------------------------------------
 
-          keytool -list \
-            -v \
+          echo ""
+          echo "VERIFYING PRIVATE SIGNING KEY..."
+
+          VALIDATION_CSR="${RUNNER_TEMP}/release-key-validation.csr"
+
+          rm -f "$VALIDATION_CSR"
+
+          keytool -certreq \
+            -alias "$RELEASE_KEY_ALIAS" \
             -keystore release.keystore \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -keypass "$RELEASE_KEY_PASSWORD" \
+            -file "$VALIDATION_CSR" \
             >/dev/null
 
+          test -s "$VALIDATION_CSR"
 
-          # ------------------------------------------------------
-          # Verify private key can actually be accessed.
-          # This catches wrong key password BEFORE signing step.
-          # ------------------------------------------------------
-
-          keytool -importkeystore \
-            -srckeystore release.keystore \
-            -srcstoretype JKS \
-            -srcstorepass "$KEYSTORE_PASSWORD" \
-            -srcalias "$KEY_ALIAS" \
-            -srckeypass "$KEY_PASSWORD" \
-            -destkeystore "${RUNNER_TEMP}/keystore-validation.p12" \
-            -deststoretype PKCS12 \
-            -deststorepass "$KEYSTORE_PASSWORD" \
-            -destkeypass "$KEY_PASSWORD" \
-            -noprompt \
-            >/dev/null
-
-
-          test -s \
-            "${RUNNER_TEMP}/keystore-validation.p12"
-
-
-          rm -f \
-            "${RUNNER_TEMP}/keystore-validation.p12"
+          rm -f "$VALIDATION_CSR"
 
 
           echo ""
@@ -1859,14 +1824,17 @@ jobs:
 
       # ==========================================================
       # 16. SIGN APK
+      #
+      # FIXED:
+      # Uses the SAME RELEASE_* secrets as Step 14.
       # ==========================================================
 
       - name: Sign Release APK
         working-directory: project
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.MH_RELEASE_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
         shell: bash
         run: |
           set -Eeuo pipefail
