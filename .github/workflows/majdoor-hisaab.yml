@@ -669,24 +669,19 @@ jobs:
       # ==========================================================
       # 12. BUILD RELEASE APK
       #
-      # ONLY THIS SECTION HAS BEEN CHANGED
+      # THIS IS THE ONLY SECTION MODIFIED.
       #
-      # IMPORTANT:
-      # Previous failure was caused by broad replacements such as:
+      # AUDITED AGAINST:
+      # Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip
       #
-      # it.text -> fb.text
-      # it.text -> cropBtn.text
-      # it.text -> workerBtn.text
-      # it.text -> rateTypeBtn.text
-      # it.text -> wb.text
-      # it.text -> mb.text
-      # it.text -> adv.text
-      # it.text -> cb.text
+      # FIXES:
+      # 1. btn() default action
+      # 2. exportType when{} correction
+      # 3. scoped Button text fixes
+      # 4. attendanceCalendar renderSummary order
+      # 5. compile before assemble
       #
-      # Those replacements are NOT performed here.
-      #
-      # We first compile Kotlin and only if compilation succeeds
-      # do we assemble the release APK.
+      # NO BROAD GLOBAL REPLACEMENTS.
       # ==========================================================
 
       - name: Build Release APK
@@ -699,93 +694,697 @@ jobs:
 
           test -f "$FILE"
 
-          echo ""
-          echo "=========================================="
-          echo "RELEASE SOURCE CHECK"
-          echo "=========================================="
+          cp "$FILE" \
+            "${FILE}.before-release-fix"
 
-          echo "Kotlin file:"
-          echo "$FILE"
-
-          echo ""
-          echo "IMPORTANT:"
-          echo "No broad UI variable replacements will be performed."
 
           echo ""
           echo "=========================================="
-          echo "CHECKING PREVIOUS SAFE FIXES"
+          echo "AUDITED RELEASE SOURCE PATCH"
           echo "=========================================="
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          file = Path(
+              "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+          )
+
+          source = file.read_text(encoding="utf-8")
+
+
+          # ======================================================
+          # Helper
+          # ======================================================
+
+          def patch_block(start_marker, end_marker, replacements):
+              global source
+
+              start = source.find(start_marker)
+
+              if start < 0:
+                  raise SystemExit(
+                      f"ERROR: start marker not found: {start_marker}"
+                  )
+
+              end = source.find(end_marker, start)
+
+              if end < 0:
+                  raise SystemExit(
+                      f"ERROR: end marker not found: {end_marker}"
+                  )
+
+              block = source[start:end]
+
+              for old, new in replacements:
+
+                  if old not in block:
+                      raise SystemExit(
+                          "ERROR: expected source pattern not found "
+                          f"in {start_marker}: {old}"
+                      )
+
+                  block = block.replace(old, new)
+
+              source = source[:start] + block + source[end:]
+
+
+          # ======================================================
+          # FIX 1
+          #
+          # btn() is called in some places without action.
+          #
+          # Original:
+          #
+          # btn("Attendance time")
+          #
+          # Original function required action.
+          #
+          # Make action optional safely.
+          # ======================================================
+
+          old_btn = (
+              "internal fun MainActivity.btn("
+              "s:String,action:()->Unit"
+              ")=Button(this).apply{"
+          )
+
+          new_btn = (
+              "internal fun MainActivity.btn("
+              "s:String,action:()->Unit = {}"
+              ")=Button(this).apply{"
+          )
+
+          if old_btn in source:
+
+              source = source.replace(
+                  old_btn,
+                  new_btn,
+                  1
+              )
+
+          elif new_btn not in source:
+
+              raise SystemExit(
+                  "ERROR: btn() definition not found"
+              )
+
+
+          # ======================================================
+          # FIX 2
+          #
+          # cropForm()
+          #
+          # Only cropForm gets fb.text.
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.cropForm",
+              "internal fun MainActivity.attendance()",
+              [
+                  (
+                      'it.text="Field: ${fields[i].name}"',
+                      'fb.text="Field: ${fields[i].name}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 3
+          #
+          # productionForm()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.productionForm",
+              "internal fun MainActivity.revenue()",
+              [
+                  (
+                      'it.text="Crop: ${crops[i].name}"',
+                      'cropBtn.text="Crop: ${crops[i].name}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 4
+          #
+          # revenueForm()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.revenueForm",
+              "internal fun MainActivity.addWork()",
+              [
+                  (
+                      'it.text="Crop: ${crops[i].name}"',
+                      'cropBtn.text="Crop: ${crops[i].name}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 5
+          #
+          # workForm()
+          #
+          # Every replacement is restricted to workForm().
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.workForm",
+              "internal fun MainActivity.workDetail",
+              [
+                  (
+                      'it.text="Field: ${fields[i].name}"',
+                      'fieldBtn.text="Field: ${fields[i].name}"'
+                  ),
+                  (
+                      'it.text="Crop: ${crops[i].name}"',
+                      'cropBtn.text="Crop: ${crops[i].name}"'
+                  ),
+                  (
+                      'it.text="Workers: ${selectedWorkers.distinct().size}"',
+                      'workerBtn.text="Workers: ${selectedWorkers.distinct().size}"'
+                  ),
+                  (
+                      'it.text="Rate type: $rateType"',
+                      'rateTypeBtn.text="Rate type: $rateType"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 6
+          #
+          # paymentForm()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.paymentForm",
+              "internal fun MainActivity.expenses()",
+              [
+                  (
+                      'it.text="Worker: ${workers[i].name}"',
+                      'wb.text="Worker: ${workers[i].name}"'
+                  ),
+                  (
+                      'it.text="Method: ${methods[i]}"',
+                      'mb.text="Method: ${methods[i]}"'
+                  ),
+                  (
+                      'it.text="Advance: ${if(advance)"YES" else "NO"}"',
+                      'adv.text="Advance: ${if(advance)"YES" else "NO"}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 7
+          #
+          # expenseForm()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.expenseForm",
+              "internal fun MainActivity.reportFiltersDialog()",
+              [
+                  (
+                      'it.text="Category: $cat"',
+                      'cb.text="Category: $cat"'
+                  ),
+                  (
+                      'it.text="Field: Not linked"',
+                      'fb.text="Field: Not linked"'
+                  ),
+                  (
+                      'it.text="Field: ${fields[i-1].name}"',
+                      'fb.text="Field: ${fields[i-1].name}"'
+                  ),
+                  (
+                      'it.text="Crop: Not linked"',
+                      'crb.text="Crop: Not linked"'
+                  ),
+                  (
+                      'it.text="Crop: ${crops[i-1].name}"',
+                      'crb.text="Crop: ${crops[i-1].name}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 8
+          #
+          # reportFiltersDialog()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.reportFiltersDialog",
+              "internal fun MainActivity.reports()",
+              [
+                  (
+                      'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
+                      'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"'
+                  ),
+                  (
+                      'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
+                      'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'
+                  ),
+                  (
+                      'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
+                      'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 9
+          #
+          # workTemplateForm()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.workTemplateForm",
+              "internal fun MainActivity.fieldProfile",
+              [
+                  (
+                      'it.text="Rate type: $rateType"',
+                      'rateTypeBtn.text="Rate type: $rateType"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 10
+          #
+          # attendanceForm()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.attendanceForm",
+              "internal fun MainActivity.attendanceHistory()",
+              [
+                  (
+                      'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
+                      'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'
+                  ),
+                  (
+                      'it.text="Status: $status"',
+                      'statusBtn.text="Status: $status"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 11
+          #
+          # customReport()
+          # ======================================================
+
+          patch_block(
+              "internal fun MainActivity.customReport",
+              "internal fun MainActivity.auditLogScreen()",
+              [
+                  (
+                      'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
+                      'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"'
+                  ),
+                  (
+                      'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
+                      'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'
+                  ),
+                  (
+                      'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
+                      'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'
+                  )
+              ]
+          )
+
+
+          # ======================================================
+          # FIX 12
+          #
+          # handleActivityResult()
+          #
+          # Original code incorrectly used:
+          #
+          # when(exportType) {
+          #     exportType.startsWith(...) -> ...
+          # }
+          #
+          # A String subject cannot have Boolean branch labels.
+          #
+          # Correct form:
+          #
+          # when {
+          #     exportType == ...
+          #     exportType.startsWith(...)
+          # }
+          # ======================================================
+
+          old_export = '''contentResolver.openOutputStream(uri)!!.use{out->when(exportType){
+                    "workers"->app.export.csvWorkers(out)
+                    "ledger"->app.export.csvLedger(out)
+                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
+                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
+                    "pdf"->app.export.pdfSummary(out)
+                    "backup"->app.backup.export(out)
+                }}'''
+
+          new_export = '''contentResolver.openOutputStream(uri)!!.use{out->when{
+                    exportType=="workers"->app.export.csvWorkers(out)
+                    exportType=="ledger"->app.export.csvLedger(out)
+                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
+                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
+                    exportType=="pdf"->app.export.pdfSummary(out)
+                    exportType=="backup"->app.backup.export(out)
+                    else->throw IllegalArgumentException("Unknown export type: $exportType")
+                }}'''
+
+          if old_export not in source:
+
+              if new_export not in source:
+                  raise SystemExit(
+                      "ERROR: exportType block not found"
+                  )
+
+          else:
+
+              source = source.replace(
+                  old_export,
+                  new_export,
+                  1
+              )
+
+
+          # ======================================================
+          # FIX 13
+          #
+          # attendanceCalendar()
+          #
+          # render() calls renderSummary(), but the original local
+          # function was declared after render().
+          #
+          # Move renderSummary() before render().
+          # ======================================================
+
+          calendar_start = source.find(
+              "internal fun MainActivity.attendanceCalendar(){"
+          )
+
+          if calendar_start < 0:
+              raise SystemExit(
+                  "ERROR: attendanceCalendar() not found"
+              )
+
+          calendar_end = source.find(
+              "internal fun MainActivity.paymentLedger()",
+              calendar_start
+          )
+
+          if calendar_end < 0:
+              raise SystemExit(
+                  "ERROR: paymentLedger() marker not found"
+              )
+
+          calendar = source[
+              calendar_start:calendar_end
+          ]
+
+
+          render_match = re.search(
+              r'        fun render\(\)\{.*?'
+              r'\n        \}\n'
+              r'        fun renderSummary\(\)\{',
+              calendar,
+              re.S
+          )
+
+          if not render_match:
+              raise SystemExit(
+                  "ERROR: attendance render()/renderSummary() block not found"
+              )
+
+
+          render_part = render_match.group(0)
+
+          render_part = render_part[
+              :-len("        fun renderSummary(){")
+          ]
+
+
+          summary_start = (
+              render_match.start()
+              + render_match.group(0).rfind(
+                  "        fun renderSummary(){"
+              )
+          )
+
+
+          summary_match = re.search(
+              r'        fun renderSummary\(\)\{.*?'
+              r'\n        \}\n\n'
+              r'        val nav=',
+              calendar[summary_start:],
+              re.S
+          )
+
+          if not summary_match:
+              raise SystemExit(
+                  "ERROR: renderSummary() body not found"
+              )
+
+
+          summary_block = summary_match.group(0)
+
+          summary_block = summary_block[
+              :-len("\n\n        val nav=")
+          ]
+
+
+          region_start = render_match.start()
+
+          region_end = (
+              summary_start
+              + summary_match.end()
+          )
+
+
+          new_calendar_region = (
+              summary_block
+              + "\n"
+              + render_part
+              + "\n\n"
+              + "        val nav="
+          )
+
+
+          calendar = (
+              calendar[:region_start]
+              + new_calendar_region
+              + calendar[region_end:]
+          )
+
+
+          source = (
+              source[:calendar_start]
+              + calendar
+              + source[calendar_end:]
+          )
+
+
+          # ======================================================
+          # WRITE PATCHED SOURCE
+          # ======================================================
+
+          file.write_text(
+              source,
+              encoding="utf-8"
+          )
+
+          print("RELEASE_SOURCE_PATCH=PASS")
+          PY
+
+
+          echo ""
+          echo "=========================================="
+          echo "RELEASE SOURCE AUDIT"
+          echo "=========================================="
+
+
+          # ------------------------------------------------------
+          # btn() must have optional action.
+          # ------------------------------------------------------
+
+          grep -Fq \
+            'internal fun MainActivity.btn(s:String,action:()->Unit = {})' \
+            "$FILE"
+
+
+          # ------------------------------------------------------
+          # Old exportType syntax must be gone.
+          # ------------------------------------------------------
 
           if grep -Fq \
+            'when(exportType){' \
+            "$FILE"; then
+
+            echo "ERROR: old invalid when(exportType) remains"
+            exit 1
+
+          fi
+
+
+          # ------------------------------------------------------
+          # No unresolved setItems it.text references.
+          #
+          # Exactly three it.text references are legitimate:
+          # statusViews.forEach{it.text=...}
+          # ------------------------------------------------------
+
+          python3 - "$FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          file = Path(sys.argv[1])
+          text = file.read_text(encoding="utf-8")
+
+          lines = text.splitlines()
+
+          bad = []
+
+          for number, line in enumerate(lines, 1):
+
+              if "it.text=" in line:
+
+                  if "statusViews.forEach" not in line:
+                      bad.append(
+                          f"{number}: {line}"
+                      )
+
+          if bad:
+
+              print(
+                  "ERROR: unresolved it.text references found:"
+              )
+
+              for item in bad:
+                  print(item)
+
+              raise SystemExit(1)
+
+          print(
+              "UI_BUTTON_TEXT_SCOPE_AUDIT=PASS"
+          )
+          PY
+
+
+          # ------------------------------------------------------
+          # renderSummary must appear BEFORE render in
+          # attendanceCalendar().
+          # ------------------------------------------------------
+
+          python3 - "$FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text(
+              encoding="utf-8"
+          )
+
+          start = text.find(
+              "internal fun MainActivity.attendanceCalendar(){"
+          )
+
+          end = text.find(
+              "internal fun MainActivity.paymentLedger()",
+              start
+          )
+
+          if start < 0 or end < 0:
+              raise SystemExit(
+                  "ERROR: attendanceCalendar boundaries not found"
+              )
+
+          block = text[start:end]
+
+          summary = block.find(
+              "fun renderSummary(){"
+          )
+
+          render = block.find(
+              "fun render(){"
+          )
+
+          if summary < 0 or render < 0:
+              raise SystemExit(
+                  "ERROR: render functions missing"
+              )
+
+          if summary >= render:
+              raise SystemExit(
+                  "ERROR: renderSummary() still appears after render()"
+              )
+
+          print(
+              "ATTENDANCE_RENDER_ORDER=PASS"
+          )
+          PY
+
+
+          # ------------------------------------------------------
+          # Safe Step 4 fixes must remain.
+          # ------------------------------------------------------
+
+          ! grep -Fq \
             "app.audit.auditLog()" \
-            "$FILE"; then
+            "$FILE"
 
-            echo "ERROR: old auditLog() reference remains"
-            exit 1
-
-          fi
-
-
-          if grep -Fq \
+          ! grep -Fq \
             "app.audit.clearAuditLog()" \
-            "$FILE"; then
+            "$FILE"
 
-            echo "ERROR: old clearAuditLog() reference remains"
-            exit 1
-
-          fi
-
-
-          if grep -Fq \
+          ! grep -Fq \
             "getSystemService(ALARM_SERVICE)" \
-            "$FILE"; then
-
-            echo "ERROR: old ALARM_SERVICE reference remains"
-            exit 1
-
-          fi
+            "$FILE"
 
 
           grep -Fq \
             "app.audit.list()" \
             "$FILE"
 
-
           grep -Fq \
             "app.audit.clear()" \
             "$FILE"
-
 
           grep -Fq \
             "Context.ALARM_SERVICE" \
             "$FILE"
 
 
-          echo "SOURCE_SAFE_FIX_CHECK=PASS"
+          echo ""
+          echo "=========================================="
+          echo "SOURCE_AUDIT=PASS"
+          echo "=========================================="
 
 
-          # ------------------------------------------------------
-          # IMPORTANT:
-          # Do NOT modify MainActivityScreens.kt here.
-          #
-          # The previous failed workflow modified it with broad
-          # string replacements. That caused:
-          #
-          # Unresolved reference 'fb'
-          # Unresolved reference 'cropBtn'
-          # Unresolved reference 'workerBtn'
-          # Unresolved reference 'rateTypeBtn'
-          # Unresolved reference 'wb'
-          # Unresolved reference 'mb'
-          # Unresolved reference 'adv'
-          # Unresolved reference 'cb'
-          #
-          # No such modifications are made now.
-          # ------------------------------------------------------
+          # ======================================================
+          # ACTUAL RELEASE KOTLIN COMPILATION
+          # ======================================================
 
           echo ""
           echo "=========================================="
-          echo "COMPILE RELEASE KOTLIN"
+          echo "RELEASE KOTLIN COMPILATION"
           echo "=========================================="
 
           gradle \
@@ -798,17 +1397,17 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo "KOTLIN COMPILATION=PASS"
+          echo "KOTLIN_COMPILATION=PASS"
           echo "=========================================="
 
 
-          # ------------------------------------------------------
-          # Assemble release APK
-          # ------------------------------------------------------
+          # ======================================================
+          # ACTUAL RELEASE APK BUILD
+          # ======================================================
 
           echo ""
           echo "=========================================="
-          echo "ASSEMBLE RELEASE APK"
+          echo "ASSEMBLING RELEASE APK"
           echo "=========================================="
 
           gradle \
@@ -823,7 +1422,7 @@ jobs:
 
 
           # ------------------------------------------------------
-          # Verify APK exists
+          # APK must exist.
           # ------------------------------------------------------
 
           if [ ! -s "$APK" ]; then
