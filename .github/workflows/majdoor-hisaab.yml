@@ -34,7 +34,7 @@ jobs:
 
   build-release:
 
-    name: Build Signed Release APK
+    name: Build Final Signed Release APK
 
     runs-on: ubuntu-latest
 
@@ -60,7 +60,20 @@ jobs:
 
 
       # ============================================================
-      # 3. LOCATE ANDROID SDK
+      # 3. SETUP GRADLE 8.11.1
+      #
+      # IMPORTANT:
+      # This does NOT require gradlew.
+      # ============================================================
+
+      - name: Setup Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+
+      # ============================================================
+      # 4. LOCATE ANDROID SDK
       # ============================================================
 
       - name: Locate Android SDK
@@ -134,7 +147,7 @@ jobs:
 
 
       # ============================================================
-      # 4. INSTALL ANDROID SDK 36
+      # 5. INSTALL ANDROID SDK 36
       # ============================================================
 
       - name: Install Android SDK 36
@@ -158,7 +171,7 @@ jobs:
 
 
       # ============================================================
-      # 5. VERIFY ANDROID SDK
+      # 6. VERIFY ANDROID SDK
       # ============================================================
 
       - name: Verify Android SDK
@@ -184,7 +197,7 @@ jobs:
 
 
       # ============================================================
-      # 6. VERIFY V82 ZIP
+      # 7. VERIFY V82 ZIP
       # ============================================================
 
       - name: Verify V82 ZIP
@@ -220,7 +233,7 @@ jobs:
 
 
       # ============================================================
-      # 7. EXTRACT V82 PROJECT
+      # 8. EXTRACT PROJECT
       # ============================================================
 
       - name: Extract V82 Project
@@ -233,7 +246,6 @@ jobs:
           echo "=============================================="
 
           rm -rf build_source
-
           mkdir -p build_source
 
           unzip -q "$ZIP_NAME" -d build_source
@@ -276,107 +288,7 @@ jobs:
 
 
       # ============================================================
-      # 8. FIX GRADLE WRAPPER EXECUTABLE PERMISSION
-      # ============================================================
-
-      - name: Fix Gradle Wrapper Permissions
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FIX GRADLE WRAPPER PERMISSIONS"
-          echo "=============================================="
-
-          echo ""
-          echo "PROJECT:"
-          echo "$PROJECT_DIR"
-
-          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-
-            echo ""
-            echo "ERROR: gradlew not found."
-
-            echo ""
-            echo "Project files:"
-
-            find "$PROJECT_DIR" \
-              -maxdepth 3 \
-              -type f \
-              -print \
-              | sort
-
-            exit 1
-          fi
-
-          chmod +x "$PROJECT_DIR/gradlew"
-
-          if [ -f "$PROJECT_DIR/gradlew.bat" ]; then
-            chmod +x "$PROJECT_DIR/gradlew.bat" || true
-          fi
-
-          echo ""
-          echo "GRADLE WRAPPER PERMISSIONS:"
-          ls -l "$PROJECT_DIR/gradlew"
-
-          if [ ! -x "$PROJECT_DIR/gradlew" ]; then
-            echo ""
-            echo "ERROR: gradlew is still not executable."
-            exit 1
-          fi
-
-          echo ""
-          echo "Gradle wrapper executable permission FIXED."
-
-
-      # ============================================================
-      # 9. VERIFY GRADLE WRAPPER
-      # ============================================================
-
-      - name: Verify Gradle Wrapper
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "VERIFY GRADLE WRAPPER"
-          echo "=============================================="
-
-          cd "$PROJECT_DIR"
-
-          test -f "gradlew"
-          test -x "gradlew"
-
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo ""
-            echo "ERROR: gradle-wrapper.jar not found."
-            exit 1
-          fi
-
-          if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-            echo ""
-            echo "ERROR: gradle-wrapper.properties not found."
-            exit 1
-          fi
-
-          echo ""
-          echo "gradlew:"
-          ls -lh gradlew
-
-          echo ""
-          echo "wrapper jar:"
-          ls -lh gradle/wrapper/gradle-wrapper.jar
-
-          echo ""
-          echo "wrapper properties:"
-          ls -lh gradle/wrapper/gradle-wrapper.properties
-
-          echo ""
-          echo "GRADLE WRAPPER VERIFIED."
-
-
-      # ============================================================
-      # 10. VERIFY ANDROID PROJECT
+      # 9. VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android Project
@@ -398,7 +310,6 @@ jobs:
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
-
             echo "ERROR: app Gradle file not found."
             exit 1
           fi
@@ -408,27 +319,63 @@ jobs:
 
 
       # ============================================================
-      # 11. SETUP GRADLE
+      # 10. GRADLE ENVIRONMENT
+      #
+      # IMPORTANT:
+      # Uses installed Gradle, NOT ./gradlew.
       # ============================================================
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-
-
-      # ============================================================
-      # 12. VERIFY KOTLIN SOURCES
-      # ============================================================
-
-      - name: Locate V82 Kotlin Sources
+      - name: Verify Gradle Environment
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "LOCATE V82 KOTLIN SOURCES"
+          echo "GRADLE ENVIRONMENT"
+          echo "=============================================="
+
+          echo ""
+          echo "JAVA:"
+          java -version
+
+          echo ""
+          echo "GRADLE:"
+          gradle --version
+
+          DETECTED=$(gradle --version \
+            | awk '/^Gradle / {print $2; exit}')
+
+          echo ""
+          echo "EXPECTED:"
+          echo "$GRADLE_VERSION"
+
+          echo ""
+          echo "DETECTED:"
+          echo "$DETECTED"
+
+          if [ "$DETECTED" != "$GRADLE_VERSION" ]; then
+            echo ""
+            echo "ERROR: Gradle version mismatch."
+            exit 1
+          fi
+
+          echo ""
+          echo "GRADLE ENVIRONMENT PASSED."
+
+
+      # ============================================================
+      # 11. VERIFY KOTLIN SOURCES
+      # ============================================================
+
+      - name: Locate Kotlin Sources
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "LOCATE KOTLIN SOURCES"
           echo "=============================================="
 
           KOTLIN_COUNT=$(find app/src/main \
@@ -441,7 +388,6 @@ jobs:
           echo "$KOTLIN_COUNT"
 
           if [ "$KOTLIN_COUNT" -eq 0 ]; then
-            echo ""
             echo "ERROR: No Kotlin source files found."
             exit 1
           fi
@@ -454,18 +400,14 @@ jobs:
 
 
       # ============================================================
-      # 13. SAFE btn() REPAIR
+      # 12. SAFE btn() REPAIR
       # ============================================================
 
-      - name: Repair V82 Kotlin btn Actions
+      - name: Repair Kotlin btn Actions
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "REPAIR V82 btn() ACTIONS"
-          echo "=============================================="
 
           python3 <<'PY'
           from pathlib import Path
@@ -474,7 +416,6 @@ jobs:
 
 
           def find_close(s, start):
-
               depth = 1
               i = start
               mode = "normal"
@@ -511,7 +452,6 @@ jobs:
 
                       i += 1
 
-
                   elif mode == "string":
 
                       if s[i] == "\\":
@@ -523,7 +463,6 @@ jobs:
 
                       i += 1
 
-
                   elif mode == "char":
 
                       if s[i] == "\\":
@@ -534,7 +473,6 @@ jobs:
                           mode = "normal"
 
                       i += 1
-
 
                   else:
 
@@ -548,7 +486,6 @@ jobs:
 
 
           def has_top_level_comma(content):
-
               depth = 0
               i = 0
               mode = "normal"
@@ -581,7 +518,6 @@ jobs:
 
                       i += 1
 
-
                   elif mode == "string":
 
                       if content[i] == "\\":
@@ -593,7 +529,6 @@ jobs:
 
                       i += 1
 
-
                   elif mode == "char":
 
                       if content[i] == "\\":
@@ -604,7 +539,6 @@ jobs:
                           mode = "normal"
 
                       i += 1
-
 
                   else:
 
@@ -619,13 +553,9 @@ jobs:
 
           total = 0
 
-
           for path in root.rglob("*.kt"):
 
-              text = path.read_text(
-                  encoding="utf-8"
-              )
-
+              text = path.read_text(encoding="utf-8")
               patches = []
 
               i = 0
@@ -637,10 +567,7 @@ jobs:
                   if j < 0:
                       break
 
-                  k = find_close(
-                      text,
-                      j + 4
-                  )
+                  k = find_close(text, j + 4)
 
                   if k is None:
                       raise SystemExit(
@@ -650,7 +577,6 @@ jobs:
                   content = text[j + 4:k]
 
                   if has_top_level_comma(content):
-
                       i = k + 1
                       continue
 
@@ -666,19 +592,15 @@ jobs:
                       nxt < len(text)
                       and text[nxt] == "{"
                   ):
-
                       i = k + 1
                       continue
 
                   patches.append(k + 1)
-
                   i = k + 1
-
 
               if patches:
 
                   for pos in reversed(patches):
-
                       text = (
                           text[:pos]
                           + " {}"
@@ -692,27 +614,19 @@ jobs:
 
                   print(
                       f"PATCHED {path}: "
-                      f"{len(patches)} action-less btn() calls"
+                      f"{len(patches)} actionless btn() calls"
                   )
 
                   total += len(patches)
 
-
           print("")
-          print(
-              "TOTAL btn() FIXES:",
-              total
-          )
-
-          print("")
-          print(
-              "btn() repair completed safely."
-          )
+          print("TOTAL btn() FIXES:", total)
+          print("btn() repair completed.")
           PY
 
 
       # ============================================================
-      # 14. FIX INTENT TYPE SHADOWING
+      # 13. FIX INTENT TYPE SHADOWING
       # ============================================================
 
       - name: Fix Intent Type Receiver Shadowing
@@ -721,15 +635,12 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "FIX INTENT TYPE RECEIVER SHADOWING"
-          echo "=============================================="
-
           SRC="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
 
           if [ ! -f "$SRC" ]; then
-            echo "ERROR: MainActivityScreens.kt not found."
-            exit 1
+            echo "WARNING: MainActivityScreens.kt not found."
+            echo "Skipping targeted Intent repair."
+            exit 0
           fi
 
           python3 <<'PY'
@@ -739,9 +650,7 @@ jobs:
               "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
           )
 
-          text = p.read_text(
-              encoding="utf-8"
-          )
+          text = p.read_text(encoding="utf-8")
 
           replacements = {
               '.apply{type="image/*";':
@@ -761,428 +670,97 @@ jobs:
               count = text.count(old)
 
               if count:
-
-                  text = text.replace(
-                      old,
-                      new
-                  )
-
+                  text = text.replace(old, new)
                   total += count
+                  print(f"FIXED {count} occurrence(s)")
 
-                  print(
-                      f"FIXED {count} occurrence(s)"
-                  )
-
-          p.write_text(
-              text,
-              encoding="utf-8"
-          )
+          p.write_text(text, encoding="utf-8")
 
           print("")
-          print(
-              "TOTAL INTENT TYPE FIXES:",
-              total
-          )
+          print("TOTAL INTENT TYPE FIXES:", total)
           PY
 
           echo ""
-          echo "INTENT TYPE FIX PASSED."
+          echo "INTENT TYPE REPAIR PASSED."
 
 
       # ============================================================
-      # 15. REPAIR INTEGRITY
+      # 14. FINAL SOURCE INTEGRITY AUDIT
       # ============================================================
 
-      - name: Verify V82 Repair Integrity
+      - name: Final Kotlin Source Audit
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY V82 REPAIR INTEGRITY"
+          echo "FINAL KOTLIN SOURCE AUDIT"
           echo "=============================================="
-
 
           if grep -R -n -E \
             'listOf\([^)]*\)\{\}[+]' \
             app/src/main \
             --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: listOf() corruption detected."
+            echo "ERROR: listOf corruption detected."
             exit 1
           fi
-
 
           if grep -R -n \
             '){}\.toTypedArray' \
             app/src/main \
             --include="*.kt"; then
-
-            echo ""
             echo "ERROR: toTypedArray corruption detected."
             exit 1
           fi
-
 
           if grep -R -n \
             'fillViewport[[:space:]]*=' \
             app/src/main \
             --include="*.kt" \
             --include="*.java"; then
-
-            echo ""
             echo "ERROR: Invalid fillViewport assignment."
             exit 1
           fi
-
 
           if grep -R -n -E \
             'btn\(.*\)\{[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*->' \
             app/src/main \
             --include="*.kt"; then
-
-            echo ""
             echo "ERROR: Invalid btn lambda parameter."
             exit 1
           fi
-
 
           if grep -R -n -E \
             'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
             app/src/main \
             --include="*.kt"; then
-
-            echo ""
             echo "ERROR: Invalid lateinit Button workaround."
             exit 1
           fi
-
 
           if grep -R -n \
             'when(exportType)' \
             app/src/main \
             --include="*.kt"; then
-
-            echo ""
             echo "ERROR: Old when(exportType) found."
             exit 1
           fi
-
 
           if grep -R -n -E \
             'fun[[:space:]]+MainActivity\.pick.*:[[:space:]]*Button' \
             app/src/main \
             --include="*.kt"; then
-
-            echo ""
             echo "ERROR: pick() still returns Button."
             exit 1
           fi
 
-
           echo ""
-          echo "REPAIR INTEGRITY PASSED."
+          echo "SOURCE AUDIT PASSED."
 
 
       # ============================================================
-      # 16. FINAL btn AUDIT
-      # ============================================================
-
-      - name: Final btn Audit
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FINAL btn() AUDIT"
-          echo "=============================================="
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          root = Path("app/src/main")
-
-
-          def find_close(s, start):
-
-              depth = 1
-              i = start
-              mode = "normal"
-
-              while i < len(s):
-
-                  if mode == "normal":
-
-                      if s.startswith('"""', i):
-                          mode = "triple"
-                          i += 3
-                          continue
-
-                      c = s[i]
-
-                      if c == '"':
-                          mode = "string"
-
-                      elif c == "'":
-                          mode = "char"
-
-                      elif c == "(":
-                          depth += 1
-
-                      elif c == ")":
-                          depth -= 1
-
-                          if depth == 0:
-                              return i
-
-                      i += 1
-
-
-                  elif mode == "string":
-
-                      if s[i] == "\\":
-                          i += 2
-                          continue
-
-                      if s[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-
-                  elif mode == "char":
-
-                      if s[i] == "\\":
-                          i += 2
-                          continue
-
-                      if s[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-
-                  else:
-
-                      if s.startswith('"""', i):
-                          mode = "normal"
-                          i += 3
-                      else:
-                          i += 1
-
-              return None
-
-
-          def has_top_level_comma(content):
-
-              depth = 0
-              i = 0
-              mode = "normal"
-
-              while i < len(content):
-
-                  if mode == "normal":
-
-                      if content.startswith('"""', i):
-                          mode = "triple"
-                          i += 3
-                          continue
-
-                      c = content[i]
-
-                      if c == '"':
-                          mode = "string"
-
-                      elif c == "'":
-                          mode = "char"
-
-                      elif c == "(":
-                          depth += 1
-
-                      elif c == ")":
-                          depth -= 1
-
-                      elif c == "," and depth == 0:
-                          return True
-
-                      i += 1
-
-
-                  elif mode == "string":
-
-                      if content[i] == "\\":
-                          i += 2
-                          continue
-
-                      if content[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-
-                  elif mode == "char":
-
-                      if content[i] == "\\":
-                          i += 2
-                          continue
-
-                      if content[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-
-                  else:
-
-                      if content.startswith('"""', i):
-                          mode = "normal"
-                          i += 3
-                      else:
-                          i += 1
-
-              return False
-
-
-          suspicious = []
-
-
-          for path in root.rglob("*.kt"):
-
-              text = path.read_text(
-                  encoding="utf-8"
-              )
-
-              i = 0
-
-              while True:
-
-                  j = text.find("btn(", i)
-
-                  if j < 0:
-                      break
-
-                  k = find_close(
-                      text,
-                      j + 4
-                  )
-
-                  if k is None:
-                      raise SystemExit(
-                          f"ERROR: Cannot parse {path}"
-                      )
-
-                  content = text[j + 4:k]
-
-                  if has_top_level_comma(content):
-
-                      i = k + 1
-                      continue
-
-                  nxt = k + 1
-
-                  while (
-                      nxt < len(text)
-                      and text[nxt].isspace()
-                  ):
-                      nxt += 1
-
-                  if (
-                      nxt < len(text)
-                      and text[nxt] == "{"
-                  ):
-
-                      i = k + 1
-                      continue
-
-                  line = (
-                      text.count("\n", 0, j)
-                      + 1
-                  )
-
-                  suspicious.append(
-                      f"{path}:{line}"
-                  )
-
-                  i = k + 1
-
-
-          if suspicious:
-
-              print("")
-              print(
-                  "ERROR: Actionless btn() calls remain:"
-              )
-
-              for x in suspicious:
-                  print(x)
-
-              raise SystemExit(1)
-
-
-          print("")
-          print(
-              "PASS: No actionless btn() calls remain."
-          )
-          PY
-
-          echo ""
-          echo "FINAL btn AUDIT PASSED."
-
-
-      # ============================================================
-      # 17. GRADLE ENVIRONMENT
-      # ============================================================
-
-      - name: Gradle Environment
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "GRADLE ENVIRONMENT"
-          echo "=============================================="
-
-          echo ""
-          echo "JAVA:"
-          java -version
-
-          echo ""
-          echo "SYSTEM GRADLE:"
-          gradle --version
-
-          echo ""
-          echo "EXPECTED GRADLE VERSION:"
-          echo "$GRADLE_VERSION"
-
-          SYSTEM_GRADLE_VERSION=$(gradle --version \
-            | awk '/^Gradle / {print $2; exit}')
-
-          echo ""
-          echo "DETECTED GRADLE VERSION:"
-          echo "$SYSTEM_GRADLE_VERSION"
-
-          if [ "$SYSTEM_GRADLE_VERSION" != "$GRADLE_VERSION" ]; then
-            echo ""
-            echo "ERROR: Gradle version mismatch."
-            echo "Expected: $GRADLE_VERSION"
-            echo "Detected: $SYSTEM_GRADLE_VERSION"
-            exit 1
-          fi
-
-          echo ""
-          echo "ANDROID_HOME:"
-          echo "$ANDROID_HOME"
-
-          echo ""
-          echo "GRADLE ENVIRONMENT PASSED."
-
-
-      # ============================================================
-      # 18. CLEAN PROJECT
+      # 15. CLEAN
       # ============================================================
 
       - name: Clean Project
@@ -1190,10 +768,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "CLEAN PROJECT"
-          echo "=============================================="
 
           gradle \
             --no-daemon \
@@ -1205,7 +779,7 @@ jobs:
 
 
       # ============================================================
-      # 19. COMPILE RELEASE KOTLIN
+      # 16. COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -1225,13 +799,11 @@ jobs:
             :app:compileReleaseKotlin
 
           echo ""
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN PASSED"
-          echo "=============================================="
+          echo "COMPILE RELEASE KOTLIN PASSED."
 
 
       # ============================================================
-      # 20. ASSEMBLE RELEASE APK
+      # 17. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1251,23 +823,17 @@ jobs:
             :app:assembleRelease
 
           echo ""
-          echo "=============================================="
-          echo "ASSEMBLE RELEASE APK PASSED"
-          echo "=============================================="
+          echo "ASSEMBLE RELEASE APK PASSED."
 
 
       # ============================================================
-      # 21. LOCATE RELEASE APK
+      # 18. LOCATE APK
       # ============================================================
 
       - name: Locate Release APK
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "LOCATE RELEASE APK"
-          echo "=============================================="
 
           APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
@@ -1276,8 +842,13 @@ jobs:
             -quit)
 
           if [ -z "$APK" ]; then
-            echo ""
             echo "ERROR: Release APK not found."
+
+            find "$PROJECT_DIR/app/build/outputs" \
+              -type f \
+              -print \
+              2>/dev/null || true
+
             exit 1
           fi
 
@@ -1289,17 +860,13 @@ jobs:
 
 
       # ============================================================
-      # 22. VERIFY APK PACKAGE
+      # 19. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "VERIFY APK PACKAGE"
-          echo "=============================================="
 
           APK="$APK_PATH"
 
@@ -1318,9 +885,7 @@ jobs:
 
             echo ""
             echo "ERROR: Package name mismatch."
-            echo ""
-            echo "EXPECTED:"
-            echo "$PACKAGE_NAME"
+            echo "Expected: $PACKAGE_NAME"
 
             exit 1
           fi
@@ -1330,19 +895,10 @@ jobs:
 
 
       # ============================================================
-      # 23. VERIFY / PREPARE RELEASE SIGNING
-      #
-      # FIX:
-      # Temporary keystore is now JKS.
-      # Store password == key password.
-      #
-      # This directly fixes:
-      # BadPaddingException
-      # Get Key failed
-      # Failed to load signer
+      # 20. PREPARE SIGNING
       # ============================================================
 
-      - name: Verify Release Signing Secrets
+      - name: Prepare Release Signing
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -1353,14 +909,10 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "VERIFY RELEASE SIGNING"
+          echo "PREPARE RELEASE SIGNING"
           echo "=============================================="
 
           KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
-
-          # ========================================================
-          # PERMANENT SIGNING
-          # ========================================================
 
           if [ -n "$KEYSTORE_BASE64" ] && \
              [ -n "$KEYSTORE_PASSWORD" ] && \
@@ -1368,32 +920,17 @@ jobs:
              [ -n "$KEY_PASSWORD" ]; then
 
             echo ""
-            echo "PERMANENT RELEASE SIGNING SECRETS FOUND."
+            echo "PERMANENT SIGNING SECRETS FOUND."
 
             echo "$KEYSTORE_BASE64" \
               | base64 --decode \
               > "$KEYSTORE_FILE"
 
             if [ ! -s "$KEYSTORE_FILE" ]; then
-              echo ""
-              echo "ERROR: Decoded keystore is empty."
+              echo "ERROR: Keystore is empty."
               exit 1
             fi
 
-            if ! keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$KEYSTORE_PASSWORD" \
-              >/dev/null 2>&1; then
-
-              echo ""
-              echo "ERROR: Permanent release keystore verification failed."
-              echo ""
-              echo "Check KEYSTORE_BASE64 and KEYSTORE_PASSWORD."
-              exit 1
-            fi
-
-            # Verify that the requested alias exists.
             if ! keytool \
               -list \
               -keystore "$KEYSTORE_FILE" \
@@ -1402,7 +939,12 @@ jobs:
               >/dev/null 2>&1; then
 
               echo ""
-              echo "ERROR: KEY_ALIAS was not found in the keystore."
+              echo "ERROR: Permanent keystore verification failed."
+              echo "Check:"
+              echo "KEYSTORE_BASE64"
+              echo "KEYSTORE_PASSWORD"
+              echo "KEY_ALIAS"
+
               exit 1
             fi
 
@@ -1413,27 +955,13 @@ jobs:
             echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
             echo ""
-            echo "PERMANENT RELEASE KEYSTORE VERIFIED."
+            echo "PERMANENT KEYSTORE VERIFIED."
 
           else
 
-            # ======================================================
-            # TEMPORARY SIGNING FALLBACK
-            #
-            # IMPORTANT:
-            # JKS is used instead of PKCS12.
-            #
-            # The same password is used for:
-            # - keystore
-            # - private key
-            #
-            # This prevents BadPaddingException.
-            # ======================================================
-
             echo ""
-            echo "WARNING: Permanent signing secrets are not configured."
-            echo ""
-            echo "CREATING TEMPORARY RELEASE KEYSTORE..."
+            echo "Permanent signing secrets not configured."
+            echo "Creating temporary JKS signing key."
 
             TEMP_PASSWORD="$(openssl rand -hex 32)"
             TEMP_ALIAS="majdoor-hisaab-v82"
@@ -1454,26 +982,17 @@ jobs:
               -dname "CN=Majdoor Hisaab PRO, OU=Android, O=Majdoor Hisaab, L=India, ST=Uttar Pradesh, C=IN"
 
             if [ ! -s "$KEYSTORE_FILE" ]; then
-              echo ""
-              echo "ERROR: Temporary release keystore was not created."
+              echo "ERROR: Temporary keystore was not created."
               exit 1
             fi
 
-            echo ""
-            echo "VERIFYING TEMPORARY KEYSTORE..."
-
-            if ! keytool \
+            keytool \
               -list \
               -keystore "$KEYSTORE_FILE" \
               -storetype JKS \
               -storepass "$TEMP_PASSWORD" \
               -alias "$TEMP_ALIAS" \
-              >/dev/null 2>&1; then
-
-              echo ""
-              echo "ERROR: Temporary release keystore verification failed."
-              exit 1
-            fi
+              >/dev/null
 
             echo "RELEASE_SIGNING_MODE=TEMPORARY" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
@@ -1482,95 +1001,41 @@ jobs:
             echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
             echo ""
-            echo "TEMPORARY RELEASE KEYSTORE CREATED."
-            echo ""
-            echo "TEMPORARY KEYSTORE TYPE: JKS"
-            echo "KEY PASSWORD = STORE PASSWORD"
-            echo ""
-            echo "RELEASE SIGNING PREPARATION PASSED."
+            echo "TEMPORARY JKS KEYSTORE VERIFIED."
 
           fi
 
 
       # ============================================================
-      # 24. RESTORE / VERIFY RELEASE KEYSTORE
+      # 21. VERIFY SIGNING ENVIRONMENT
       # ============================================================
 
-      - name: Restore Release Keystore
+      - name: Verify Signing Environment
         shell: bash
         run: |
           set -e
 
-          echo "=============================================="
-          echo "RESTORE RELEASE KEYSTORE"
-          echo "=============================================="
+          test -n "${RELEASE_KEYSTORE:-}"
+          test -f "$RELEASE_KEYSTORE"
 
-          if [ -z "${RELEASE_KEYSTORE:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEYSTORE is not set."
-            exit 1
-          fi
+          test -n "${RELEASE_KEYSTORE_PASSWORD:-}"
+          test -n "${RELEASE_KEY_ALIAS:-}"
+          test -n "${RELEASE_KEY_PASSWORD:-}"
 
-          if [ ! -f "$RELEASE_KEYSTORE" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEYSTORE file not found."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEYSTORE_PASSWORD:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEYSTORE_PASSWORD is not set."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEY_ALIAS is not set."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEY_PASSWORD:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEY_PASSWORD is not set."
-            exit 1
-          fi
-
-          echo ""
-          echo "KEYSTORE FILE:"
-          ls -lh "$RELEASE_KEYSTORE"
-
-          echo ""
-          echo "SIGNING MODE:"
-          echo "${RELEASE_SIGNING_MODE:-UNKNOWN}"
-
-          echo ""
-          echo "VERIFYING RELEASE KEYSTORE..."
-
-          if ! keytool \
+          keytool \
             -list \
             -keystore "$RELEASE_KEYSTORE" \
             -storepass "$RELEASE_KEYSTORE_PASSWORD" \
             -alias "$RELEASE_KEY_ALIAS" \
-            >/dev/null 2>&1; then
-
-            echo ""
-            echo "ERROR: Release keystore / alias verification failed."
-            exit 1
-          fi
+            >/dev/null
 
           echo ""
-          echo "RELEASE KEYSTORE VERIFIED."
-
-          echo ""
-          echo "RELEASE KEY ALIAS:"
-          echo "$RELEASE_KEY_ALIAS"
-
-          echo ""
-          echo "RELEASE KEYSTORE READY."
+          echo "SIGNING ENVIRONMENT VERIFIED."
+          echo "SIGNING MODE: ${RELEASE_SIGNING_MODE}"
 
 
       # ============================================================
-      # 25. ZIPALIGN
+      # 22. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1578,13 +1043,10 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "ZIPALIGN RELEASE APK"
-          echo "=============================================="
-
           INPUT_APK="$APK_PATH"
-
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
+
+          rm -f "$ALIGNED_APK"
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -f \
@@ -1594,13 +1056,9 @@ jobs:
             "$ALIGNED_APK"
 
           if [ ! -f "$ALIGNED_APK" ]; then
-            echo ""
             echo "ERROR: Zipaligned APK not created."
             exit 1
           fi
-
-          echo ""
-          echo "VERIFYING ALIGNMENT..."
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -c \
@@ -1615,7 +1073,7 @@ jobs:
 
 
       # ============================================================
-      # 26. SIGN RELEASE APK
+      # 23. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1623,66 +1081,13 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "SIGN RELEASE APK"
-          echo "=============================================="
-
-          if [ -z "${RELEASE_KEYSTORE:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEYSTORE is not set."
-            exit 1
-          fi
-
-          if [ ! -f "$RELEASE_KEYSTORE" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEYSTORE file not found."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEYSTORE_PASSWORD:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEYSTORE_PASSWORD is not set."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEY_ALIAS is not set."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEY_PASSWORD:-}" ]; then
-            echo ""
-            echo "ERROR: RELEASE_KEY_PASSWORD is not set."
-            exit 1
-          fi
-
-          if [ -z "${ALIGNED_APK:-}" ]; then
-            echo ""
-            echo "ERROR: ALIGNED_APK is not set."
-            exit 1
-          fi
-
-          if [ ! -f "$ALIGNED_APK" ]; then
-            echo ""
-            echo "ERROR: Aligned APK not found."
-            exit 1
-          fi
-
           SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           rm -f "$SIGNED_APK"
 
-          echo ""
-          echo "SIGNING MODE:"
-          echo "${RELEASE_SIGNING_MODE:-UNKNOWN}"
-
-          echo ""
-          echo "KEY ALIAS:"
-          echo "$RELEASE_KEY_ALIAS"
-
-          echo ""
-          echo "SIGNING APK..."
+          echo "=============================================="
+          echo "SIGN RELEASE APK"
+          echo "=============================================="
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
             --ks "$RELEASE_KEYSTORE" \
@@ -1694,21 +1099,17 @@ jobs:
             "$ALIGNED_APK"
 
           if [ ! -f "$SIGNED_APK" ]; then
-            echo ""
             echo "ERROR: Signed APK not created."
             exit 1
           fi
 
           echo ""
-          echo "SIGNED APK:"
+          echo "SIGNED APK CREATED:"
           ls -lh "$SIGNED_APK"
-
-          echo ""
-          echo "RELEASE APK SIGNING PASSED."
 
 
       # ============================================================
-      # 27. VERIFY APK SIGNATURE
+      # 24. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1716,14 +1117,9 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "VERIFY APK SIGNATURE"
-          echo "=============================================="
-
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           if [ ! -f "$APK" ]; then
-            echo ""
             echo "ERROR: Signed APK not found."
             exit 1
           fi
@@ -1738,7 +1134,7 @@ jobs:
 
 
       # ============================================================
-      # 28. FINAL APK VALIDATION
+      # 25. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1746,14 +1142,9 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "FINAL APK VALIDATION"
-          echo "=============================================="
-
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           if [ ! -f "$APK" ]; then
-            echo ""
             echo "ERROR: Final APK missing."
             exit 1
           fi
@@ -1765,13 +1156,9 @@ jobs:
           echo "$SIZE bytes"
 
           if [ "$SIZE" -lt 100000 ]; then
-            echo ""
             echo "ERROR: APK size unexpectedly small."
             exit 1
           fi
-
-          echo ""
-          echo "VERIFY FINAL APK PACKAGE:"
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
@@ -1792,10 +1179,6 @@ jobs:
           fi
 
           echo ""
-          echo "FINAL APK:"
-          ls -lh "$APK"
-
-          echo ""
           echo "SHA256:"
           sha256sum "$APK"
 
@@ -1806,10 +1189,10 @@ jobs:
 
 
       # ============================================================
-      # 29. UPLOAD SIGNED APK
+      # 26. UPLOAD FINAL SIGNED APK
       # ============================================================
 
-      - name: Upload Signed Release APK
+      - name: Upload Final Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
@@ -1819,7 +1202,7 @@ jobs:
 
 
       # ============================================================
-      # 30. UPLOAD BUILD REPORTS
+      # 27. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
