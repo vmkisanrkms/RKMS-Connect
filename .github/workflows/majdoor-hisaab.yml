@@ -108,10 +108,6 @@ jobs:
             echo "ANDROID_PROJECT_NOT_FOUND_AT_ROOT"
             echo "SEARCHING FOR PROJECT ZIP..."
 
-            # ----------------------------------------------------
-            # Try Git LFS if the repository uses LFS.
-            # ----------------------------------------------------
-
             if command -v git-lfs >/dev/null 2>&1; then
               echo "GIT_LFS_DETECTED"
 
@@ -125,20 +121,12 @@ jobs:
             fi
 
 
-            # ----------------------------------------------------
-            # Search expected ZIP first.
-            # ----------------------------------------------------
-
             ZIP_PATH=""
 
             if [ -f "${ZIP_NAME}" ]; then
               ZIP_PATH="./${ZIP_NAME}"
             fi
 
-
-            # ----------------------------------------------------
-            # Search BUILD_FIXED ZIP.
-            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -151,10 +139,6 @@ jobs:
 
             fi
 
-
-            # ----------------------------------------------------
-            # Recursive exact search.
-            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -172,10 +156,6 @@ jobs:
             fi
 
 
-            # ----------------------------------------------------
-            # Recursive BUILD_FIXED search.
-            # ----------------------------------------------------
-
             if [ -z "$ZIP_PATH" ]; then
 
               ZIP_PATH="$(
@@ -192,10 +172,6 @@ jobs:
             fi
 
 
-            # ----------------------------------------------------
-            # Final fallback.
-            # ----------------------------------------------------
-
             if [ -z "$ZIP_PATH" ]; then
 
               ZIP_PATH="$(
@@ -211,10 +187,6 @@ jobs:
 
             fi
 
-
-            # ----------------------------------------------------
-            # ZIP must exist.
-            # ----------------------------------------------------
 
             if [ -z "$ZIP_PATH" ]; then
 
@@ -254,10 +226,6 @@ jobs:
             fi
 
 
-            # ----------------------------------------------------
-            # Normalize path.
-            # ----------------------------------------------------
-
             ZIP_PATH="$(realpath "$ZIP_PATH")"
 
             echo ""
@@ -273,10 +241,6 @@ jobs:
             ls -lh "$ZIP_PATH"
 
 
-            # ----------------------------------------------------
-            # Detect Git LFS pointer.
-            # ----------------------------------------------------
-
             if head -n 1 "$ZIP_PATH" 2>/dev/null \
               | grep -Fq "version https://git-lfs.github.com/spec/v1"; then
 
@@ -290,10 +254,6 @@ jobs:
 
             fi
 
-
-            # ----------------------------------------------------
-            # Verify ZIP using Python zipfile.
-            # ----------------------------------------------------
 
             echo ""
             echo "VERIFYING ZIP INTEGRITY..."
@@ -337,10 +297,6 @@ jobs:
           PY
 
 
-            # ----------------------------------------------------
-            # Extract with Python.
-            # ----------------------------------------------------
-
             echo ""
             echo "EXTRACTING PROJECT ZIP..."
 
@@ -364,10 +320,6 @@ jobs:
             echo ""
             echo "ZIP_EXTRACTED=PASS"
 
-
-            # ----------------------------------------------------
-            # Detect project root.
-            # ----------------------------------------------------
 
             if [ -f "extracted/settings.gradle.kts" ] &&
                [ -f "extracted/app/build.gradle.kts" ]; then
@@ -419,10 +371,6 @@ jobs:
 
           fi
 
-
-          # ------------------------------------------------------
-          # Final project verification.
-          # ------------------------------------------------------
 
           test -f project/settings.gradle.kts
           test -f project/build.gradle.kts
@@ -669,19 +617,19 @@ jobs:
       # ==========================================================
       # 12. BUILD RELEASE APK
       #
-      # THIS IS THE ONLY SECTION MODIFIED.
-      #
-      # AUDITED AGAINST:
-      # Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip
+      # FINAL AUDITED VERSION
       #
       # FIXES:
-      # 1. btn() default action
-      # 2. exportType when{} correction
-      # 3. scoped Button text fixes
-      # 4. attendanceCalendar renderSummary order
-      # 5. compile before assemble
+      # 1. btn() optional action
+      # 2. Intent.type shadowing
+      # 3. scoped lateinit Button declarations
+      # 4. scoped Button text references
+      # 5. exportType when{} correction
+      # 6. attendanceCalendar render order
+      # 7. source audit
+      # 8. Kotlin compilation before APK assembly
       #
-      # NO BROAD GLOBAL REPLACEMENTS.
+      # NO BROAD GLOBAL it.text REPLACEMENT
       # ==========================================================
 
       - name: Build Release APK
@@ -697,7 +645,6 @@ jobs:
           cp "$FILE" \
             "${FILE}.before-release-fix"
 
-
           echo ""
           echo "=========================================="
           echo "AUDITED RELEASE SOURCE PATCH"
@@ -711,31 +658,45 @@ jobs:
               "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
           )
 
-          source = file.read_text(encoding="utf-8")
+          source = file.read_text(
+              encoding="utf-8"
+          )
 
 
           # ======================================================
-          # Helper
+          # SAFE BLOCK PATCH HELPER
           # ======================================================
 
-          def patch_block(start_marker, end_marker, replacements):
+          def patch_block(
+              start_marker,
+              end_marker,
+              replacements
+          ):
+
               global source
 
-              start = source.find(start_marker)
+              start = source.find(
+                  start_marker
+              )
 
               if start < 0:
                   raise SystemExit(
                       f"ERROR: start marker not found: {start_marker}"
                   )
 
-              end = source.find(end_marker, start)
+              end = source.find(
+                  end_marker,
+                  start + len(start_marker)
+              )
 
               if end < 0:
                   raise SystemExit(
                       f"ERROR: end marker not found: {end_marker}"
                   )
 
-              block = source[start:end]
+              block = source[
+                  start:end
+              ]
 
               for old, new in replacements:
 
@@ -745,23 +706,51 @@ jobs:
                           f"in {start_marker}: {old}"
                       )
 
-                  block = block.replace(old, new)
+                  block = block.replace(
+                      old,
+                      new
+                  )
 
-              source = source[:start] + block + source[end:]
+              source = (
+                  source[:start]
+                  + block
+                  + source[end:]
+              )
+
+
+          # ======================================================
+          # SAFE LOCAL BUTTON DECLARATION PATCH
+          # ======================================================
+
+          def patch_button_declarations(
+              start_marker,
+              end_marker,
+              names
+          ):
+
+              replacements = []
+
+              for name in names:
+
+                  replacements.append(
+                      (
+                          f"val {name}=btn(",
+                          f"lateinit var {name}:Button\n"
+                          f"        {name}=btn("
+                      )
+                  )
+
+              patch_block(
+                  start_marker,
+                  end_marker,
+                  replacements
+              )
 
 
           # ======================================================
           # FIX 1
           #
-          # btn() is called in some places without action.
-          #
-          # Original:
-          #
-          # btn("Attendance time")
-          #
-          # Original function required action.
-          #
-          # Make action optional safely.
+          # btn() action becomes optional.
           # ======================================================
 
           old_btn = (
@@ -794,10 +783,42 @@ jobs:
           # ======================================================
           # FIX 2
           #
-          # cropForm()
-          #
-          # Only cropForm gets fb.text.
+          # Intent.type shadowing.
           # ======================================================
+
+          old_intent_type = (
+              'apply{type="image/*";'
+          )
+
+          new_intent_type = (
+              'apply{this.type="image/*";'
+          )
+
+          if old_intent_type in source:
+
+              source = source.replace(
+                  old_intent_type,
+                  new_intent_type
+              )
+
+          elif new_intent_type not in source:
+
+              raise SystemExit(
+                  "ERROR: image Intent type pattern not found"
+              )
+
+
+          # ======================================================
+          # FIX 3
+          #
+          # cropForm()
+          # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.cropForm",
+              "internal fun MainActivity.attendance()",
+              ["fb"]
+          )
 
           patch_block(
               "internal fun MainActivity.cropForm",
@@ -812,10 +833,16 @@ jobs:
 
 
           # ======================================================
-          # FIX 3
+          # FIX 4
           #
           # productionForm()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.productionForm",
+              "internal fun MainActivity.revenue()",
+              ["cropBtn"]
+          )
 
           patch_block(
               "internal fun MainActivity.productionForm",
@@ -830,10 +857,16 @@ jobs:
 
 
           # ======================================================
-          # FIX 4
+          # FIX 5
           #
           # revenueForm()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.revenueForm",
+              "internal fun MainActivity.addWork()",
+              ["cropBtn"]
+          )
 
           patch_block(
               "internal fun MainActivity.revenueForm",
@@ -848,12 +881,21 @@ jobs:
 
 
           # ======================================================
-          # FIX 5
+          # FIX 6
           #
           # workForm()
-          #
-          # Every replacement is restricted to workForm().
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.workForm",
+              "internal fun MainActivity.workDetail",
+              [
+                  "fieldBtn",
+                  "cropBtn",
+                  "workerBtn",
+                  "rateTypeBtn"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.workForm",
@@ -880,10 +922,20 @@ jobs:
 
 
           # ======================================================
-          # FIX 6
+          # FIX 7
           #
           # paymentForm()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.paymentForm",
+              "internal fun MainActivity.expenses()",
+              [
+                  "wb",
+                  "mb",
+                  "adv"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.paymentForm",
@@ -906,10 +958,20 @@ jobs:
 
 
           # ======================================================
-          # FIX 7
+          # FIX 8
           #
           # expenseForm()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.expenseForm",
+              "internal fun MainActivity.reportFiltersDialog()",
+              [
+                  "cb",
+                  "fb",
+                  "crb"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.expenseForm",
@@ -940,10 +1002,20 @@ jobs:
 
 
           # ======================================================
-          # FIX 8
+          # FIX 9
           #
           # reportFiltersDialog()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.reportFiltersDialog",
+              "internal fun MainActivity.reports()",
+              [
+                  "wb",
+                  "fb",
+                  "cb"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.reportFiltersDialog",
@@ -966,10 +1038,18 @@ jobs:
 
 
           # ======================================================
-          # FIX 9
+          # FIX 10
           #
           # workTemplateForm()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.workTemplateForm",
+              "internal fun MainActivity.fieldProfile",
+              [
+                  "rateTypeBtn"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.workTemplateForm",
@@ -984,10 +1064,19 @@ jobs:
 
 
           # ======================================================
-          # FIX 10
+          # FIX 11
           #
           # attendanceForm()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.attendanceForm",
+              "internal fun MainActivity.attendanceHistory()",
+              [
+                  "fieldBtn",
+                  "statusBtn"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.attendanceForm",
@@ -1006,10 +1095,20 @@ jobs:
 
 
           # ======================================================
-          # FIX 11
+          # FIX 12
           #
           # customReport()
           # ======================================================
+
+          patch_button_declarations(
+              "internal fun MainActivity.customReport",
+              "internal fun MainActivity.auditLogScreen()",
+              [
+                  "wb",
+                  "fb",
+                  "cb"
+              ]
+          )
 
           patch_block(
               "internal fun MainActivity.customReport",
@@ -1032,36 +1131,32 @@ jobs:
 
 
           # ======================================================
-          # FIX 12
+          # FIX 13
           #
-          # handleActivityResult()
+          # exportType
           #
-          # Original code incorrectly used:
+          # IMPORTANT:
           #
-          # when(exportType) {
-          #     exportType.startsWith(...) -> ...
+          # Old invalid code:
+          #
+          # when(exportType){
+          #     exportType.startsWith(...)
           # }
           #
-          # A String subject cannot have Boolean branch labels.
+          # Correct:
           #
-          # Correct form:
-          #
-          # when {
-          #     exportType == ...
+          # when{
           #     exportType.startsWith(...)
           # }
           # ======================================================
 
-          old_export = '''contentResolver.openOutputStream(uri)!!.use{out->when(exportType){
-                    "workers"->app.export.csvWorkers(out)
-                    "ledger"->app.export.csvLedger(out)
-                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
-                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
-                    "pdf"->app.export.pdfSummary(out)
-                    "backup"->app.backup.export(out)
-                }}'''
+          export_pattern = re.compile(
+              r'contentResolver\.openOutputStream\(uri\)!!\.use\{out->'
+              r'when\(exportType\)\{.*?\n\s*\}\}',
+              re.S
+          )
 
-          new_export = '''contentResolver.openOutputStream(uri)!!.use{out->when{
+          export_replacement = '''contentResolver.openOutputStream(uri)!!.use{out->when{
                     exportType=="workers"->app.export.csvWorkers(out)
                     exportType=="ledger"->app.export.csvLedger(out)
                     exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
@@ -1071,38 +1166,40 @@ jobs:
                     else->throw IllegalArgumentException("Unknown export type: $exportType")
                 }}'''
 
-          if old_export not in source:
+          source, export_count = export_pattern.subn(
+              export_replacement,
+              source,
+              count=1
+          )
 
-              if new_export not in source:
+          if export_count != 1:
+
+              if (
+                  "when(exportType){" in source
+                  or
+                  'exportType.startsWith("report:")'
+                  not in source
+              ):
+
                   raise SystemExit(
-                      "ERROR: exportType block not found"
+                      "ERROR: exportType block could not be safely patched"
                   )
-
-          else:
-
-              source = source.replace(
-                  old_export,
-                  new_export,
-                  1
-              )
 
 
           # ======================================================
-          # FIX 13
+          # FIX 14
           #
           # attendanceCalendar()
           #
-          # render() calls renderSummary(), but the original local
-          # function was declared after render().
-          #
-          # Move renderSummary() before render().
+          # renderSummary() must appear before render().
           # ======================================================
 
           calendar_start = source.find(
-              "internal fun MainActivity.attendanceCalendar(){"
+              "internal fun MainActivity.attendanceCalendar()"
           )
 
           if calendar_start < 0:
+
               raise SystemExit(
                   "ERROR: attendanceCalendar() not found"
               )
@@ -1113,6 +1210,7 @@ jobs:
           )
 
           if calendar_end < 0:
+
               raise SystemExit(
                   "ERROR: paymentLedger() marker not found"
               )
@@ -1121,80 +1219,54 @@ jobs:
               calendar_start:calendar_end
           ]
 
-
-          render_match = re.search(
-              r'        fun render\(\)\{.*?'
-              r'\n        \}\n'
-              r'        fun renderSummary\(\)\{',
-              calendar,
-              re.S
+          render_start = calendar.find(
+              "        fun render(){"
           )
 
-          if not render_match:
-              raise SystemExit(
-                  "ERROR: attendance render()/renderSummary() block not found"
-              )
-
-
-          render_part = render_match.group(0)
-
-          render_part = render_part[
-              :-len("        fun renderSummary(){")
-          ]
-
-
-          summary_start = (
-              render_match.start()
-              + render_match.group(0).rfind(
-                  "        fun renderSummary(){"
-              )
+          summary_start = calendar.find(
+              "        fun renderSummary(){",
+              render_start
           )
 
-
-          summary_match = re.search(
-              r'        fun renderSummary\(\)\{.*?'
-              r'\n        \}\n\n'
-              r'        val nav=',
-              calendar[summary_start:],
-              re.S
-          )
-
-          if not summary_match:
-              raise SystemExit(
-                  "ERROR: renderSummary() body not found"
-              )
-
-
-          summary_block = summary_match.group(0)
-
-          summary_block = summary_block[
-              :-len("\n\n        val nav=")
-          ]
-
-
-          region_start = render_match.start()
-
-          region_end = (
+          nav_start = calendar.find(
+              "        val nav=",
               summary_start
-              + summary_match.end()
           )
 
+          if (
+              render_start < 0
+              or summary_start < 0
+              or nav_start < 0
+          ):
 
-          new_calendar_region = (
-              summary_block
-              + "\n"
-              + render_part
-              + "\n\n"
-              + "        val nav="
-          )
+              raise SystemExit(
+                  "ERROR: attendance render markers not found"
+              )
 
+          if not (
+              render_start
+              < summary_start
+              < nav_start
+          ):
+
+              raise SystemExit(
+                  "ERROR: unexpected attendance render order"
+              )
+
+          render_block = calendar[
+              render_start:summary_start
+          ]
+
+          summary_block = calendar[
+              summary_start:nav_start
+          ]
 
           calendar = (
-              calendar[:region_start]
-              + new_calendar_region
-              + calendar[region_end:]
+              calendar[:render_start]
+              + summary_block
+              + render_block
+              + calendar[nav_start:]
           )
-
 
           source = (
               source[:calendar_start]
@@ -1212,7 +1284,9 @@ jobs:
               encoding="utf-8"
           )
 
-          print("RELEASE_SOURCE_PATCH=PASS")
+          print(
+              "RELEASE_SOURCE_PATCH=PASS"
+          )
           PY
 
 
@@ -1222,52 +1296,239 @@ jobs:
           echo "=========================================="
 
 
-          # ------------------------------------------------------
-          # btn() must have optional action.
-          # ------------------------------------------------------
+          # ======================================================
+          # AUDIT 1
+          # ======================================================
 
           grep -Fq \
             'internal fun MainActivity.btn(s:String,action:()->Unit = {})' \
             "$FILE"
 
+          echo "BTN_DEFAULT_ACTION=PASS"
 
-          # ------------------------------------------------------
-          # Old exportType syntax must be gone.
-          # ------------------------------------------------------
+
+          # ======================================================
+          # AUDIT 2
+          # ======================================================
+
+          if grep -Fq \
+            'apply{type="image/*";' \
+            "$FILE"; then
+
+            echo "ERROR: Intent.type shadowing remains"
+            exit 1
+
+          fi
+
+          grep -Fq \
+            'apply{this.type="image/*";' \
+            "$FILE"
+
+          echo "INTENT_TYPE_FIX=PASS"
+
+
+          # ======================================================
+          # AUDIT 3
+          # ======================================================
 
           if grep -Fq \
             'when(exportType){' \
             "$FILE"; then
 
-            echo "ERROR: old invalid when(exportType) remains"
+            echo "ERROR: invalid when(exportType) remains"
             exit 1
 
           fi
 
+          grep -Fq \
+            'exportType.startsWith("report:")' \
+            "$FILE"
 
-          # ------------------------------------------------------
-          # No unresolved setItems it.text references.
+          grep -Fq \
+            'exportType.startsWith("reportpdf:")' \
+            "$FILE"
+
+          echo "EXPORT_TYPE_FIX=PASS"
+
+
+          # ======================================================
+          # AUDIT 4
           #
-          # Exactly three it.text references are legitimate:
-          # statusViews.forEach{it.text=...}
-          # ------------------------------------------------------
+          # Check every affected local Button.
+          # ======================================================
+
+          python3 - "$FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text(
+              encoding="utf-8"
+          )
+
+          required = [
+              (
+                  "cropForm",
+                  "fb"
+              ),
+              (
+                  "productionForm",
+                  "cropBtn"
+              ),
+              (
+                  "revenueForm",
+                  "cropBtn"
+              ),
+              (
+                  "workForm",
+                  "fieldBtn"
+              ),
+              (
+                  "workForm",
+                  "cropBtn"
+              ),
+              (
+                  "workForm",
+                  "workerBtn"
+              ),
+              (
+                  "workForm",
+                  "rateTypeBtn"
+              ),
+              (
+                  "paymentForm",
+                  "wb"
+              ),
+              (
+                  "paymentForm",
+                  "mb"
+              ),
+              (
+                  "paymentForm",
+                  "adv"
+              ),
+              (
+                  "expenseForm",
+                  "cb"
+              ),
+              (
+                  "expenseForm",
+                  "fb"
+              ),
+              (
+                  "expenseForm",
+                  "crb"
+              ),
+              (
+                  "reportFiltersDialog",
+                  "wb"
+              ),
+              (
+                  "reportFiltersDialog",
+                  "fb"
+              ),
+              (
+                  "reportFiltersDialog",
+                  "cb"
+              ),
+              (
+                  "workTemplateForm",
+                  "rateTypeBtn"
+              ),
+              (
+                  "attendanceForm",
+                  "fieldBtn"
+              ),
+              (
+                  "attendanceForm",
+                  "statusBtn"
+              ),
+              (
+                  "customReport",
+                  "wb"
+              ),
+              (
+                  "customReport",
+                  "fb"
+              ),
+              (
+                  "customReport",
+                  "cb"
+              ),
+          ]
+
+          def get_block(name):
+
+              start = text.find(
+                  "internal fun MainActivity."
+                  + name
+              )
+
+              if start < 0:
+                  raise SystemExit(
+                      f"ERROR: function missing: {name}"
+                  )
+
+              end = text.find(
+                  "internal fun MainActivity.",
+                  start + 10
+              )
+
+              if end < 0:
+                  end = len(text)
+
+              return text[start:end]
+
+
+          for function_name, button_name in required:
+
+              block = get_block(
+                  function_name
+              )
+
+              expected = (
+                  f"lateinit var {button_name}:Button"
+              )
+
+              if expected not in block:
+
+                  raise SystemExit(
+                      "ERROR: missing local lateinit "
+                      f"{button_name} in {function_name}"
+                  )
+
+          print(
+              "BUTTON_SELF_REFERENCE_AUDIT=PASS"
+          )
+          PY
+
+
+          # ======================================================
+          # AUDIT 5
+          #
+          # No unresolved it.text references.
+          # ======================================================
 
           python3 - "$FILE" <<'PY'
           import sys
           from pathlib import Path
 
           file = Path(sys.argv[1])
-          text = file.read_text(encoding="utf-8")
 
-          lines = text.splitlines()
+          lines = file.read_text(
+              encoding="utf-8"
+          ).splitlines()
 
           bad = []
 
-          for number, line in enumerate(lines, 1):
+          for number, line in enumerate(
+              lines,
+              1
+          ):
 
               if "it.text=" in line:
 
                   if "statusViews.forEach" not in line:
+
                       bad.append(
                           f"{number}: {line}"
                       )
@@ -1275,7 +1536,7 @@ jobs:
           if bad:
 
               print(
-                  "ERROR: unresolved it.text references found:"
+                  "ERROR: unresolved it.text references:"
               )
 
               for item in bad:
@@ -1289,10 +1550,11 @@ jobs:
           PY
 
 
-          # ------------------------------------------------------
-          # renderSummary must appear BEFORE render in
-          # attendanceCalendar().
-          # ------------------------------------------------------
+          # ======================================================
+          # AUDIT 6
+          #
+          # attendance render order.
+          # ======================================================
 
           python3 - "$FILE" <<'PY'
           import sys
@@ -1303,7 +1565,7 @@ jobs:
           )
 
           start = text.find(
-              "internal fun MainActivity.attendanceCalendar(){"
+              "internal fun MainActivity.attendanceCalendar()"
           )
 
           end = text.find(
@@ -1312,11 +1574,14 @@ jobs:
           )
 
           if start < 0 or end < 0:
+
               raise SystemExit(
-                  "ERROR: attendanceCalendar boundaries not found"
+                  "ERROR: attendanceCalendar boundaries missing"
               )
 
-          block = text[start:end]
+          block = text[
+              start:end
+          ]
 
           summary = block.find(
               "fun renderSummary(){"
@@ -1327,11 +1592,13 @@ jobs:
           )
 
           if summary < 0 or render < 0:
+
               raise SystemExit(
                   "ERROR: render functions missing"
               )
 
           if summary >= render:
+
               raise SystemExit(
                   "ERROR: renderSummary() still appears after render()"
               )
@@ -1342,22 +1609,38 @@ jobs:
           PY
 
 
-          # ------------------------------------------------------
-          # Safe Step 4 fixes must remain.
-          # ------------------------------------------------------
+          # ======================================================
+          # AUDIT 7
+          #
+          # Previous Step 4 fixes must remain.
+          # ======================================================
 
-          ! grep -Fq \
+          if grep -Fq \
             "app.audit.auditLog()" \
-            "$FILE"
+            "$FILE"; then
 
-          ! grep -Fq \
+            echo "ERROR: old auditLog() remains"
+            exit 1
+
+          fi
+
+          if grep -Fq \
             "app.audit.clearAuditLog()" \
-            "$FILE"
+            "$FILE"; then
 
-          ! grep -Fq \
+            echo "ERROR: old clearAuditLog() remains"
+            exit 1
+
+          fi
+
+          if grep -Fq \
             "getSystemService(ALARM_SERVICE)" \
-            "$FILE"
+            "$FILE"; then
 
+            echo "ERROR: old ALARM_SERVICE remains"
+            exit 1
+
+          fi
 
           grep -Fq \
             "app.audit.list()" \
@@ -1370,6 +1653,8 @@ jobs:
           grep -Fq \
             "Context.ALARM_SERVICE" \
             "$FILE"
+
+          echo "PREVIOUS_SOURCE_FIXES=PASS"
 
 
           echo ""
@@ -1420,10 +1705,6 @@ jobs:
 
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
-
-          # ------------------------------------------------------
-          # APK must exist.
-          # ------------------------------------------------------
 
           if [ ! -s "$APK" ]; then
 
