@@ -41,7 +41,7 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # ============================================================
 
       - name: Checkout Repository
@@ -50,9 +50,6 @@ jobs:
 
       # ============================================================
       # 2. JAVA 17
-      # IMPORTANT:
-      # No Gradle cache here because the Android project is inside
-      # the V82 ZIP and is extracted later.
       # ============================================================
 
       - name: Setup Java 17
@@ -63,15 +60,82 @@ jobs:
 
 
       # ============================================================
-      # 3. ANDROID SDK
+      # 3. FIND ANDROID SDK
+      #
+      # DO NOT use android-actions/setup-android here.
+      # GitHub hosted runner already contains Android SDK tools.
       # ============================================================
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching Android SDK..."
+
+          if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
+            SDK_ROOT="$ANDROID_HOME"
+          elif [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
+            SDK_ROOT="$ANDROID_SDK_ROOT"
+          elif [ -d "/usr/local/lib/android/sdk" ]; then
+            SDK_ROOT="/usr/local/lib/android/sdk"
+          else
+            SDK_ROOT=$(find /usr/local/lib/android -maxdepth 3 -type d -name "sdk" -print -quit 2>/dev/null || true)
+          fi
+
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
+            echo ""
+            echo "ERROR: Android SDK was not found."
+            exit 1
+          fi
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
+            echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
+              -type f \
+              -name "sdkmanager" \
+              -print \
+              -quit 2>/dev/null || true)
+
+            if [ -z "$SDKMANAGER" ]; then
+              echo ""
+              echo "ERROR: sdkmanager not found."
+              find "$SDK_ROOT" -maxdepth 5 -type f \
+                -name "sdkmanager" -print || true
+              exit 1
+            fi
+
+            echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "Android SDK:"
+          echo "$SDK_ROOT"
+
+          echo ""
+          echo "sdkmanager:"
+          echo "$SDKMANAGER"
+
+          echo ""
+          echo "sdkmanager version:"
+          "$SDKMANAGER" --version
 
 
       # ============================================================
-      # 4. INSTALL ANDROID SDK 36
+      # 4. INSTALL REQUIRED SDK PACKAGES
+      #
+      # IMPORTANT:
+      # Only valid package names are passed.
+      # No 'tools' package.
       # ============================================================
 
       - name: Install Android SDK 36
@@ -79,24 +143,89 @@ jobs:
         run: |
           set -e
 
-          yes | sdkmanager --licenses >/dev/null || true
+          echo "=============================================="
+          echo "ANDROID SDK INSTALLATION"
+          echo "=============================================="
 
-          sdkmanager \
+          SDKMANAGER="$SDKMANAGER"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager is not executable:"
+            echo "$SDKMANAGER"
+            exit 1
+          fi
+
+          echo ""
+          echo "Accepting Android SDK licenses..."
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          echo ""
+          echo "Installing required packages..."
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
           echo ""
-          echo "Android SDK installation completed."
+          echo "Installed Android SDK components:"
+
+          "$SDKMANAGER" --list_installed \
+            | grep -E \
+              "platform-tools|platforms;android-36|build-tools;36.0.0" \
+              || true
 
           echo ""
-          echo "Installed components:"
-          sdkmanager --list_installed | grep -E \
-            "platform-tools|platforms;android-36|build-tools;36.0.0" || true
+          echo "ANDROID SDK INSTALLATION PASSED."
 
 
       # ============================================================
-      # 5. SETUP GRADLE
+      # 5. VERIFY SDK COMPONENTS
+      # ============================================================
+
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Checking Android SDK components..."
+
+          test -d "$ANDROID_HOME/platform-tools"
+          test -d "$ANDROID_HOME/platforms/android-36"
+          test -d "$ANDROID_HOME/build-tools/36.0.0"
+
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
+
+          echo ""
+          echo "Android SDK 36:"
+          ls -ld "$ANDROID_HOME/platforms/android-36"
+
+          echo ""
+          echo "Build Tools 36.0.0:"
+          ls -ld "$ANDROID_HOME/build-tools/36.0.0"
+
+          echo ""
+          echo "ADB:"
+          "$ANDROID_HOME/platform-tools/adb" version
+
+          echo ""
+          echo "AAPT:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" version
+
+          echo ""
+          echo "APKSIGNER:"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" version
+
+          echo ""
+          echo "ANDROID SDK VERIFICATION PASSED."
+
+
+      # ============================================================
+      # 6. SETUP GRADLE
       # ============================================================
 
       - name: Setup Gradle
@@ -106,7 +235,7 @@ jobs:
 
 
       # ============================================================
-      # 6. VERIFY V82 ZIP
+      # 7. VERIFY V82 ZIP
       # ============================================================
 
       - name: Verify V82 ZIP
@@ -118,13 +247,16 @@ jobs:
 
           if [ ! -f "$ZIP_NAME" ]; then
             echo ""
-            echo "ERROR: V82 ZIP was not found."
+            echo "ERROR: V82 ZIP not found."
+
             echo ""
             echo "Expected:"
             echo "$ZIP_NAME"
+
             echo ""
             echo "Repository files:"
-            find . -maxdepth 3 -type f | sort
+            find . -maxdepth 4 -type f | sort
+
             exit 1
           fi
 
@@ -138,7 +270,7 @@ jobs:
 
 
       # ============================================================
-      # 7. EXTRACT V82 PROJECT
+      # 8. EXTRACT V82 PROJECT
       # ============================================================
 
       - name: Extract V82 Project
@@ -168,11 +300,11 @@ jobs:
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo ""
-            echo "ERROR: Gradle settings file not found."
+            echo "ERROR: settings.gradle/settings.gradle.kts not found."
 
             echo ""
             echo "Extracted files:"
-            find build_source -maxdepth 6 -type f | sort
+            find build_source -maxdepth 7 -type f | sort
 
             exit 1
           fi
@@ -186,12 +318,12 @@ jobs:
           echo "$PROJECT_DIR"
 
           echo ""
-          echo "Project structure:"
+          echo "Project files:"
           find "$PROJECT_DIR" -maxdepth 3 -type f | sort | head -250
 
 
       # ============================================================
-      # 8. VERIFY ANDROID PROJECT
+      # 9. VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android Project
@@ -222,11 +354,11 @@ jobs:
           fi
 
           echo ""
-          echo "Android app module verified successfully."
+          echo "Android app module verified."
 
 
       # ============================================================
-      # 9. VERIFY MAIN SOURCE
+      # 10. VERIFY SOURCE
       # ============================================================
 
       - name: Verify Package and Source
@@ -236,22 +368,20 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "Searching for MainActivityScreens.kt..."
-
           SRC=$(find app/src/main \
             -name "MainActivityScreens.kt" \
             -print -quit || true)
 
           if [ -z "$SRC" ]; then
             echo ""
-            echo "WARNING: MainActivityScreens.kt was not found."
+            echo "WARNING: MainActivityScreens.kt not found."
           else
             echo ""
             echo "MainActivityScreens.kt:"
             echo "$SRC"
 
             echo ""
-            echo "Source size:"
+            echo "Line count:"
             wc -l "$SRC"
           fi
 
@@ -268,8 +398,7 @@ jobs:
 
 
       # ============================================================
-      # 10. V82 KOTLIN SOURCE AUDIT
-      # NO SOURCE PATCHING
+      # 11. V82 SOURCE AUDIT
       # ============================================================
 
       - name: Audit V82 Kotlin Source
@@ -286,7 +415,7 @@ jobs:
           FAILED=0
 
           echo ""
-          echo "1. Checking old fillViewport assignment..."
+          echo "1. Checking invalid fillViewport assignment..."
 
           if grep -R -n \
             "fillViewport[[:space:]]*=" \
@@ -296,7 +425,6 @@ jobs:
 
             echo ""
             echo "ERROR: Invalid fillViewport assignment found."
-            echo "Expected: setFillViewport(true)"
             FAILED=1
           else
             echo "PASS"
@@ -304,16 +432,15 @@ jobs:
 
 
           echo ""
-          echo "2. Checking invalid btn lambda parameters..."
+          echo "2. Checking invalid btn lambda parameter..."
 
-          if grep -R -n \
-            -E 'btn\(.*\)\{[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*->' \
+          if grep -R -n -E \
+            'btn\(.*\)\{[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*->' \
             app/src/main \
             --include="*.kt"; then
 
             echo ""
             echo "ERROR: Invalid btn lambda parameter detected."
-            echo "btn() action must be () -> Unit."
             FAILED=1
           else
             echo "PASS"
@@ -323,8 +450,8 @@ jobs:
           echo ""
           echo "3. Checking lateinit Button workaround..."
 
-          if grep -R -n \
-            -E 'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
+          if grep -R -n -E \
+            'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
             app/src/main \
             --include="*.kt"; then
 
@@ -337,17 +464,15 @@ jobs:
 
 
           echo ""
-          echo "4. Checking old exportType when condition..."
+          echo "4. Checking old exportType when..."
 
           if grep -R -n \
-            -A3 \
             'when(exportType)' \
             app/src/main \
             --include="*.kt"; then
 
             echo ""
-            echo "ERROR: Old when(exportType) pattern found."
-            echo "Expected conditional when { ... }."
+            echo "ERROR: Old when(exportType) found."
             FAILED=1
           else
             echo "PASS"
@@ -369,7 +494,7 @@ jobs:
 
 
       # ============================================================
-      # 11. JAVA / GRADLE ENVIRONMENT
+      # 12. GRADLE ENVIRONMENT
       # ============================================================
 
       - name: Gradle Environment
@@ -377,28 +502,20 @@ jobs:
         run: |
           set -e
 
-          echo "JAVA VERSION"
+          echo "JAVA:"
           java -version
 
           echo ""
-          echo "GRADLE VERSION"
+          echo "GRADLE:"
           gradle --version
 
           echo ""
-          echo "ANDROID SDK"
+          echo "ANDROID_HOME:"
           echo "$ANDROID_HOME"
-
-          echo ""
-          echo "ANDROID SDK PLATFORM"
-          ls -ld "$ANDROID_HOME/platforms/android-36"
-
-          echo ""
-          echo "ANDROID BUILD TOOLS"
-          ls -ld "$ANDROID_HOME/build-tools/36.0.0"
 
 
       # ============================================================
-      # 12. CLEAN PROJECT
+      # 13. CLEAN
       # ============================================================
 
       - name: Clean Project
@@ -406,8 +523,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "Cleaning project..."
 
           gradle \
             --no-daemon \
@@ -419,8 +534,7 @@ jobs:
 
 
       # ============================================================
-      # 13. COMPILE RELEASE KOTLIN
-      # THIS IS THE IMPORTANT TEST
+      # 14. COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -446,7 +560,7 @@ jobs:
 
 
       # ============================================================
-      # 14. ASSEMBLE RELEASE APK
+      # 15. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -467,12 +581,12 @@ jobs:
 
           echo ""
           echo "=============================================="
-          echo "RELEASE APK BUILD PASSED"
+          echo "ASSEMBLE RELEASE APK PASSED"
           echo "=============================================="
 
 
       # ============================================================
-      # 15. LOCATE RELEASE APK
+      # 16. LOCATE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -480,7 +594,7 @@ jobs:
         run: |
           set -e
 
-          echo "Searching for release APK..."
+          echo "Searching for APK..."
 
           find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
@@ -495,7 +609,7 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo ""
-            echo "ERROR: Release APK was not generated."
+            echo "ERROR: Release APK not found."
             exit 1
           fi
 
@@ -507,7 +621,7 @@ jobs:
 
 
       # ============================================================
-      # 16. VERIFY APK PACKAGE
+      # 17. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -534,23 +648,22 @@ jobs:
               dump badging "$APK"
           )
 
-          echo ""
-          echo "Checking expected package..."
-
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
 
             echo ""
             echo "ERROR: Package name mismatch."
-            echo "Expected: $PACKAGE_NAME"
+            echo "Expected:"
+            echo "$PACKAGE_NAME"
             exit 1
           fi
 
-          echo "Package name verified."
+          echo ""
+          echo "PACKAGE VERIFIED."
 
 
       # ============================================================
-      # 17. RESTORE KEYSTORE
+      # 18. RESTORE KEYSTORE
       # ============================================================
 
       - name: Restore Release Keystore
@@ -570,18 +683,16 @@ jobs:
 
           if [ ! -s release-keystore.jks ]; then
             echo ""
-            echo "ERROR: Release keystore is empty."
+            echo "ERROR: Keystore is empty."
             exit 1
           fi
 
-          echo "Release keystore restored successfully."
-
-          ls -lh release-keystore.jks
+          echo ""
+          echo "RELEASE KEYSTORE RESTORED."
 
 
       # ============================================================
-      # 18. ZIPALIGN BEFORE SIGNING
-      # IMPORTANT
+      # 19. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -590,11 +701,10 @@ jobs:
           set -e
 
           INPUT_APK="$APK_PATH"
-
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
 
           echo "=============================================="
-          echo "ZIPALIGN RELEASE APK"
+          echo "ZIPALIGN"
           echo "=============================================="
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
@@ -606,12 +716,9 @@ jobs:
 
           if [ ! -f "$ALIGNED_APK" ]; then
             echo ""
-            echo "ERROR: Zipaligned APK was not created."
+            echo "ERROR: Zipaligned APK not created."
             exit 1
           fi
-
-          echo ""
-          echo "Checking zip alignment..."
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -c \
@@ -626,7 +733,7 @@ jobs:
 
 
       # ============================================================
-      # 19. SIGN ALIGNED APK
+      # 20. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
@@ -637,9 +744,6 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -e
-
-          ALIGNED_APK="$ALIGNED_APK"
-          SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           if [ -z "$KEYSTORE_PASSWORD" ]; then
             echo "ERROR: KEYSTORE_PASSWORD secret is missing."
@@ -656,8 +760,10 @@ jobs:
             exit 1
           fi
 
+          SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
+
           echo "=============================================="
-          echo "SIGNING RELEASE APK"
+          echo "SIGN RELEASE APK"
           echo "=============================================="
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
@@ -675,12 +781,12 @@ jobs:
           fi
 
           echo ""
-          echo "SIGNED APK CREATED:"
+          echo "SIGNED APK:"
           ls -lh "$SIGNED_APK"
 
 
       # ============================================================
-      # 20. VERIFY SIGNATURE
+      # 21. VERIFY SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -690,23 +796,17 @@ jobs:
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
-          echo "=============================================="
-          echo "VERIFY APK SIGNATURE"
-          echo "=============================================="
-
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
             verify \
             --verbose \
             "$APK"
 
           echo ""
-          echo "=============================================="
-          echo "APK SIGNATURE VERIFIED"
-          echo "=============================================="
+          echo "APK SIGNATURE VERIFIED."
 
 
       # ============================================================
-      # 21. FINAL APK VALIDATION
+      # 22. FINAL VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -717,24 +817,23 @@ jobs:
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           if [ ! -f "$APK" ]; then
-            echo ""
-            echo "ERROR: Final APK does not exist."
+            echo "ERROR: Final APK missing."
             exit 1
           fi
 
           SIZE=$(stat -c%s "$APK")
 
-          echo "Final APK size:"
-          echo "$SIZE bytes"
-
           if [ "$SIZE" -lt 100000 ]; then
             echo ""
-            echo "ERROR: APK is unexpectedly small."
+            echo "ERROR: APK size unexpectedly small."
             exit 1
           fi
 
           echo ""
-          echo "Final APK:"
+          echo "=============================================="
+          echo "FINAL APK"
+          echo "=============================================="
+
           ls -lh "$APK"
 
           echo ""
@@ -742,11 +841,11 @@ jobs:
           sha256sum "$APK"
 
           echo ""
-          echo "Final APK validation PASSED."
+          echo "FINAL APK VALIDATION PASSED."
 
 
       # ============================================================
-      # 22. UPLOAD FINAL SIGNED APK
+      # 23. UPLOAD SIGNED APK
       # ============================================================
 
       - name: Upload Signed Release APK
@@ -759,7 +858,7 @@ jobs:
 
 
       # ============================================================
-      # 23. UPLOAD BUILD REPORTS
+      # 24. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
