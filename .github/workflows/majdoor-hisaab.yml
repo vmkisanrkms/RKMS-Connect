@@ -60,7 +60,7 @@ jobs:
           pwd
 
           echo
-          echo "===== Repository ====="
+          echo "===== REPOSITORY ====="
           ls -la
 
           echo
@@ -96,6 +96,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "===== JAVA ====="
+
           java -version
 
           echo
@@ -126,7 +128,7 @@ jobs:
           echo "SDK_ROOT=$SDK_ROOT"
 
           if [[ ! -d "$SDK_ROOT" ]]; then
-            echo "ERROR: Android SDK not found."
+            echo "ERROR: Android SDK directory not found."
             exit 1
           fi
 
@@ -163,15 +165,18 @@ jobs:
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
           echo "$SDK_ROOT/build-tools/${BUILD_TOOLS}" >> "$GITHUB_PATH"
 
+          echo
+          echo "===== SDKMANAGER ====="
+
           "$SDKMANAGER" --version
 
           echo
-          echo "Accepting Android SDK licenses..."
+          echo "===== ACCEPT LICENSES ====="
 
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           echo
-          echo "Installing required packages..."
+          echo "===== INSTALL SDK ====="
 
           "$SDKMANAGER" \
             "platform-tools" \
@@ -179,7 +184,7 @@ jobs:
             "build-tools;${BUILD_TOOLS}"
 
           echo
-          echo "Verifying SDK..."
+          echo "===== VERIFY SDK ====="
 
           test -d \
             "$SDK_ROOT/platforms/android-${ANDROID_API}"
@@ -201,7 +206,7 @@ jobs:
 
 
       # ============================================================
-      # 6. LOCATE / EXTRACT V81 ZIP
+      # 6. LOCATE / EXTRACT V81
       # ============================================================
 
       - name: Locate Android project
@@ -215,15 +220,23 @@ jobs:
 
           FOUND_ROOT=""
 
+          # --------------------------------------------------------
+          # PROJECT AT ROOT
+          # --------------------------------------------------------
+
           if [[ -f "settings.gradle.kts" ]] && \
              [[ -f "app/build.gradle.kts" ]]; then
 
             FOUND_ROOT="$PWD"
 
-            echo "Project found at repository root."
+            echo "Android project found at repository root."
 
           fi
 
+
+          # --------------------------------------------------------
+          # V81 ZIP
+          # --------------------------------------------------------
 
           if [[ -z "$FOUND_ROOT" ]] && \
              [[ -f "$ZIP_NAME" ]]; then
@@ -258,6 +271,10 @@ jobs:
 
           fi
 
+
+          # --------------------------------------------------------
+          # FALLBACK
+          # --------------------------------------------------------
 
           if [[ -z "$FOUND_ROOT" ]]; then
 
@@ -342,17 +359,19 @@ jobs:
           test -f app/build.gradle.kts
 
           echo
-          echo "===== settings.gradle.kts ====="
+          echo "===== SETTINGS ====="
 
-          sed -n '1,260p' settings.gradle.kts
-
-          echo
-          echo "===== app/build.gradle.kts ====="
-
-          sed -n '1,380p' app/build.gradle.kts
+          sed -n '1,260p' \
+            settings.gradle.kts
 
           echo
-          echo "===== CHECKS ====="
+          echo "===== APP BUILD GRADLE ====="
+
+          sed -n '1,380p' \
+            app/build.gradle.kts
+
+          echo
+          echo "===== CONFIGURATION CHECK ====="
 
           grep -q \
             'com.majdoor.hisaab' \
@@ -410,11 +429,7 @@ jobs:
 
 
       # ============================================================
-      # 10. FIX V81 KOTLIN SOURCE
-      #
-      # IMPORTANT:
-      # The complete Python block below is correctly indented.
-      # This fixes the YAML syntax error from the previous run.
+      # 10. COMPLETE V81 KOTLIN FIX
       # ============================================================
 
       - name: Apply complete V81 Kotlin fixes
@@ -432,7 +447,9 @@ jobs:
 
           root = Path(os.environ["PROJECT_ROOT"])
 
-          files = list(root.rglob("MainActivityScreens.kt"))
+          files = list(
+              root.rglob("MainActivityScreens.kt")
+          )
 
           if not files:
               raise SystemExit(
@@ -441,7 +458,9 @@ jobs:
 
           src = files[0]
 
-          text = src.read_text(encoding="utf-8")
+          text = src.read_text(
+              encoding="utf-8"
+          )
 
           original = text
 
@@ -449,6 +468,7 @@ jobs:
           print("============================================================")
           print(" COMPLETE V81 KOTLIN PATCH")
           print("============================================================")
+
           print("SOURCE:")
           print(src)
 
@@ -479,12 +499,17 @@ jobs:
 
 
           # ========================================================
-          # 3. pick() Button -> TextView
+          # 3. pick() RETURN TYPE
           # ========================================================
 
           text = text.replace(
               "onPick:(Int)->Unit):Button",
               "onPick:(Int)->Unit):TextView"
+          )
+
+          text = text.replace(
+              "onPick: (Int) -> Unit): Button",
+              "onPick: (Int) -> Unit): TextView"
           )
 
 
@@ -509,7 +534,7 @@ jobs:
 
 
           # ========================================================
-          # 5. GENERIC it.text FIXES
+          # 5. BUTTON TEXT FIXES
           # ========================================================
 
           replacements = {
@@ -541,11 +566,17 @@ jobs:
               'it.text="Field: ${fields[i-1].name}"':
               'fb.text="Field: ${fields[i-1].name}"',
 
+              'it.text="Field: ${fields[i].name}"':
+              'fb.text="Field: ${fields[i].name}"',
+
               'it.text="Crop: Not linked"':
               'crb.text="Crop: Not linked"',
 
               'it.text="Crop: ${crops[i-1].name}"':
               'crb.text="Crop: ${crops[i-1].name}"',
+
+              'it.text="Crop: ${crops[i].name}"':
+              'cropBtn.text="Crop: ${crops[i].name}"',
 
               'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"':
               'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
@@ -563,28 +594,192 @@ jobs:
               'statusBtn.text="Status: $status"',
           }
 
+
           for old, new in replacements.items():
-              text = text.replace(old, new)
+
+              if old in text:
+
+                  text = text.replace(
+                      old,
+                      new
+                  )
+
+                  print(
+                      "FIXED:",
+                      old
+                  )
 
 
           # ========================================================
-          # 6. SELF-REFERENCING BUTTON CALLBACKS
+          # 6. EXACT MISSED V81 CASE #1
+          #
+          # Crop form:
+          #
+          # val fb=btn(...)
+          # ...
+          # it.text="Field: ${fields[i].name}"
+          #
+          # This was the remaining error.
+          # ========================================================
+
+          old = '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}'''
+
+          new = '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()}'''
+
+          if old in text:
+
+              text = text.replace(
+                  old,
+                  new,
+                  1
+              )
+
+              print(
+                  "FIXED EXACT: crop form field button"
+              )
+
+
+          # ========================================================
+          # 7. EXACT MISSED V81 CASE #2
+          #
+          # Attendance field button.
+          # ========================================================
+
+          old = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}'''
+
+          new = '''val fieldBtn=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fieldBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fieldBtn.text="Field: ${fields[i].name}"}.show()}'''
+
+          if old in text:
+
+              text = text.replace(
+                  old,
+                  new,
+                  1
+              )
+
+              print(
+                  "FIXED EXACT: attendance field button"
+              )
+
+
+          # ========================================================
+          # 8. MULTILINE ATTENDANCE FIELD
           # ========================================================
 
           text = text.replace(
-              '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;it.text="Field: ${fields[i].name}"}.show()}''',
-              '''val fb=btn("Field: ${selectedName(fieldId,fields.map{it.id to it.name})}");fb.setOnClickListener{AlertDialog.Builder(this).setTitle("Select field").setItems(fields.map{it.name}.toTypedArray()){_,i->fieldId=fields[i].id;fb.text="Field: ${fields[i].name}"}.show()}'''
-          )
+              '''fieldId=if(i==0) "" else fields[i-1].id
+                it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"''',
 
-
-          text = text.replace(
-              '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}"){AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;it.text="Crop: ${crops[i].name}"}.show()}''',
-              '''val cropBtn=btn("Crop: ${selectedName(cropId,crops.map{it.id to it.name})}");cropBtn.setOnClickListener{AlertDialog.Builder(this).setTitle("Select crop").setItems(crops.map{it.name}.toTypedArray()){_,i->cropId=crops[i].id;cropBtn.text="Crop: ${crops[i].name}"}.show()}'''
+              '''fieldId=if(i==0) "" else fields[i-1].id
+                fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'''
           )
 
 
           # ========================================================
-          # 7. INTENT TYPE SHADOWING
+          # 9. ATTENDANCE STATUS
+          # ========================================================
+
+          text = text.replace(
+              '''status=arrayOf("FULL","HALF","NONE")[i]
+                it.text="Status: $status"''',
+
+              '''status=arrayOf("FULL","HALF","NONE")[i]
+                statusBtn.text="Status: $status"'''
+          )
+
+
+          # ========================================================
+          # 10. WORKER SELECTION
+          # ========================================================
+
+          text = text.replace(
+              'setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}',
+              'setPositiveButton("Done"){_,_->workerBtn.text="Workers: ${selectedWorkers.distinct().size}"}'
+          )
+
+
+          # ========================================================
+          # 11. RATE TYPE
+          # ========================================================
+
+          text = text.replace(
+              'rateType=app.calculation.rateTypes()[i];it.text="Rate type: $rateType"',
+              'rateType=app.calculation.rateTypes()[i];rateTypeBtn.text="Rate type: $rateType"'
+          )
+
+
+          # ========================================================
+          # 12. PAYMENT
+          # ========================================================
+
+          text = text.replace(
+              'wid=workers[i].id;it.text="Worker: ${workers[i].name}"',
+              'wid=workers[i].id;wb.text="Worker: ${workers[i].name}"'
+          )
+
+          text = text.replace(
+              'method=methods[i];it.text="Method: ${methods[i]}"',
+              'method=methods[i];mb.text="Method: ${methods[i]}"'
+          )
+
+          text = text.replace(
+              'advance=!advance;it.text="Advance: ${if(advance)"YES" else "NO"}"',
+              'advance=!advance;adv.text="Advance: ${if(advance)"YES" else "NO"}"'
+          )
+
+
+          # ========================================================
+          # 13. EXPENSE
+          # ========================================================
+
+          text = text.replace(
+              'cat=cats[i];it.text="Category: $cat"',
+              'cat=cats[i];cb.text="Category: $cat"'
+          )
+
+          text = text.replace(
+              'fieldId="";it.text="Field: Not linked"',
+              'fieldId="";fb.text="Field: Not linked"'
+          )
+
+          text = text.replace(
+              'fieldId=fields[i-1].id;it.text="Field: ${fields[i-1].name}"',
+              'fieldId=fields[i-1].id;fb.text="Field: ${fields[i-1].name}"'
+          )
+
+          text = text.replace(
+              'cropId="";it.text="Crop: Not linked"',
+              'cropId="";crb.text="Crop: Not linked"'
+          )
+
+          text = text.replace(
+              'cropId=crops[i-1].id;it.text="Crop: ${crops[i-1].name}"',
+              'cropId=crops[i-1].id;crb.text="Crop: ${crops[i-1].name}"'
+          )
+
+
+          # ========================================================
+          # 14. REPORT FILTERS
+          # ========================================================
+
+          text = text.replace(
+              'wid=if(i==0)"" else workers[i-1].id; it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
+              'wid=if(i==0)"" else workers[i-1].id; wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"'
+          )
+
+          text = text.replace(
+              'fid=if(i==0)"" else fields[i-1].id; it.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
+              'fid=if(i==0)"" else fields[i-1].id; fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'
+          )
+
+          text = text.replace(
+              'cid=if(i==0)"" else crops[i-1].id; it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
+              'cid=if(i==0)"" else crops[i-1].id; cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'
+          )
+
+
+          # ========================================================
+          # 15. INTENT TYPE
           # ========================================================
 
           text = text.replace(
@@ -599,7 +794,7 @@ jobs:
 
 
           # ========================================================
-          # 8. EXPORT when
+          # 16. EXPORT WHEN
           # ========================================================
 
           text = re.sub(
@@ -630,7 +825,7 @@ jobs:
 
 
           # ========================================================
-          # 9. COMPATIBILITY FIXES
+          # 17. COMPATIBILITY
           # ========================================================
 
           text = text.replace(
@@ -650,41 +845,7 @@ jobs:
 
 
           # ========================================================
-          # 10. ATTENDANCE BUTTONS
-          # ========================================================
-
-          text = text.replace(
-              '''fieldId=if(i==0) "" else fields[i-1].id
-                it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"''',
-              '''fieldId=if(i==0) "" else fields[i-1].id
-                fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'''
-          )
-
-          text = text.replace(
-              '''status=arrayOf("FULL","HALF","NONE")[i]
-                it.text="Status: $status"''',
-              '''status=arrayOf("FULL","HALF","NONE")[i]
-                statusBtn.text="Status: $status"'''
-          )
-
-
-          # ========================================================
-          # 11. REPORT FILTER BUTTONS
-          # ========================================================
-
-          text = text.replace(
-              '''fid=if(i==0)"" else fields[i-1].id;it.text="Field: ${if(i==0)"All" else fields[i-1].name}"''',
-              '''fid=if(i==0)"" else fields[i-1].id;fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'''
-          )
-
-          text = text.replace(
-              '''cid=if(i==0)"" else crops[i-1].id;it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"''',
-              '''cid=if(i==0)"" else crops[i-1].id;cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'''
-          )
-
-
-          # ========================================================
-          # 12. renderSummary ORDER
+          # 18. RENDER SUMMARY ORDER
           # ========================================================
 
           calendar_start = text.find(
@@ -716,21 +877,19 @@ jobs:
                   and summary_pos > render_pos
               ):
 
-                  summary_start = summary_pos
-
                   summary_end = calendar.find(
                       "        val nav=",
-                      summary_start
+                      summary_pos
                   )
 
-                  if summary_end > summary_start:
-
-                      summary_block = calendar[
-                          summary_start:summary_end
-                      ]
+                  if summary_end > summary_pos:
 
                       render_block = calendar[
-                          render_pos:summary_start
+                          render_pos:summary_pos
+                      ]
+
+                      summary_block = calendar[
+                          summary_pos:summary_end
                       ]
 
                       calendar = (
@@ -753,7 +912,7 @@ jobs:
 
 
           # ========================================================
-          # 13. WRITE PATCH
+          # 19. WRITE SOURCE
           # ========================================================
 
           if text != original:
@@ -763,19 +922,21 @@ jobs:
                   encoding="utf-8"
               )
 
+              print()
               print(
                   "SOURCE PATCH WRITTEN"
               )
 
           else:
 
+              print()
               print(
                   "SOURCE ALREADY PATCHED"
               )
 
 
           # ========================================================
-          # 14. FINAL SOURCE CHECK
+          # 20. FINAL CHECK
           # ========================================================
 
           final = src.read_text(
@@ -787,25 +948,35 @@ jobs:
           print(" FINAL SOURCE CHECK")
           print("============================================================")
 
+
           checks = {
 
               "btn default action":
-                  "action:()->Unit = {}" in final
-                  or "action: () -> Unit = {}" in final,
+                  (
+                      "action:()->Unit = {}" in final
+                      or
+                      "action: () -> Unit = {}" in final
+                  ),
 
               "ScrollView":
                   "setFillViewport(true)" in final,
 
               "pick TextView":
-                  "onPick:(Int)->Unit):TextView" in final
-                  or "onPick: (Int) -> Unit): TextView" in final,
+                  (
+                      "onPick:(Int)->Unit):TextView" in final
+                      or
+                      "onPick: (Int) -> Unit): TextView" in final
+                  ),
 
               "export when fixed":
                   "when(exportType)" not in final,
 
               "Intent type":
-                  'this.type="image/*"' in final
-                  or 'this.type = "image/*"' in final,
+                  (
+                      'this.type="image/*"' in final
+                      or
+                      'this.type = "image/*"' in final
+                  ),
 
               "renderSummary":
                   "fun renderSummary()" in final,
@@ -816,6 +987,7 @@ jobs:
 
 
           failed = False
+
 
           for name, ok in checks.items():
 
@@ -829,8 +1001,16 @@ jobs:
                   failed = True
 
 
-          forbidden = [
+          # ========================================================
+          # 21. NO UNRESOLVED BUTTON it.text
+          # ========================================================
 
+          print()
+          print(
+              "===== REMAINING BUTTON it.text CHECK ====="
+          )
+
+          unresolved_patterns = [
               'it.text="Field:',
               'it.text="Status:',
               'it.text="Crop:',
@@ -839,12 +1019,11 @@ jobs:
               'it.text="Advance:',
               'it.text="Category:',
               'it.text="Rate type:',
+              'setPositiveButton("Done"){_,_->it.text='
           ]
 
-          print()
-          print("===== FORBIDDEN UNRESOLVED PATTERNS =====")
 
-          for pattern in forbidden:
+          for pattern in unresolved_patterns:
 
               count = final.count(pattern)
 
@@ -852,12 +1031,36 @@ jobs:
                   f"{count:3d} : {pattern}"
               )
 
-              if count:
+              if count != 0:
+
                   failed = True
 
 
           # ========================================================
-          # CALENDAR FUNCTION ORDER
+          # 22. SHOW EXACT REMAINING it.text LINES
+          # ========================================================
+
+          if "it.text=" in final:
+
+              print()
+              print(
+                  "===== ALL REMAINING it.text LINES ====="
+              )
+
+              for number, line in enumerate(
+                  final.splitlines(),
+                  1
+              ):
+
+                  if "it.text=" in line:
+
+                      print(
+                          f"{number}: {line}"
+                      )
+
+
+          # ========================================================
+          # 23. CALENDAR ORDER
           # ========================================================
 
           calendar_start = final.find(
@@ -911,7 +1114,16 @@ jobs:
 
           print()
           print(
+              "============================================================"
+          )
+
+          print(
               "ALL V81 KOTLIN SOURCE FIXES PASSED"
+          )
+
+          print(
+              "============================================================"
+
           )
 
           PY
@@ -938,7 +1150,7 @@ jobs:
           echo "$SRC"
 
           echo
-          echo "===== btn / pick ====="
+          echo "===== BTN / PICK ====="
 
           grep -n \
             -E \
@@ -947,7 +1159,7 @@ jobs:
             || true
 
           echo
-          echo "===== ScrollView ====="
+          echo "===== SCROLLVIEW ====="
 
           grep -n \
             -E \
@@ -956,7 +1168,7 @@ jobs:
             || true
 
           echo
-          echo "===== render functions ====="
+          echo "===== RENDER FUNCTIONS ====="
 
           grep -n \
             -E \
@@ -965,23 +1177,7 @@ jobs:
             || true
 
           echo
-          echo "===== suspicious unresolved it.text ====="
-
-          if grep -n \
-            -E \
-            'it\.text="(Field|Status|Crop|Worker|Method|Advance|Category|Rate type):' \
-            "$SRC"; then
-
-            echo
-            echo "ERROR: unresolved it.text remains."
-            exit 1
-
-          fi
-
-          echo "No unresolved button it.text patterns found."
-
-          echo
-          echo "===== export ====="
+          echo "===== EXPORT ====="
 
           grep -n \
             -A12 \
@@ -990,9 +1186,28 @@ jobs:
             "$SRC" \
             || true
 
+          echo
+          echo "===== BUTTON TEXT CHECK ====="
+
+          if grep -n \
+            -E \
+            'it\.text="(Field|Status|Crop|Worker|Method|Advance|Category|Rate type):' \
+            "$SRC"; then
+
+            echo
+            echo "ERROR: unresolved button it.text remains."
+            exit 1
+
+          fi
+
+          echo "No unresolved button it.text found."
+
+          echo
+          echo "SOURCE AUDIT PASSED"
+
 
       # ============================================================
-      # 12. GRADLE VERSION
+      # 12. VERIFY GRADLE
       # ============================================================
 
       - name: Verify Gradle
@@ -1128,7 +1343,7 @@ jobs:
 
           if [[ -z "$APK" ]]; then
 
-            echo "ERROR: Release APK not found."
+            echo "ERROR: APK not found."
 
             find \
               app/build/outputs/apk \
@@ -1393,7 +1608,7 @@ jobs:
 
 
       # ============================================================
-      # 23. PREPARE FINAL ARTIFACT
+      # 23. FINAL ARTIFACT
       # ============================================================
 
       - name: Prepare final release artifact
