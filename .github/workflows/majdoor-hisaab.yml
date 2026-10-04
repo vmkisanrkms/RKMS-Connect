@@ -4,14 +4,13 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: majdoor-hisaab-pro-v82-release
+  group: majdoor-hisaab-pro-release
   cancel-in-progress: true
 
 env:
@@ -19,23 +18,12 @@ env:
   GRADLE_VERSION: "8.11.1"
   ANDROID_API: "36"
   BUILD_TOOLS: "36.0.0"
-
   PACKAGE_NAME: "com.majdoor.hisaab"
-  VERSION_NAME: "1.77.0"
-  VERSION_CODE: "77"
-
-  ZIP_NAME: "Majdoor-Hisaab-PRO-Professional-UI-V82-KOTLIN-COMPILE-FIXED.zip"
-
-  APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
-  APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
-
+  VERSION_NAME: "1.77"
 
 jobs:
-
   build-release:
-
-    name: Build Final Signed Release APK
-
+    name: Build Signed Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -43,1717 +31,939 @@ jobs:
       # ============================================================
       # 1. CHECKOUT
       # ============================================================
-
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-
       # ============================================================
-      # 2. JAVA 17
+      # 2. JAVA
       # ============================================================
-
       - name: Setup Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
-
-      # ============================================================
-      # 3. GRADLE 8.11.1
-      # ============================================================
-
-      - name: Setup Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
 
       # ============================================================
-      # 4. LOCATE ANDROID SDK
+      # 3. ANDROID SDK
       # ============================================================
-
-      - name: Locate Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "LOCATING ANDROID SDK"
-          echo "=============================================="
-
-          if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
-            SDK_ROOT="$ANDROID_HOME"
-
-          elif [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
-            SDK_ROOT="$ANDROID_SDK_ROOT"
-
-          elif [ -d "/usr/local/lib/android/sdk" ]; then
-            SDK_ROOT="/usr/local/lib/android/sdk"
-
-          else
-            SDK_ROOT=$(find /usr/local/lib/android \
-              -maxdepth 3 \
-              -type d \
-              -name "sdk" \
-              -print \
-              -quit 2>/dev/null || true)
-          fi
-
-          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
-            echo "ERROR: Android SDK not found."
-            exit 1
-          fi
-
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-
-          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-
-          SDKMANAGER=""
-
-          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          else
-            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
-              -type f \
-              -name "sdkmanager" \
-              -print \
-              -quit 2>/dev/null || true)
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "ANDROID SDK:"
-          echo "$SDK_ROOT"
-
-          echo ""
-          echo "SDKMANAGER:"
-          echo "$SDKMANAGER"
-
-          "$SDKMANAGER" --version
-
-
-      # ============================================================
-      # 5. INSTALL ANDROID SDK 36
-      # ============================================================
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install Android SDK 36
-        shell: bash
         run: |
-          set -e
-
-          echo "=============================================="
-          echo "INSTALL ANDROID SDK 36"
-          echo "=============================================="
-
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-
-          "$SDKMANAGER" \
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
             "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-          echo ""
-          echo "ANDROID SDK INSTALLATION PASSED."
-
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;${BUILD_TOOLS}"
 
       # ============================================================
-      # 6. VERIFY ANDROID SDK
+      # 4. FIND PROJECT ZIP
       # ============================================================
-
-      - name: Verify Android SDK
+      - name: Find Majdoor Hisaab project ZIP
         shell: bash
         run: |
           set -e
 
-          echo "=============================================="
-          echo "VERIFY ANDROID SDK"
-          echo "=============================================="
+          echo "Searching repository for project ZIP..."
 
-          test -d "$ANDROID_HOME/platform-tools"
-          test -d "$ANDROID_HOME/platforms/android-36"
-          test -d "$ANDROID_HOME/build-tools/36.0.0"
+          ZIP_FILE="$(find . -type f \( \
+            -iname '*Majdoor*Hisaab*.zip' \
+            -o -iname '*MajdoorHisaab*.zip' \
+            -o -iname '*.zip' \
+          \) \
+          ! -path './.git/*' \
+          | head -n 1)"
 
-          test -x "$ANDROID_HOME/platform-tools/adb"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
-
-          echo ""
-          echo "ANDROID SDK VERIFICATION PASSED."
-
-
-      # ============================================================
-      # 7. FIND PROJECT ZIP
-      # ============================================================
-
-      - name: Find Majdoor Hisaab Project ZIP
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FIND MAJDOOR HISAAB PROJECT ZIP"
-          echo "=============================================="
-
-          FOUND_ZIP=""
-
-          if [ -f "$ZIP_NAME" ]; then
-            FOUND_ZIP="$ZIP_NAME"
-          fi
-
-          if [ -z "$FOUND_ZIP" ]; then
-            FOUND_ZIP=$(
-              find . \
-                -type f \
-                -name "Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_*.zip" \
-                -not -path "./.git/*" \
-                -print \
-                | sort \
-                | tail -1
-            )
-          fi
-
-          if [ -z "$FOUND_ZIP" ]; then
-            FOUND_ZIP=$(
-              find . \
-                -type f \
-                -iname "*Majdoor*Hisaab*.zip" \
-                -not -path "./.git/*" \
-                -print \
-                | sort \
-                | tail -1
-            )
-          fi
-
-          if [ -z "$FOUND_ZIP" ] || [ ! -f "$FOUND_ZIP" ]; then
-            echo ""
-            echo "ERROR: Majdoor Hisaab project ZIP NOT FOUND."
-
-            echo ""
-            echo "AVAILABLE ZIP FILES:"
-
-            find . \
-              -type f \
-              -name "*.zip" \
-              -not -path "./.git/*" \
-              -print \
-              | sort
-
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Project ZIP not found."
+            find . -maxdepth 4 -type f | sort | head -300
             exit 1
           fi
 
-          FOUND_ZIP="${FOUND_ZIP#./}"
-
-          echo ""
-          echo "PROJECT ZIP FOUND:"
-          echo "$FOUND_ZIP"
-
-          ls -lh "$FOUND_ZIP"
-
-          echo "ZIP_NAME=$FOUND_ZIP" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "ZIP DETECTION PASSED."
-
+          echo "PROJECT_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "Found: $ZIP_FILE"
 
       # ============================================================
-      # 8. EXTRACT PROJECT
+      # 5. EXTRACT PROJECT
       # ============================================================
-
-      - name: Extract Majdoor Hisaab Project
+      - name: Extract project
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "EXTRACT PROJECT"
-          echo "=============================================="
 
           rm -rf build_source
           mkdir -p build_source
 
-          unzip -q "$ZIP_NAME" -d build_source
+          unzip -q "$PROJECT_ZIP" -d build_source
 
-          SETTINGS_FILE=$(find build_source \
-            -type f \
-            \( \
-              -name "settings.gradle" \
-              -o \
-              -name "settings.gradle.kts" \
-            \) \
-            -print \
-            -quit)
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo ""
-            echo "ERROR: Gradle settings file not found."
-
-            find build_source \
-              -maxdepth 8 \
-              -type f \
-              -print \
-              | sort \
-              | head -300
-
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "PROJECT DIRECTORY:"
-          echo "$PROJECT_DIR"
-
+          echo "Extracted project:"
+          find build_source -maxdepth 4 -type f \
+            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
+            -print
 
       # ============================================================
-      # 9. VERIFY ANDROID PROJECT
+      # 6. LOCATE ACTUAL GRADLE ROOT
       # ============================================================
-
-      - name: Verify Android Project
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Locate Gradle project
         shell: bash
         run: |
           set -e
 
-          echo "=============================================="
-          echo "VERIFY ANDROID PROJECT"
-          echo "=============================================="
+          ROOT="$(find "$GITHUB_WORKSPACE/build_source" -type f \
+            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
+            -print -quit \
+            | xargs -r dirname)"
 
-          pwd
-
-          test -d "app"
-
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERROR: app Gradle file not found."
+          if [ -z "$ROOT" ]; then
+            echo "ERROR: settings.gradle/settings.gradle.kts not found."
+            find build_source -maxdepth 8 -type f | sort | head -500
             exit 1
           fi
 
-          echo ""
-          echo "ANDROID PROJECT VERIFIED."
-
-
-      # ============================================================
-      # 10. VERIFY GRADLE
-      # ============================================================
-
-      - name: Verify Gradle Environment
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "GRADLE ENVIRONMENT"
-          echo "=============================================="
-
-          java -version
-
-          echo ""
-          gradle --version
-
-          DETECTED=$(
-            gradle --version |
-            awk '/^Gradle / {print $2; exit}'
-          )
-
-          echo ""
-          echo "EXPECTED GRADLE:"
-          echo "$GRADLE_VERSION"
-
-          echo ""
-          echo "DETECTED GRADLE:"
-          echo "$DETECTED"
-
-          if [ "$DETECTED" != "$GRADLE_VERSION" ]; then
-            echo ""
-            echo "ERROR: Gradle version mismatch."
-            exit 1
-          fi
-
-          echo ""
-          echo "GRADLE ENVIRONMENT PASSED."
-
+          echo "GRADLE_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Gradle root: $ROOT"
 
       # ============================================================
-      # 11. LOCATE MAIN KOTLIN SOURCE
+      # 7. ENSURE GRADLE WRAPPER
       # ============================================================
-
-      - name: Locate Main Kotlin Source
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "LOCATE MAIN KOTLIN SOURCE"
-          echo "=============================================="
-
-          MAIN_FILES=$(find app/src/main \
-            -type f \
-            -name "MainActivity.kt" \
-            -print)
-
-          echo "$MAIN_FILES"
-
-          COUNT=$(echo "$MAIN_FILES" | sed '/^$/d' | wc -l)
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo ""
-            echo "ERROR: MainActivity.kt not found."
-            exit 1
-          fi
-
-          if [ "$COUNT" -gt 1 ]; then
-            echo ""
-            echo "ERROR: Multiple MainActivity.kt files found."
-            exit 1
-          fi
-
-          MAIN_FILE=$(echo "$MAIN_FILES" | head -1)
-
-          echo "MAIN_FILE=$MAIN_FILE" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "MAIN FILE:"
-          echo "$MAIN_FILE"
-
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
 
       # ============================================================
-      # 12. FIX btn(title=...) -> btn(label=...)
-      #
-      # CURRENT SCREENSHOT ERROR:
-      #
-      # No parameter with name 'title' found
-      # No value passed for parameter 'label'
+      # 8. SOURCE AUDIT + COMPLETE btn() REPAIR
       #
       # IMPORTANT:
-      # Only btn(...) calls are changed.
-      # Other title= parameters are NOT touched.
+      # - fixes title= -> label=
+      # - reads actual btn() declaration
+      # - converts positional btn arguments into named arguments
+      # - prevents Boolean / Function<Unit> parameter inversion
+      # - does NOT modify DetailTopBar(title=...)
       # ============================================================
-
-      - name: Repair btn Named Arguments
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Repair btn calls and audit Kotlin source
         shell: bash
         run: |
           set -e
 
-          echo "=============================================="
-          echo "REPAIR btn() NAMED ARGUMENTS"
-          echo "=============================================="
+          cd "$GRADLE_ROOT"
 
           python3 <<'PY'
+          import os
+          import re
           from pathlib import Path
 
           root = Path("app/src/main")
 
+          kotlin_files = list(root.rglob("*.kt"))
 
-          def find_matching_paren(text, open_pos):
-              depth = 1
-              i = open_pos + 1
-              mode = "normal"
+          if not kotlin_files:
+              raise SystemExit("ERROR: No Kotlin source files found.")
+
+          print("Kotlin files found:", len(kotlin_files))
+
+          # --------------------------------------------------------
+          # Utilities
+          # --------------------------------------------------------
+
+          def strip_comments(s):
+              s = re.sub(r'/\*.*?\*/', '', s, flags=re.S)
+              s = re.sub(r'//.*', '', s)
+              return s
+
+          def matching(text, start, open_ch='(', close_ch=')'):
+              depth = 0
+              quote = None
+              triple = False
+              escape = False
+              i = start
 
               while i < len(text):
+                  ch = text[i]
 
-                  if mode == "normal":
-
-                      if text.startswith('"""', i):
-                          mode = "triple"
-                          i += 3
-                          continue
-
-                      c = text[i]
-
-                      if c == '"':
-                          mode = "string"
-                          i += 1
-                          continue
-
-                      if c == "'":
-                          mode = "char"
-                          i += 1
-                          continue
-
-                      if c == '(':
-                          depth += 1
-
-                      elif c == ')':
-                          depth -= 1
-
-                          if depth == 0:
-                              return i
-
-                      i += 1
-
-                  elif mode == "string":
-
-                      if text[i] == '\\':
-                          i += 2
-                          continue
-
-                      if text[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-                  elif mode == "char":
-
-                      if text[i] == '\\':
-                          i += 2
-                          continue
-
-                      if text[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-                  else:
-
-                      if text.startswith('"""', i):
-                          mode = "normal"
-                          i += 3
+                  if quote:
+                      if triple:
+                          if text.startswith('"""', i):
+                              triple = False
+                              quote = None
+                              i += 3
+                              continue
                       else:
-                          i += 1
+                          if escape:
+                              escape = False
+                          elif ch == '\\':
+                              escape = True
+                          elif ch == quote:
+                              quote = None
+                      i += 1
+                      continue
 
-              return None
+                  if text.startswith('"""', i):
+                      quote = '"'
+                      triple = True
+                      i += 3
+                      continue
 
+                  if ch in ('"', "'"):
+                      quote = ch
+                      i += 1
+                      continue
 
-          def replace_top_level_title(content):
-              result = []
-              i = 0
-              depth = 0
-              mode = "normal"
-              changed = 0
-
-              while i < len(content):
-
-                  if mode == "normal":
-
-                      if content.startswith('"""', i):
-                          result.append('"""')
-                          i += 3
-                          mode = "triple"
-                          continue
-
-                      c = content[i]
-
-                      if c == '"':
-                          result.append(c)
-                          i += 1
-                          mode = "string"
-                          continue
-
-                      if c == "'":
-                          result.append(c)
-                          i += 1
-                          mode = "char"
-                          continue
-
-                      if c in "([{":
-                          depth += 1
-                          result.append(c)
-                          i += 1
-                          continue
-
-                      if c in ")]}":
-                          depth -= 1
-                          result.append(c)
-                          i += 1
-                          continue
-
+                  if ch == open_ch:
+                      depth += 1
+                  elif ch == close_ch:
+                      depth -= 1
                       if depth == 0:
+                          return i
 
-                          remaining = content[i:]
+                  i += 1
 
-                          if remaining.startswith("title"):
-                              before_ok = (
-                                  i == 0 or
-                                  not (
-                                      content[i - 1].isalnum()
-                                      or content[i - 1] == "_"
-                                  )
-                              )
+              return -1
 
-                              after_pos = i + 5
+          def split_top_level(s):
+              parts = []
+              start = 0
+              par = bra = cur = 0
+              quote = None
+              triple = False
+              escape = False
 
-                              after_ok = (
-                                  after_pos < len(content)
-                                  and content[after_pos] == "="
-                              )
+              i = 0
 
-                              if before_ok and after_ok:
-                                  result.append("label")
-                                  i += 5
-                                  changed += 1
-                                  continue
+              while i < len(s):
+                  ch = s[i]
 
-                      result.append(c)
-                      i += 1
-
-                  elif mode == "string":
-
-                      if content[i] == '\\':
-                          result.append(content[i:i + 2])
-                          i += 2
-                          continue
-
-                      result.append(content[i])
-
-                      if content[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-                  elif mode == "char":
-
-                      if content[i] == '\\':
-                          result.append(content[i:i + 2])
-                          i += 2
-                          continue
-
-                      result.append(content[i])
-
-                      if content[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-                  else:
-
-                      if content.startswith('"""', i):
-                          result.append('"""')
-                          i += 3
-                          mode = "normal"
+                  if quote:
+                      if triple:
+                          if s.startswith('"""', i):
+                              quote = None
+                              triple = False
+                              i += 3
+                              continue
                       else:
-                          result.append(content[i])
-                          i += 1
+                          if escape:
+                              escape = False
+                          elif ch == '\\':
+                              escape = True
+                          elif ch == quote:
+                              quote = None
+                      i += 1
+                      continue
 
-              return ''.join(result), changed
+                  if s.startswith('"""', i):
+                      quote = '"'
+                      triple = True
+                      i += 3
+                      continue
 
+                  if ch in ('"', "'"):
+                      quote = ch
+                  elif ch == '(':
+                      par += 1
+                  elif ch == ')':
+                      par -= 1
+                  elif ch == '[':
+                      bra += 1
+                  elif ch == ']':
+                      bra -= 1
+                  elif ch == '{':
+                      cur += 1
+                  elif ch == '}':
+                      cur -= 1
+                  elif ch == ',' and par == 0 and bra == 0 and cur == 0:
+                      parts.append(s[start:i].strip())
+                      start = i + 1
 
-          total = 0
+                  i += 1
 
-          for path in root.rglob("*.kt"):
+              tail = s[start:].strip()
+              if tail:
+                  parts.append(tail)
 
+              return parts
+
+          def top_level_equals(s):
+              par = bra = cur = 0
+              quote = None
+              triple = False
+              escape = False
+
+              i = 0
+
+              while i < len(s):
+                  ch = s[i]
+
+                  if quote:
+                      if triple:
+                          if s.startswith('"""', i):
+                              quote = None
+                              triple = False
+                              i += 3
+                              continue
+                      else:
+                          if escape:
+                              escape = False
+                          elif ch == '\\':
+                              escape = True
+                          elif ch == quote:
+                              quote = None
+                      i += 1
+                      continue
+
+                  if s.startswith('"""', i):
+                      quote = '"'
+                      triple = True
+                      i += 3
+                      continue
+
+                  if ch in ('"', "'"):
+                      quote = ch
+                  elif ch == '(':
+                      par += 1
+                  elif ch == ')':
+                      par -= 1
+                  elif ch == '[':
+                      bra += 1
+                  elif ch == ']':
+                      bra -= 1
+                  elif ch == '{':
+                      cur += 1
+                  elif ch == '}':
+                      cur -= 1
+                  elif ch == '=' and par == 0 and bra == 0 and cur == 0:
+                      return i
+
+                  i += 1
+
+              return -1
+
+          # --------------------------------------------------------
+          # Find btn declaration
+          # --------------------------------------------------------
+
+          declarations = []
+
+          declaration_pattern = re.compile(
+              r'\bfun\s+btn\s*\(',
+              re.MULTILINE
+          )
+
+          for path in kotlin_files:
               text = path.read_text(encoding="utf-8")
 
-              output = []
-              cursor = 0
-              changed_file = 0
+              for m in declaration_pattern.finditer(text):
+                  open_pos = text.find("(", m.start())
+                  close_pos = matching(text, open_pos)
 
-              while True:
+                  if close_pos == -1:
+                      continue
 
-                  pos = text.find("btn(", cursor)
+                  signature = text[open_pos + 1:close_pos]
 
-                  if pos == -1:
-                      output.append(text[cursor:])
+                  # Extract top-level parameter declarations.
+                  params = []
+
+                  for p in split_top_level(signature):
+                      p = p.strip()
+
+                      if not p:
+                          continue
+
+                      eq = top_level_equals(p)
+                      left = p if eq == -1 else p[:eq]
+
+                      colon = left.find(":")
+                      if colon == -1:
+                          continue
+
+                      name = left[:colon].strip()
+
+                      # Remove annotations / modifiers.
+                      name = re.sub(
+                          r'^(?:public|private|internal|protected|crossinline|noinline|vararg)\s+',
+                          '',
+                          name
+                      ).strip()
+
+                      if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+                          params.append(name)
+
+                  if params:
+                      declarations.append((path, params, signature))
+
+          if not declarations:
+              print("WARNING: btn() declaration was not found.")
+              print("The source will still receive title -> label repair.")
+              btn_params = None
+          else:
+              # Prefer declaration containing label or title.
+              chosen = None
+
+              for item in declarations:
+                  if "label" in item[1] or "title" in item[1]:
+                      chosen = item
                       break
 
-                  close = find_matching_paren(text, pos + 3)
+              if chosen is None:
+                  chosen = declarations[0]
 
-                  if close is None:
-                      raise SystemExit(
-                          f"ERROR: Cannot parse btn() in {path}"
+              btn_params = chosen[1]
+
+              print("btn() declaration:", chosen[0])
+              print("btn() parameters:", btn_params)
+
+          # --------------------------------------------------------
+          # Repair every btn(...) call
+          # --------------------------------------------------------
+
+          changed_files = []
+          changed_calls = 0
+
+          for path in kotlin_files:
+              original = path.read_text(encoding="utf-8")
+              text = original
+
+              # Work backwards so positions remain valid.
+              matches = list(re.finditer(r'\bbtn\s*\(', text))
+
+              for m in reversed(matches):
+                  open_pos = text.find("(", m.start())
+                  close_pos = matching(text, open_pos)
+
+                  if close_pos == -1:
+                      continue
+
+                  # Skip the actual function declaration.
+                  prefix = text[max(0, m.start()-20):m.start()]
+                  if re.search(r'\bfun\s*$', prefix):
+                      continue
+
+                  content = text[open_pos + 1:close_pos]
+
+                  args = split_top_level(content)
+
+                  if not args:
+                      continue
+
+                  new_args = []
+                  used_names = set()
+
+                  # ------------------------------------------------
+                  # Detect trailing lambda outside parentheses.
+                  # ------------------------------------------------
+                  trailing_lambda = None
+
+                  # btn(...) { ... }
+                  after = close_pos + 1
+                  while after < len(text) and text[after].isspace():
+                      after += 1
+
+                  if after < len(text) and text[after] == '{':
+                      lambda_end = matching(
+                          text,
+                          after,
+                          '{',
+                          '}'
                       )
 
-                  output.append(text[cursor:pos])
+                      if lambda_end != -1:
+                          trailing_lambda = text[after:lambda_end + 1]
 
-                  call_content = text[pos + 4:close]
+                          # Remove lambda from outer text later.
+                          trailing_region_end = lambda_end + 1
+                      else:
+                          trailing_region_end = close_pos + 1
+                  else:
+                      trailing_region_end = close_pos + 1
 
-                  fixed_content, changed = replace_top_level_title(
-                      call_content
-                  )
+                  # ------------------------------------------------
+                  # Existing named arguments.
+                  # ------------------------------------------------
+                  has_named = False
 
-                  output.append("btn(")
-                  output.append(fixed_content)
-                  output.append(")")
+                  for a in args:
+                      eq = top_level_equals(a)
 
-                  if changed:
-                      changed_file += changed
-                      total += changed
+                      if eq != -1:
+                          has_named = True
+                          name = a[:eq].strip()
+                          value = a[eq + 1:].strip()
 
-                  cursor = close + 1
+                          if name == "title":
+                              name = "label"
 
-              new_text = ''.join(output)
+                          new_args.append((name, value))
+                          used_names.add(name)
 
-              if changed_file:
-                  path.write_text(
-                      new_text,
-                      encoding="utf-8"
-                  )
+                  # ------------------------------------------------
+                  # Positional arguments.
+                  # ------------------------------------------------
+                  positional = []
 
-                  print(
-                      f"PATCHED {path}: "
-                      f"{changed_file} btn title->label occurrence(s)"
-                  )
+                  for a in args:
+                      if top_level_equals(a) == -1:
+                          positional.append(a.strip())
 
+                  if positional and btn_params:
+                      available = [
+                          p for p in btn_params
+                          if p not in used_names
+                      ]
 
-          print("")
-          print("TOTAL btn() title->label FIXES:", total)
+                      if len(positional) <= len(available):
+                          for idx, value in enumerate(positional):
+                              new_args.append(
+                                  (available[idx], value)
+                              )
+                              used_names.add(available[idx])
 
-          if total == 0:
-              print(
-                  "No btn(title=...) remained; source already uses label."
+                  elif positional:
+                      # At minimum repair common legacy pattern:
+                      # btn("Text", false) { ... }
+                      # where false was being sent to onClick.
+                      #
+                      # Leave declaration-driven conversion unavailable
+                      # but use the safe conventional parameter names.
+                      fallback_names = [
+                          "label",
+                          "icon",
+                          "onClick",
+                          "enabled"
+                      ]
+
+                      for idx, value in enumerate(positional):
+                          if idx < len(fallback_names):
+                              new_args.append(
+                                  (fallback_names[idx], value)
+                              )
+
+                  # ------------------------------------------------
+                  # Add trailing lambda to onClick.
+                  # ------------------------------------------------
+                  if trailing_lambda:
+                      # Remove existing onClick if it was only created
+                      # as a positional argument.
+                      new_args = [
+                          (n, v)
+                          for n, v in new_args
+                          if n != "onClick"
+                      ]
+
+                      new_args.append(
+                          ("onClick", trailing_lambda)
+                      )
+
+                  # ------------------------------------------------
+                  # Normalize names and reconstruct.
+                  # ------------------------------------------------
+                  if new_args:
+                      normalized = ", ".join(
+                          f"{name} = {value}"
+                          for name, value in new_args
+                      )
+
+                      replacement = f"btn({normalized})"
+
+                      if trailing_lambda:
+                          replacement += ""
+
+                      # Replace btn(...) itself.
+                      text = (
+                          text[:m.start()]
+                          + replacement
+                          + text[close_pos + 1:]
+                      )
+
+                      # If trailing lambda existed, it is still present
+                      # in the original text. We need to remove it because
+                      # it was moved inside onClick.
+                      if trailing_lambda:
+                          # Find the lambda immediately after replacement.
+                          search_start = (
+                              m.start() + len(replacement)
+                          )
+
+                          while (
+                              search_start < len(text)
+                              and text[search_start].isspace()
+                          ):
+                              search_start += 1
+
+                          if (
+                              text.startswith(
+                                  trailing_lambda,
+                                  search_start
+                              )
+                          ):
+                              text = (
+                                  text[:search_start]
+                                  + text[
+                                      search_start
+                                      + len(trailing_lambda):
+                                  ]
+                              )
+
+                      changed_calls += 1
+
+              if text != original:
+                  path.write_text(text, encoding="utf-8")
+                  changed_files.append(str(path))
+
+          print("Files changed:", len(changed_files))
+          print("btn() calls repaired:", changed_calls)
+
+          # --------------------------------------------------------
+          # Final hard audit
+          # --------------------------------------------------------
+
+          errors = []
+
+          for path in kotlin_files:
+              text = path.read_text(encoding="utf-8")
+
+              # Any remaining btn(title=...) is definitely wrong.
+              for m in re.finditer(
+                  r'\bbtn\s*\(',
+                  text
+              ):
+                  open_pos = text.find("(", m.start())
+                  close_pos = matching(text, open_pos)
+
+                  if close_pos == -1:
+                      continue
+
+                  content = text[open_pos + 1:close_pos]
+
+                  if re.search(
+                      r'(?<![A-Za-z0-9_])title\s*=',
+                      content
+                  ):
+                      errors.append(
+                          f"{path}: remaining btn(title=...)"
+                      )
+
+          if errors:
+              print("\n".join(errors))
+              raise SystemExit(
+                  "ERROR: btn() audit failed."
               )
 
-          print("")
-          print("btn() NAMED ARGUMENT REPAIR PASSED.")
+          print("================================================")
+          print("btn() SOURCE AUDIT PASSED")
+          print("No btn(title=...) calls remain.")
+          print("================================================")
           PY
 
-
       # ============================================================
-      # 13. VERIFY btn() REPAIR
+      # 9. KOTLIN SOURCE SANITY AUDIT
       # ============================================================
-
-      - name: Verify btn Named Arguments
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Kotlin source sanity audit
         shell: bash
         run: |
           set -e
+          cd "$GRADLE_ROOT"
 
-          echo "=============================================="
-          echo "VERIFY btn() NAMED ARGUMENT REPAIR"
-          echo "=============================================="
+          echo "Checking Kotlin source..."
 
-          if grep -R -n \
-            'btn([^)]*title[[:space:]]*=' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: btn(title=...) still exists."
+          test -d app/src/main || {
+            echo "ERROR: app/src/main not found"
             exit 1
-          fi
-
-          echo ""
-          echo "NO btn(title=...) CALLS REMAIN."
-
-
-      # ============================================================
-      # 14. TARGETED LABOUR DETAIL REPAIR
-      # ============================================================
-
-      - name: Repair LabourDetail Kotlin Function
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "REPAIR LABOUR DETAIL FUNCTION"
-          echo "=============================================="
-
-          python3 <<'PY'
-          from pathlib import Path
-          import os
-
-          main_file = Path(os.environ["MAIN_FILE"])
-
-          text = main_file.read_text(encoding="utf-8")
-
-          start_marker = "@Composable private fun LabourDetail("
-          end_marker = "@Composable private fun PaymentDialog("
-
-          start = text.find(start_marker)
-          end = text.find(end_marker)
-
-          if start == -1:
-              raise SystemExit(
-                  "ERROR: LabourDetail() function not found."
-              )
-
-          if end == -1:
-              raise SystemExit(
-                  "ERROR: PaymentDialog() marker not found."
-              )
-
-          if end <= start:
-              raise SystemExit(
-                  "ERROR: Invalid LabourDetail function boundaries."
-              )
-
-          fixed_function = r'''@Composable
-          private fun LabourDetail(
-              store: Store,
-              id: String,
-              onBack: () -> Unit
-          ) {
-              val labour = store.labours.firstOrNull { it.id == id } ?: return
-
-              var edit by remember { mutableStateOf(false) }
-              var payment by remember { mutableStateOf(false) }
-              var rate by remember { mutableStateOf(false) }
-              var delPay by remember { mutableStateOf<Payment?>(null) }
-
-              val wage = store.attendances
-                  .filter { attendanceItem ->
-                      attendanceItem.labourId == id
-                  }
-                  .sumOf { attendanceItem ->
-                      attendanceItem.fraction * attendanceItem.rate
-                  }
-
-              val paid = store.payments
-                  .filter { paymentItem ->
-                      paymentItem.labourId == id
-                  }
-                  .sumOf { paymentItem ->
-                      paymentItem.amount
-                  }
-
-              Column(
-                  modifier = Modifier.fillMaxSize()
-              ) {
-
-                  DetailTopBar(
-                      title = "👷 ${labour.name.ifBlank { "मजदूर" }}",
-                      onBack = onBack
-                  )
-
-                  LazyColumn(
-                      modifier = Modifier.padding(16.dp),
-                      verticalArrangement = Arrangement.spacedBy(10.dp)
-                  ) {
-
-                      item {
-
-                          Row(
-                              modifier = Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
-                          ) {
-
-                              Box(
-                                  modifier = Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      title = "मजदूरी",
-                                      value = wage
-                                  )
-                              }
-
-                              Box(
-                                  modifier = Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      title = "भुगतान",
-                                      value = paid
-                                  )
-                              }
-
-                              Box(
-                                  modifier = Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      title = "बाकी",
-                                      value = wage - paid
-                                  )
-                              }
-                          }
-                      }
-
-
-                      item {
-
-                          Button(
-                              onClick = {
-                                  payment = true
-                              },
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Text("₹ Cash+ भुगतान जोड़ें")
-                          }
-                      }
-
-
-                      item {
-
-                          Button(
-                              onClick = {
-                                  rate = true
-                              },
-                              modifier = Modifier.fillMaxWidth(),
-                              colors = ButtonDefaults.buttonColors(
-                                  containerColor = GreenDark
-                              )
-                          ) {
-                              Text("दिहाड़ी बदलें")
-                          }
-                      }
-
-
-                      item {
-
-                          Text(
-                              text = "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
-                              fontWeight = FontWeight.Bold,
-                              color = Green
-                          )
-                      }
-
-
-                      item {
-
-                          Text(
-                              text = "दिहाड़ी इतिहास",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-
-                      items(
-                          items = store.rateHistoryFor(id),
-                          key = { rateItem ->
-                              rateItem.id
-                          }
-                      ) { rateItem ->
-
-                          Text(
-                              text =
-                                  "${displayDate(rateItem.effectiveDate)} से " +
-                                  "₹${money(rateItem.rate)}/दिन",
-
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 3.dp),
-
-                              fontSize = 12.sp,
-                              color = Color.Gray
-                          )
-                      }
-
-
-                      item {
-
-                          Text(
-                              text = "हाजिरी",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-
-                      items(
-                          items = store.attendances
-                              .filter { attendanceItem ->
-                                  attendanceItem.labourId == id
-                              }
-                              .sortedByDescending { attendanceItem ->
-                                  attendanceItem.date
-                              },
-
-                          key = { attendanceItem ->
-                              attendanceItem.id
-                          }
-
-                      ) { attendanceItem ->
-
-                          val field =
-                              store.fields.firstOrNull { fieldItem ->
-                                  fieldItem.id == attendanceItem.fieldId
-                              }
-
-                          val cropName =
-                              store.crops
-                                  .firstOrNull { cropItem ->
-                                      cropItem.id == attendanceItem.cropId
-                                  }
-                                  ?.name
-                                  ?.takeIf { cropItemName ->
-                                      cropItemName.isNotBlank()
-                                  }
-
-                          val cropPart =
-                              if (cropName != null) {
-                                  "$cropName • "
-                              } else {
-                                  ""
-                              }
-
-                          Card(
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-
-                              Text(
-                                  text =
-                                      "${displayDate(attendanceItem.date)} • " +
-                                      "${field?.name ?: "खेत"} • " +
-                                      cropPart +
-                                      "${if (attendanceItem.fraction == 1.0) "Full" else "Half"} • " +
-                                      "₹${money(attendanceItem.fraction * attendanceItem.rate)}",
-
-                                  modifier = Modifier.padding(12.dp)
-                              )
-                          }
-                      }
-
-
-                      item {
-
-                          Text(
-                              text = "भुगतान",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-
-                      items(
-                          items = store.payments
-                              .filter { paymentItem ->
-                                  paymentItem.labourId == id
-                              }
-                              .sortedByDescending { paymentItem ->
-                                  paymentItem.date
-                              },
-
-                          key = { paymentItem ->
-                              paymentItem.id
-                          }
-
-                      ) { paymentItem ->
-
-                          val field =
-                              store.fields.firstOrNull { fieldItem ->
-                                  fieldItem.id == paymentItem.fieldId
-                              }
-
-                          val cropName =
-                              store.crops
-                                  .firstOrNull { cropItem ->
-                                      cropItem.id == paymentItem.cropId
-                                  }
-                                  ?.name
-                                  ?.takeIf { cropItemName ->
-                                      cropItemName.isNotBlank()
-                                  }
-
-                          val cropPart =
-                              if (cropName != null) {
-                                  " • $cropName"
-                              } else {
-                                  ""
-                              }
-
-                          Row(
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 5.dp),
-
-                              verticalAlignment = Alignment.CenterVertically
-                          ) {
-
-                              Text(
-                                  text =
-                                      "${displayDate(paymentItem.date)} • " +
-                                      "${field?.name ?: "सामान्य"}$cropPart • " +
-                                      "₹${money(paymentItem.amount)}",
-
-                                  modifier = Modifier.weight(1f)
-                              )
-
-                              IconButton(
-                                  onClick = {
-                                      delPay = paymentItem
-                                  }
-                              ) {
-
-                                  Icon(
-                                      imageVector = Icons.Default.Delete,
-                                      contentDescription = "भुगतान हटाएँ",
-                                      tint = Color(0xFFB3261E)
-                                  )
-                              }
-                          }
-                      }
-                  }
-
-
-                  if (edit) {
-
-                      LabourDialog(
-                          store = store,
-                          existing = labour,
-                          onClose = {
-                              edit = false
-                          }
-                      )
-                  }
-
-
-                  if (payment) {
-
-                      PaymentDialog(
-                          store = store,
-                          labourId = id,
-                          preField = null,
-                          preCrop = null,
-                          onClose = {
-                              payment = false
-                          }
-                      )
-                  }
-
-
-                  if (rate) {
-
-                      RateDialog(
-                          store = store,
-                          labourId = id,
-                          onClose = {
-                              rate = false
-                          }
-                      )
-                  }
-
-
-                  delPay?.let { paymentItem ->
-
-                      ConfirmDialog(
-                          title = "भुगतान हटाएँ?",
-                          message = "यह payment record हट जाएगा.",
-
-                          onYes = {
-                              store.deletePayment(paymentItem.id)
-                              delPay = null
-                          },
-
-                          onNo = {
-                              delPay = null
-                          }
-                      )
-                  }
-              }
           }
 
-          '''
+          if grep -R -n \
+            --include='*.kt' \
+            -E 'btn[[:space:]]*\([^)]*title[[:space:]]*=' \
+            app/src/main; then
+            echo "ERROR: old btn(title=...) still exists."
+            exit 1
+          fi
 
-          text = (
-              text[:start]
-              + fixed_function
-              + text[end:]
-          )
-
-          main_file.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print("")
-          print("LABOURDETAIL() REPLACED SUCCESSFULLY.")
-          PY
-
-          echo ""
-          echo "LABOUR DETAIL REPAIR PASSED."
-
+          echo "Kotlin source sanity audit passed."
 
       # ============================================================
-      # 15. VERIFY LABOUR DETAIL
+      # 10. CLEAN BUILD
       # ============================================================
-
-      - name: Verify LabourDetail Repair
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Clean project
         shell: bash
         run: |
           set -e
+          cd "$GRADLE_ROOT"
 
-          python3 <<'PY'
-          from pathlib import Path
-          import os
-
-          p = Path(os.environ["MAIN_FILE"])
-
-          text = p.read_text(
-              encoding="utf-8"
-          )
-
-          start_marker = "@Composable\nprivate fun LabourDetail("
-          end_marker = "@Composable private fun PaymentDialog("
-
-          if start_marker not in text:
-              raise SystemExit(
-                  "ERROR: Fixed LabourDetail function not found."
-              )
-
-          start = text.find(start_marker)
-          end = text.find(
-              end_marker,
-              start
-          )
-
-          if end == -1:
-              raise SystemExit(
-                  "ERROR: PaymentDialog marker missing."
-              )
-
-          block = text[start:end]
-
-          required = [
-              "val labour = store.labours.firstOrNull",
-              "var delPay by remember",
-              "store.attendances",
-              "store.payments",
-              "store.rateHistoryFor",
-              "LabourDialog(",
-              "PaymentDialog(",
-              "RateDialog(",
-              "ConfirmDialog(",
-              "store.deletePayment(paymentItem.id)"
-          ]
-
-          for item in required:
-
-              if item not in block:
-
-                  raise SystemExit(
-                      f"ERROR: LabourDetail code missing: {item}"
-                  )
-
-          print(
-              "LABOUR DETAIL STRUCTURE VERIFIED."
-          )
-          PY
-
-
-      # ============================================================
-      # 16. FINAL SOURCE AUDIT
-      # ============================================================
-
-      - name: Final Kotlin Source Audit
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FINAL KOTLIN SOURCE AUDIT"
-          echo "=============================================="
-
-
-          if grep -R -n -E \
-            'listOf\([^)]*\)\{\}[+]' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: listOf corruption detected."
-            exit 1
+          if [ -x "./gradlew" ]; then
+            ./gradlew --stop || true
+            ./gradlew clean
+          else
+            gradle --stop || true
+            gradle clean
           fi
 
-
-          if grep -R -n \
-            '){}\.toTypedArray' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: toTypedArray corruption detected."
-            exit 1
-          fi
-
-
-          if grep -R -n \
-            'fillViewport[[:space:]]*=' \
-            app/src/main \
-            --include="*.kt" \
-            --include="*.java"; then
-
-            echo ""
-            echo "ERROR: Invalid fillViewport assignment."
-            exit 1
-          fi
-
-
-          if grep -R -n -E \
-            'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: Invalid lateinit Button workaround."
-            exit 1
-          fi
-
-
-          if grep -R -n \
-            'when(exportType)' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: Old when(exportType) found."
-            exit 1
-          fi
-
-
-          echo ""
-          echo "FINAL SOURCE AUDIT PASSED."
-
-
       # ============================================================
-      # 17. CLEAN
+      # 11. COMPILE RELEASE KOTLIN
       # ============================================================
-
-      - name: Clean Project
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "CLEAN PROJECT"
-          echo "=============================================="
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            clean
-
-          echo ""
-          echo "CLEAN PASSED."
-
-
-      # ============================================================
-      # 18. COMPILE RELEASE KOTLIN
-      # ============================================================
-
       - name: Compile Release Kotlin
-        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
+          cd "$GRADLE_ROOT"
 
           echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN"
+          echo "COMPILING RELEASE KOTLIN"
           echo "=============================================="
 
-          echo ""
-          echo "MAIN SOURCE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "COMPILING..."
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            --info \
-            --rerun-tasks \
-            :app:compileReleaseKotlin
-
-          echo ""
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN PASSED"
-          echo "=============================================="
-
+          if [ -x "./gradlew" ]; then
+            ./gradlew \
+              :app:compileReleaseKotlin \
+              --stacktrace \
+              --no-daemon
+          else
+            gradle \
+              :app:compileReleaseKotlin \
+              --stacktrace \
+              --no-daemon
+          fi
 
       # ============================================================
-      # 19. ASSEMBLE RELEASE APK
+      # 12. BUILD RELEASE APK
       # ============================================================
-
-      - name: Assemble Release APK
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Build Release APK
         shell: bash
         run: |
           set -e
+          cd "$GRADLE_ROOT"
 
           echo "=============================================="
-          echo "ASSEMBLE RELEASE APK"
+          echo "BUILDING RELEASE APK"
           echo "=============================================="
 
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            --rerun-tasks \
-            :app:assembleRelease
+          if [ -x "./gradlew" ]; then
+            ./gradlew \
+              :app:assembleRelease \
+              --stacktrace \
+              --no-daemon
+          else
+            gradle \
+              :app:assembleRelease \
+              --stacktrace \
+              --no-daemon
+          fi
 
-          echo ""
-          echo "=============================================="
-          echo "ASSEMBLE RELEASE APK PASSED"
-          echo "=============================================="
-
-
-      # ============================================================
-      # 20. LOCATE APK
-      # ============================================================
-
-      - name: Locate Release APK
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "LOCATE RELEASE APK"
-          echo "=============================================="
-
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -name "*release*.apk" \
-            -print \
-            -quit)
+          APK="$(find app/build/outputs/apk/release \
+            -type f -name '*.apk' \
+            | head -n 1)"
 
           if [ -z "$APK" ]; then
-
-            echo ""
-            echo "ERROR: Release APK not found."
-
-            find "$PROJECT_DIR/app/build/outputs" \
-              -type f \
-              -print \
-              2>/dev/null || true
-
+            echo "ERROR: Release APK was not created."
             exit 1
           fi
 
-          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "RELEASE APK:"
-          ls -lh "$APK"
-
+          echo "RELEASE_APK=$APK" >> "$GITHUB_ENV"
+          echo "Release APK: $APK"
 
       # ============================================================
-      # 21. VERIFY APK PACKAGE
+      # 13. PREPARE SIGNING
       # ============================================================
-
-      - name: Verify APK Package
-        shell: bash
-        run: |
-          set -e
-
-          APK="$APK_PATH"
-
-          BADGING=$(
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging "$APK"
-          )
-
-          echo "$BADGING" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
-
-          if ! echo "$BADGING" | grep -q \
-            "name='$PACKAGE_NAME'"; then
-
-            echo ""
-            echo "ERROR: Package name mismatch."
-            echo "Expected: $PACKAGE_NAME"
-
-            exit 1
-          fi
-
-          echo ""
-          echo "PACKAGE NAME VERIFIED."
-
-
-      # ============================================================
-      # 22. PREPARE SIGNING
-      # ============================================================
-
-      - name: Prepare Release Signing
+      - name: Prepare release signing
         shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: |
           set -e
 
-          echo "=============================================="
-          echo "PREPARE RELEASE SIGNING"
-          echo "=============================================="
+          mkdir -p "$RUNNER_TEMP/signing"
 
-          KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
 
-          if [ -n "$KEYSTORE_BASE64" ] && \
-             [ -n "$KEYSTORE_PASSWORD" ] && \
-             [ -n "$KEY_ALIAS" ] && \
-             [ -n "$KEY_PASSWORD" ]; then
+            echo "Using permanent GitHub signing keystore."
 
-            echo ""
-            echo "PERMANENT SIGNING SECRETS FOUND."
-
-            echo "$KEYSTORE_BASE64" \
+            echo "$RELEASE_KEYSTORE_BASE64" \
               | base64 --decode \
-              > "$KEYSTORE_FILE"
+              > "$RUNNER_TEMP/signing/release.jks"
 
-            test -s "$KEYSTORE_FILE"
-
-            keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -alias "$KEY_ALIAS" \
-              >/dev/null
-
-            echo "RELEASE_SIGNING_MODE=PERMANENT" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
-
-            echo "PERMANENT KEYSTORE VERIFIED."
+            echo "RELEASE_KEYSTORE=$RUNNER_TEMP/signing/release.jks" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
 
           else
 
-            echo ""
             echo "Permanent signing secrets not configured."
-            echo "Creating temporary JKS."
-
-            TEMP_PASSWORD="$(openssl rand -hex 32)"
-            TEMP_ALIAS="majdoor-hisaab-v82"
-
-            rm -f "$KEYSTORE_FILE"
+            echo "Creating temporary CI signing key."
 
             keytool \
               -genkeypair \
               -v \
-              -keystore "$KEYSTORE_FILE" \
-              -storetype JKS \
-              -storepass "$TEMP_PASSWORD" \
-              -keypass "$TEMP_PASSWORD" \
-              -alias "$TEMP_ALIAS" \
+              -keystore "$RUNNER_TEMP/signing/release.jks" \
+              -storepass "android" \
+              -keypass "android" \
+              -alias "release" \
               -keyalg RSA \
-              -keysize 4096 \
+              -keysize 2048 \
               -validity 10000 \
-              -dname "CN=Majdoor Hisaab PRO, OU=Android, O=Majdoor Hisaab, L=India, ST=Uttar Pradesh, C=IN"
+              -dname "CN=Majdoor Hisaab PRO,O=Majdoor Hisaab PRO,C=IN"
 
-            test -s "$KEYSTORE_FILE"
-
-            keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storetype JKS \
-              -storepass "$TEMP_PASSWORD" \
-              -alias "$TEMP_ALIAS" \
-              >/dev/null
-
-            echo "RELEASE_SIGNING_MODE=TEMPORARY" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
-
-            echo "TEMPORARY KEYSTORE VERIFIED."
+            echo "RELEASE_KEYSTORE=$RUNNER_TEMP/signing/release.jks" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=release" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+            echo "RELEASE_STORE_PASSWORD=android" >> "$GITHUB_ENV"
 
           fi
 
-
       # ============================================================
-      # 23. VERIFY SIGNING
+      # 14. ZIPALIGN + SIGN
       # ============================================================
-
-      - name: Verify Signing Environment
+      - name: Sign release APK
         shell: bash
         run: |
           set -e
 
-          test -n "${RELEASE_KEYSTORE:-}"
-          test -f "$RELEASE_KEYSTORE"
+          APK="$RELEASE_APK"
 
-          test -n "${RELEASE_KEYSTORE_PASSWORD:-}"
-          test -n "${RELEASE_KEY_ALIAS:-}"
-          test -n "${RELEASE_KEY_PASSWORD:-}"
+          ZIPALIGN="$ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
 
-          keytool \
-            -list \
-            -keystore "$RELEASE_KEYSTORE" \
-            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" \
-            >/dev/null
+          mkdir -p "$GRADLE_ROOT/app/build/outputs/apk/release/final"
 
-          echo ""
-          echo "SIGNING ENVIRONMENT VERIFIED."
-          echo "SIGNING MODE: ${RELEASE_SIGNING_MODE}"
+          ALIGNED="$GRADLE_ROOT/app/build/outputs/apk/release/final/majdoor-hisaab-pro-aligned.apk"
+          SIGNED="$GRADLE_ROOT/app/build/outputs/apk/release/final/Majdoor-Hisaab-PRO-${VERSION_NAME}-signed.apk"
 
+          echo "Zipalign..."
+          "$ZIPALIGN" -f -p 4 "$APK" "$ALIGNED"
 
-      # ============================================================
-      # 24. ZIPALIGN
-      # ============================================================
-
-      - name: Zipalign Release APK
-        shell: bash
-        run: |
-          set -e
-
-          INPUT_APK="$APK_PATH"
-          ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
-
-          rm -f "$ALIGNED_APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
-            -f \
-            -p \
-            4 \
-            "$INPUT_APK" \
-            "$ALIGNED_APK"
-
-          test -f "$ALIGNED_APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
-            -c \
-            -v \
-            4 \
-            "$ALIGNED_APK"
-
-          echo "ALIGNED_APK=$ALIGNED_APK" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "ZIPALIGN PASSED."
-
-
-      # ============================================================
-      # 25. SIGN APK
-      # ============================================================
-
-      - name: Sign Release APK
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "SIGN RELEASE APK"
-          echo "=============================================="
-
-          SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
-
-          rm -f "$SIGNED_APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+          echo "Signing..."
+          "$APKSIGNER" sign \
             --ks "$RELEASE_KEYSTORE" \
-            --ks-type JKS \
-            --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
             --ks-key-alias "$RELEASE_KEY_ALIAS" \
+            --ks-pass "pass:$RELEASE_STORE_PASSWORD" \
             --key-pass "pass:$RELEASE_KEY_PASSWORD" \
-            --out "$SIGNED_APK" \
-            "$ALIGNED_APK"
+            --out "$SIGNED" \
+            "$ALIGNED"
 
-          test -f "$SIGNED_APK"
+          test -f "$SIGNED"
 
-          echo ""
-          echo "SIGNED APK CREATED:"
+          echo "SIGNED_APK=$SIGNED" >> "$GITHUB_ENV"
+
+          echo "Signed APK:"
+          ls -lh "$SIGNED"
+
+      # ============================================================
+      # 15. VERIFY SIGNATURE
+      # ============================================================
+      - name: Verify signed APK
+        shell: bash
+        run: |
+          set -e
+
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
+
+          echo "=============================================="
+          echo "VERIFYING APK SIGNATURE"
+          echo "=============================================="
+
+          "$APKSIGNER" verify \
+            --verbose \
+            "$SIGNED_APK"
+
+      # ============================================================
+      # 16. VERIFY PACKAGE NAME
+      # ============================================================
+      - name: Verify APK package
+        shell: bash
+        run: |
+          set -e
+
+          APK="$SIGNED_APK"
+
+          echo "Checking APK package..."
+
+          PACKAGE_OUTPUT="$(
+            "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" \
+              manifest application-id \
+              "$APK" 2>/dev/null || true
+          )"
+
+          if [ -z "$PACKAGE_OUTPUT" ]; then
+            PACKAGE_OUTPUT="$(
+              "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt" \
+                dump badging "$APK" \
+                | sed -n "s/.*package: name='\([^']*\)'.*/\1/p" \
+                | head -n 1
+            )"
+          fi
+
+          echo "Detected package: $PACKAGE_OUTPUT"
+
+          if [ "$PACKAGE_OUTPUT" != "$PACKAGE_NAME" ]; then
+            echo "ERROR: Package mismatch."
+            echo "Expected: $PACKAGE_NAME"
+            echo "Actual:   $PACKAGE_OUTPUT"
+            exit 1
+          fi
+
+          echo "Package verification passed."
+
+      # ============================================================
+      # 17. APK INFORMATION
+      # ============================================================
+      - name: APK final report
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "MAJDOOR HISAAB PRO FINAL BUILD REPORT"
+          echo "=============================================="
+
           ls -lh "$SIGNED_APK"
 
+          echo
+          echo "APK:"
+          echo "$SIGNED_APK"
+
+          echo
+          echo "Package:"
+          echo "$PACKAGE_NAME"
+
+          echo
+          echo "Version:"
+          echo "$VERSION_NAME"
+
+          echo
+          echo "Android API:"
+          echo "$ANDROID_API"
+
+          echo
+          echo "Build Tools:"
+          echo "$BUILD_TOOLS"
+
+          echo
+          echo "Java:"
+          java -version
 
       # ============================================================
-      # 26. VERIFY APK SIGNATURE
+      # 18. UPLOAD FINAL APK
       # ============================================================
-
-      - name: Verify APK Signature
-        shell: bash
-        run: |
-          set -e
-
-          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
-
-          test -f "$APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
-            verify \
-            --verbose \
-            "$APK"
-
-          echo ""
-          echo "APK SIGNATURE VERIFIED."
-
-
-      # ============================================================
-      # 27. FINAL APK VALIDATION
-      # ============================================================
-
-      - name: Final APK Validation
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FINAL APK VALIDATION"
-          echo "=============================================="
-
-          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
-
-          test -f "$APK"
-
-          SIZE=$(stat -c%s "$APK")
-
-          echo ""
-          echo "APK SIZE:"
-          echo "$SIZE bytes"
-
-          if [ "$SIZE" -lt 100000 ]; then
-            echo ""
-            echo "ERROR: APK size unexpectedly small."
-            exit 1
-          fi
-
-          BADGING=$(
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging "$APK"
-          )
-
-          echo ""
-          echo "APK INFORMATION:"
-
-          echo "$BADGING" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
-
-          if ! echo "$BADGING" | grep -q \
-            "name='$PACKAGE_NAME'"; then
-
-            echo ""
-            echo "ERROR: Final APK package mismatch."
-            exit 1
-          fi
-
-          echo ""
-          echo "SHA256:"
-          sha256sum "$APK"
-
-          echo ""
-          echo "=============================================="
-          echo "FINAL APK VALIDATION PASSED"
-          echo "=============================================="
-
-
-      # ============================================================
-      # 28. UPLOAD FINAL SIGNED APK
-      # ============================================================
-
-      - name: Upload Final Signed APK
+      - name: Upload final signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
-          path: ${{ env.APK_SIGNED_NAME }}
+          name: Majdoor-Hisaab-PRO-${{ env.VERSION_NAME }}-Signed-Release
+          path: |
+            ${{ env.SIGNED_APK }}
           if-no-files-found: error
           retention-days: 30
 
-
       # ============================================================
-      # 29. UPLOAD BUILD REPORTS
+      # 19. UPLOAD BUILD REPORT
       # ============================================================
-
-      - name: Upload Build Reports
-        if: always()
+      - name: Upload APK report
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-V82-Build-Reports
+          name: Majdoor-Hisaab-PRO-${{ env.VERSION_NAME }}-Build-Report
           path: |
-            ${{ env.PROJECT_DIR }}/app/build/reports/**
-            ${{ env.PROJECT_DIR }}/app/build/outputs/**
-          if-no-files-found: warn
-          retention-days: 14
+            ${{ env.GRADLE_ROOT }}/app/build/outputs/apk/release/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
