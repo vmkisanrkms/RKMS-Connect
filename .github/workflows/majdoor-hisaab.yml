@@ -1757,7 +1757,7 @@ jobs:
         working-directory: project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
@@ -1767,27 +1767,87 @@ jobs:
           du -h "$APK"
 
           echo ""
+          echo "ANDROID BUILD TOOLS:"
+
+          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
+
+          test -d "$BUILD_TOOLS_DIR"
+
+          echo "BUILD_TOOLS_DIR=${BUILD_TOOLS_DIR}"
+
+          # Make Android Build Tools available to ALL FOLLOWING STEPS.
+          echo "$BUILD_TOOLS_DIR" >> "$GITHUB_PATH"
+
+          # Also make them available in THIS step.
+          export PATH="$BUILD_TOOLS_DIR:$PATH"
+
+          AAPT2="${BUILD_TOOLS_DIR}/aapt2"
+
+          if [ ! -x "$AAPT2" ]; then
+            echo "ERROR: aapt2 not found:"
+            echo "$AAPT2"
+            exit 1
+          fi
+
+          echo ""
+          echo "AAPT2:"
+          "$AAPT2" version
+
+          echo ""
           echo "APK BADGING:"
 
-          aapt dump badging "$APK" \
+          "$AAPT2" dump badging "$APK" \
             | head -n 5
 
-          aapt dump badging "$APK" \
+          "$AAPT2" dump badging "$APK" \
             | grep -Fq \
             "package: name='${PACKAGE_NAME}'"
 
-          aapt dump badging "$APK" \
+          "$AAPT2" dump badging "$APK" \
             | grep -Fq \
             "versionCode='${VERSION_CODE}'"
 
-          aapt dump badging "$APK" \
+          "$AAPT2" dump badging "$APK" \
             | grep -Fq \
             "versionName='${VERSION_NAME}'"
 
           unzip -t "$APK" \
             >/dev/null
 
-          echo "UNSIGNED_APK_VERIFICATION=PASS"
+          echo ""
+          echo "=========================================="
+          echo "UNSIGNED APK VERIFICATION=PASS"
+          echo "=========================================="
+
+          # Compatibility wrapper for any later command that
+          # still calls the legacy "aapt" command.
+          AAPT_COMPAT_DIR="${RUNNER_TEMP}/android-aapt-compat"
+
+          mkdir -p "$AAPT_COMPAT_DIR"
+
+          cat > "$AAPT_COMPAT_DIR/aapt" <<EOF
+          #!/usr/bin/env bash
+          exec "${BUILD_TOOLS_DIR}/aapt2" "\$@"
+          EOF
+
+          chmod +x "$AAPT_COMPAT_DIR/aapt"
+
+          # Add wrapper for subsequent steps.
+          echo "$AAPT_COMPAT_DIR" >> "$GITHUB_PATH"
+
+          # Current step also gets the wrapper.
+          export PATH="$AAPT_COMPAT_DIR:$PATH"
+
+          echo ""
+          echo "TOOL PATH CHECK:"
+
+          command -v aapt
+          command -v zipalign
+          command -v apksigner
+
+          echo ""
+          echo "AAPT_COMPATIBILITY=PASS"
+          echo "BUILD_TOOLS_PATH=PASS"
 
 
       # ==========================================================
