@@ -24,7 +24,7 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-KOTLIN-FIXED.zip"
+  ZIP_NAME: "ZIP_NAME: "Majdoor-Hisaab-PRO-Professional-UI-V82-KOTLIN-COMPILE-FIXED.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
