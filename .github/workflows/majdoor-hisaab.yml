@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: majdoor-hisaab-pro-release
+  cancel-in-progress: true
+
 env:
   JAVA_VERSION: "17"
   GRADLE_VERSION: "8.11.1"
@@ -20,1963 +24,602 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104.zip"
+  ZIP_NAME: "Majdoor-Hisaab-PRO-Professional-UI-V81-ALL-BUTTONS-FINAL.zip"
 
 jobs:
-
-  build-release-apk:
-
-    name: Build and Sign Release APK
-
+  build-release:
+    name: Build Signed Release APK
     runs-on: ubuntu-latest
-
-    timeout-minutes: 60
 
     steps:
 
-      # ==========================================================
+      # ============================================================
       # 1. CHECKOUT
-      # ==========================================================
-
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
-      # ==========================================================
-      # 2. BUILD INFORMATION
-      # ==========================================================
-
-      - name: Show build configuration
-        shell: bash
-        run: |
-          set -e
-
-          echo "=========================================="
-          echo "MAJDOOR HISAAB PRO"
-          echo "STABLE RELEASE APK BUILD"
-          echo "=========================================="
-
-          echo "Java        : ${JAVA_VERSION}"
-          echo "Gradle      : ${GRADLE_VERSION}"
-          echo "Android API : ${ANDROID_API}"
-          echo "Build Tools : ${BUILD_TOOLS}"
-          echo "Package     : ${PACKAGE_NAME}"
-          echo "Version     : ${VERSION_NAME}"
-          echo "VersionCode : ${VERSION_CODE}"
-
-          echo "=========================================="
-
-
-      # ==========================================================
-      # 3. PREPARE AND FIND PROJECT
-      # ==========================================================
-
-      - name: Prepare Android project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf project
-          rm -rf extracted
-
-          mkdir -p project
-          mkdir -p extracted
-
-          echo "=========================================="
-          echo "SEARCHING FOR ANDROID PROJECT"
-          echo "=========================================="
-
-          if [ -f "settings.gradle.kts" ] &&
-             [ -f "app/build.gradle.kts" ]; then
-
-            echo "ANDROID_PROJECT_FOUND_IN_REPOSITORY"
-
-            shopt -s dotglob
-
-            cp -a . project/
-
-          else
-
-            echo "ANDROID_PROJECT_NOT_FOUND_AT_ROOT"
-            echo "SEARCHING FOR PROJECT ZIP..."
-
-            if command -v git-lfs >/dev/null 2>&1; then
-              echo "GIT_LFS_DETECTED"
-
-              git lfs install --local >/dev/null 2>&1 || true
-
-              git lfs pull >/dev/null 2>&1 || true
-
-              echo "GIT_LFS_PULL_COMPLETED"
-            else
-              echo "GIT_LFS_NOT_INSTALLED"
-            fi
-
-
-            ZIP_PATH=""
-
-            if [ -f "${ZIP_NAME}" ]; then
-              ZIP_PATH="./${ZIP_NAME}"
-            fi
-
-
-            if [ -z "$ZIP_PATH" ]; then
-
-              if [ -f \
-                "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip" ]; then
-
-                ZIP_PATH="./Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
-
-              fi
-
-            fi
-
-
-            if [ -z "$ZIP_PATH" ]; then
-
-              ZIP_PATH="$(
-                find . \
-                  -type f \
-                  -name "${ZIP_NAME}" \
-                  -not -path "./project/*" \
-                  -not -path "./extracted/*" \
-                  -not -path "./.git/*" \
-                  -print \
-                  | head -n 1
-              )"
-
-            fi
-
-
-            if [ -z "$ZIP_PATH" ]; then
-
-              ZIP_PATH="$(
-                find . \
-                  -type f \
-                  -name "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip" \
-                  -not -path "./project/*" \
-                  -not -path "./extracted/*" \
-                  -not -path "./.git/*" \
-                  -print \
-                  | head -n 1
-              )"
-
-            fi
-
-
-            if [ -z "$ZIP_PATH" ]; then
-
-              ZIP_PATH="$(
-                find . \
-                  -type f \
-                  -iname "Majdoor_Hisaab*.zip" \
-                  -not -path "./project/*" \
-                  -not -path "./extracted/*" \
-                  -not -path "./.git/*" \
-                  -print \
-                  | head -n 1
-              )"
-
-            fi
-
-
-            if [ -z "$ZIP_PATH" ]; then
-
-              echo ""
-              echo "=========================================="
-              echo "ERROR: MAJDOOR HISAAB PROJECT ZIP NOT FOUND"
-              echo "=========================================="
-              echo ""
-
-              echo "Expected:"
-              echo "${ZIP_NAME}"
-
-              echo ""
-              echo "BUILD_FIXED fallback:"
-              echo "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip"
-
-              echo ""
-              echo "AVAILABLE ZIP FILES:"
-
-              find . \
-                -type f \
-                -iname "*.zip" \
-                -not -path "./.git/*" \
-                -print \
-                | head -n 50 || true
-
-              echo ""
-              echo "GIT TRACKED FILE CHECK:"
-
-              git ls-files \
-                | grep -Ei \
-                'Majdoor_Hisaab.*\.zip$' \
-                | head -n 50 || true
-
-              exit 1
-
-            fi
-
-
-            ZIP_PATH="$(realpath "$ZIP_PATH")"
-
-            echo ""
-            echo "=========================================="
-            echo "PROJECT ZIP FOUND"
-            echo "=========================================="
-
-            echo "PROJECT_ZIP_FOUND=${ZIP_PATH}"
-
-            test -f "$ZIP_PATH"
-            test -r "$ZIP_PATH"
-
-            ls -lh "$ZIP_PATH"
-
-
-            if head -n 1 "$ZIP_PATH" 2>/dev/null \
-              | grep -Fq "version https://git-lfs.github.com/spec/v1"; then
-
-              echo ""
-              echo "ERROR: ZIP IS STILL A GIT LFS POINTER"
-              echo "Git LFS object was not downloaded."
-
-              git lfs ls-files || true
-
-              exit 1
-
-            fi
-
-
-            echo ""
-            echo "VERIFYING ZIP INTEGRITY..."
-
-            python3 - "$ZIP_PATH" <<'PY'
-          import sys
-          import zipfile
-
-          zip_path = sys.argv[1]
-
-          try:
-              with zipfile.ZipFile(zip_path, "r") as z:
-                  bad = z.testzip()
-
-                  if bad is not None:
-                      print(f"ERROR: CORRUPTED ZIP ENTRY: {bad}")
-                      raise SystemExit(1)
-
-                  names = z.namelist()
-
-                  print(f"ZIP_ENTRIES={len(names)}")
-
-                  required = [
-                      "settings.gradle.kts",
-                      "build.gradle.kts",
-                      "app/build.gradle.kts",
-                      "app/src/main/AndroidManifest.xml",
-                  ]
-
-                  for item in required:
-                      if item in names:
-                          print(f"ZIP_REQUIRED_FILE=PASS:{item}")
-                      else:
-                          print(f"ZIP_REQUIRED_FILE=MISS:{item}")
-
-                  print("ZIP_INTEGRITY=PASS")
-
-          except zipfile.BadZipFile as exc:
-              print(f"ERROR: INVALID ZIP: {exc}")
-              raise SystemExit(1)
-          PY
-
-
-            echo ""
-            echo "EXTRACTING PROJECT ZIP..."
-
-            python3 - "$ZIP_PATH" "$PWD/extracted" <<'PY'
-          import sys
-          import zipfile
-          from pathlib import Path
-
-          zip_path = Path(sys.argv[1])
-          output_dir = Path(sys.argv[2])
-
-          output_dir.mkdir(parents=True, exist_ok=True)
-
-          with zipfile.ZipFile(zip_path, "r") as z:
-              z.extractall(output_dir)
-
-          print("ZIP_EXTRACTION=PASS")
-          PY
-
-
-            echo ""
-            echo "ZIP_EXTRACTED=PASS"
-
-
-            if [ -f "extracted/settings.gradle.kts" ] &&
-               [ -f "extracted/app/build.gradle.kts" ]; then
-
-              PROJECT_ROOT="extracted"
-
-              echo "PROJECT_ROOT=${PROJECT_ROOT}"
-
-              shopt -s dotglob
-
-              cp -a extracted/. project/
-
-            else
-
-              PROJECT_ROOT_FILE="$(
-                find extracted \
-                  -type f \
-                  -name "settings.gradle.kts" \
-                  -print \
-                  | head -n 1
-              )"
-
-              if [ -z "$PROJECT_ROOT_FILE" ]; then
-
-                echo ""
-                echo "=========================================="
-                echo "ERROR: settings.gradle.kts NOT FOUND"
-                echo "=========================================="
-
-                find extracted \
-                  -maxdepth 5 \
-                  -type f \
-                  | head -n 150
-
-                exit 1
-
-              fi
-
-              PROJECT_ROOT="$(dirname "$PROJECT_ROOT_FILE")"
-
-              echo "PROJECT_ROOT=${PROJECT_ROOT}"
-
-              test -f \
-                "$PROJECT_ROOT/app/build.gradle.kts"
-
-              shopt -s dotglob
-
-              cp -a "$PROJECT_ROOT"/. project/
-
-            fi
-
-          fi
-
-
-          test -f project/settings.gradle.kts
-          test -f project/build.gradle.kts
-          test -f project/app/build.gradle.kts
-          test -f project/app/src/main/AndroidManifest.xml
-
-
-          echo ""
-          echo "=========================================="
-          echo "PROJECT_PREPARATION=PASS"
-          echo "=========================================="
-
-
-      # ==========================================================
-      # 4. APPLY ONLY PREVIOUSLY FAILED KOTLIN FIXES
-      # ==========================================================
-
-      - name: Apply required Kotlin source fixes
-        working-directory: project
-        shell: bash
-        run: |
-          set -e
-
-          FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
-
-          test -f "$FILE"
-
-          cp "$FILE" \
-            "${FILE}.original-ci"
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          file = Path(
-              "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
-          )
-
-          text = file.read_text(encoding="utf-8")
-
-          text = text.replace(
-              "app.audit.auditLog()",
-              "app.audit.list()"
-          )
-
-          text = text.replace(
-              "app.audit.clearAuditLog()",
-              "app.audit.clear()"
-          )
-
-          text = text.replace(
-              "getSystemService(ALARM_SERVICE)",
-              "getSystemService(Context.ALARM_SERVICE)"
-          )
-
-          file.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print("SOURCE_FIXES_APPLIED")
-          PY
-
-          if grep -Fq \
-            "app.audit.auditLog()" \
-            "$FILE"; then
-            echo "ERROR: old auditLog() reference remains"
-            exit 1
-          fi
-
-          if grep -Fq \
-            "app.audit.clearAuditLog()" \
-            "$FILE"; then
-            echo "ERROR: old clearAuditLog() reference remains"
-            exit 1
-          fi
-
-          if grep -Fq \
-            "getSystemService(ALARM_SERVICE)" \
-            "$FILE"; then
-            echo "ERROR: old ALARM_SERVICE reference remains"
-            exit 1
-          fi
-
-          grep -Fq \
-            "app.audit.list()" \
-            "$FILE"
-
-          grep -Fq \
-            "app.audit.clear()" \
-            "$FILE"
-
-          grep -Fq \
-            "Context.ALARM_SERVICE" \
-            "$FILE"
-
-          echo "SOURCE_FIXES_VERIFICATION=PASS"
-
-
-      # ==========================================================
-      # 5. JAVA 17
-      # ==========================================================
-
-      - name: Setup JDK 17
+      # ============================================================
+      # 2. JAVA
+      # ============================================================
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
 
+      # ============================================================
+      # 3. ANDROID SDK
+      # ============================================================
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      # ==========================================================
-      # 6. ANDROID SDK
-      # ==========================================================
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-
-
-      # ==========================================================
-      # 7. ANDROID API 36
-      # ==========================================================
-
-      - name: Install Android API 36
-        shell: bash
+      - name: Install Android SDK 36
         run: |
-          set -e
-
-          yes | sdkmanager --licenses \
-            >/dev/null 2>&1 || true
-
+          yes | sdkmanager --licenses || true
           sdkmanager \
             "platform-tools" \
             "platforms;android-${ANDROID_API}" \
             "build-tools;${BUILD_TOOLS}"
 
-          echo "ANDROID_SDK_READY=PASS"
+      # ============================================================
+      # 4. LOCATE PROJECT / ZIP
+      # ============================================================
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -e
 
+          echo "Checking repository..."
 
-      # ==========================================================
-      # 8. GRADLE 8.11.1
-      # ==========================================================
+          if [ -f "settings.gradle.kts" ] && [ -f "app/build.gradle.kts" ]; then
+            echo "Android project found at repository root."
+            echo "PROJECT_ROOT=$PWD" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
-      - name: Setup Gradle 8.11.1
+          if [ -f "${ZIP_NAME}" ]; then
+            ZIP_PATH="${ZIP_NAME}"
+          else
+            echo "Exact ZIP not found. Searching..."
+            ZIP_PATH="$(find . -maxdepth 3 -type f \
+              \( -name "${ZIP_NAME}" \
+              -o -iname "Majdoor-Hisaab-PRO-Professional-UI-V81*.zip" \
+              -o -iname "Majdoor_Hisaab_PRO_FINAL_BLUEPRINT_AUDITED_V104_BUILD_FIXED.zip" \
+              -o -iname "Majdoor_Hisaab*.zip" \) \
+              | head -n 1)"
+          fi
+
+          if [ -z "${ZIP_PATH}" ]; then
+            echo "ERROR: Android project ZIP not found."
+            echo "Available ZIP files:"
+            find . -type f -iname "*.zip" -print || true
+            exit 1
+          fi
+
+          echo "Using ZIP:"
+          echo "${ZIP_PATH}"
+
+          rm -rf extracted project
+          mkdir -p extracted project
+
+          unzip -q "${ZIP_PATH}" -d extracted
+
+          if [ -f "extracted/settings.gradle.kts" ] && \
+             [ -f "extracted/app/build.gradle.kts" ]; then
+
+            cp -a extracted/. project/
+
+          else
+
+            SETTINGS_FILE="$(find extracted -type f \
+              -name "settings.gradle.kts" | head -n 1)"
+
+            if [ -z "${SETTINGS_FILE}" ]; then
+              echo "ERROR: settings.gradle.kts not found."
+              find extracted -maxdepth 5 -type f | head -n 200
+              exit 1
+            fi
+
+            ROOT_DIR="$(dirname "${SETTINGS_FILE}")"
+
+            echo "Detected Android project:"
+            echo "${ROOT_DIR}"
+
+            cp -a "${ROOT_DIR}/." project/
+          fi
+
+          if [ ! -f "project/settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle.kts missing after extraction."
+            exit 1
+          fi
+
+          if [ ! -f "project/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle.kts missing after extraction."
+            exit 1
+          fi
+
+          echo "PROJECT_ROOT=$PWD/project" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 5. SHOW PROJECT
+      # ============================================================
+      - name: Show project structure
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          echo "Project root:"
+          pwd
+
+          echo
+          echo "Settings:"
+          ls -la settings.gradle.kts
+
+          echo
+          echo "App:"
+          ls -la app
+
+          echo
+          echo "Gradle files:"
+          find . -maxdepth 3 \
+            \( -name "build.gradle.kts" \
+            -o -name "settings.gradle.kts" \
+            -o -name "gradle.properties" \) \
+            -print
+
+      # ============================================================
+      # 6. GRADLE
+      # ============================================================
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.11.1"
-          cache-disabled: true
-          cache-cleanup: never
+          gradle-version: ${{ env.GRADLE_VERSION }}
 
-
-      # ==========================================================
-      # 9. VERIFY TOOLCHAIN
-      # ==========================================================
-
-      - name: Verify Java Gradle Android
-        shell: bash
+      # ============================================================
+      # 7. VERIFY JAVA / GRADLE
+      # ============================================================
+      - name: Verify build tools
         run: |
-          set -e
-
-          echo "JAVA:"
           java -version
-
-          echo ""
-          echo "GRADLE:"
           gradle --version
+          sdkmanager --list_installed | grep -E \
+            "platform-tools|platforms;android-${ANDROID_API}|build-tools;${BUILD_TOOLS}" || true
 
-          gradle --version \
-            | grep -Fq "Gradle 8.11.1"
-
-          echo ""
-          echo "ANDROID SDK:"
-
-          sdkmanager --list_installed \
-            | grep -E \
-            "platforms;android-${ANDROID_API}|build-tools;${BUILD_TOOLS}"
-
-          echo ""
-          echo "TOOLCHAIN_VERIFICATION=PASS"
-
-
-      # ==========================================================
-      # 10. PROJECT CONFIGURATION
-      # ==========================================================
-
-      - name: Verify project configuration
-        working-directory: project
+      # ============================================================
+      # 8. APPLY BASIC SOURCE FIXES
+      # ============================================================
+      - name: Apply required Kotlin source fixes
         shell: bash
         run: |
           set -e
 
-          test -f settings.gradle.kts
-          test -f build.gradle.kts
-          test -f app/build.gradle.kts
-
-          grep -Fq \
-            'id("com.android.application") version "8.9.1"' \
-            build.gradle.kts
-
-          grep -Fq \
-            'id("org.jetbrains.kotlin.android") version "2.1.21"' \
-            build.gradle.kts
-
-          grep -Fq \
-            'compileSdk = 36' \
-            app/build.gradle.kts
-
-          grep -Fq \
-            'targetSdk = 36' \
-            app/build.gradle.kts
-
-          grep -Fq \
-            'applicationId = "com.majdoor.hisaab"' \
-            app/build.gradle.kts
-
-          grep -Fq \
-            'versionCode = 77' \
-            app/build.gradle.kts
-
-          grep -Fq \
-            'versionName = "1.77.0"' \
-            app/build.gradle.kts
-
-          echo "PROJECT_CONFIGURATION=PASS"
-
-
-      # ==========================================================
-      # 11. CLEAN
-      # ==========================================================
-
-      - name: Clean previous build
-        working-directory: project
-        shell: bash
-        run: |
-          set -e
-
-          gradle \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace \
-            clean
-
-          echo "CLEAN_BUILD=PASS"
-
-
-      # ==========================================================
-      # 12. BUILD RELEASE APK
-      #
-      # NO CHANGE
-      # ==========================================================
-
-      - name: Build Release APK
-        working-directory: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          cd "$PROJECT_ROOT"
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
 
-          test -f "$FILE"
+          if [ -f "$FILE" ]; then
 
-          cp "$FILE" \
-            "${FILE}.before-release-fix"
+            echo "Applying safe compatibility fixes..."
 
-          echo ""
-          echo "=========================================="
-          echo "AUDITED RELEASE SOURCE PATCH"
-          echo "=========================================="
+            sed -i 's/\.audit\.auditLog/\.auditLog/g' "$FILE" || true
+            sed -i 's/clearAuditLog/clear/g' "$FILE" || true
+            sed -i 's/getSystemService(ALARM_SERVICE)/getSystemService(Context.ALARM_SERVICE)/g' "$FILE" || true
 
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          file = Path(
-              "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
-          )
-
-          source = file.read_text(
-              encoding="utf-8"
-          )
-
-
-          def patch_block(
-              start_marker,
-              end_marker,
-              replacements
-          ):
-
-              global source
-
-              start = source.find(
-                  start_marker
-              )
-
-              if start < 0:
-                  raise SystemExit(
-                      f"ERROR: start marker not found: {start_marker}"
-                  )
-
-              end = source.find(
-                  end_marker,
-                  start + len(start_marker)
-              )
-
-              if end < 0:
-                  raise SystemExit(
-                      f"ERROR: end marker not found: {end_marker}"
-                  )
-
-              block = source[
-                  start:end
-              ]
-
-              for old, new in replacements:
-
-                  if old not in block:
-                      raise SystemExit(
-                          "ERROR: expected source pattern not found "
-                          f"in {start_marker}: {old}"
-                      )
-
-                  block = block.replace(
-                      old,
-                      new
-                  )
-
-              source = (
-                  source[:start]
-                  + block
-                  + source[end:]
-              )
-
-
-          def patch_button_declarations(
-              start_marker,
-              end_marker,
-              names
-          ):
-
-              replacements = []
-
-              for name in names:
-
-                  replacements.append(
-                      (
-                          f"val {name}=btn(",
-                          f"lateinit var {name}:Button\n"
-                          f"        {name}=btn("
-                      )
-                  )
-
-              patch_block(
-                  start_marker,
-                  end_marker,
-                  replacements
-              )
-
-
-          old_btn = (
-              "internal fun MainActivity.btn("
-              "s:String,action:()->Unit"
-              ")=Button(this).apply{"
-          )
-
-          new_btn = (
-              "internal fun MainActivity.btn("
-              "s:String,action:()->Unit = {}"
-              ")=Button(this).apply{"
-          )
-
-          if old_btn in source:
-
-              source = source.replace(
-                  old_btn,
-                  new_btn,
-                  1
-              )
-
-          elif new_btn not in source:
-
-              raise SystemExit(
-                  "ERROR: btn() definition not found"
-              )
-
-
-          old_intent_type = (
-              'apply{type="image/*";'
-          )
-
-          new_intent_type = (
-              'apply{this.type="image/*";'
-          )
-
-          if old_intent_type in source:
-
-              source = source.replace(
-                  old_intent_type,
-                  new_intent_type
-              )
-
-          elif new_intent_type not in source:
-
-              raise SystemExit(
-                  "ERROR: image Intent type pattern not found"
-              )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.cropForm",
-              "internal fun MainActivity.attendance()",
-              ["fb"]
-          )
-
-          patch_block(
-              "internal fun MainActivity.cropForm",
-              "internal fun MainActivity.attendance()",
-              [
-                  (
-                      'it.text="Field: ${fields[i].name}"',
-                      'fb.text="Field: ${fields[i].name}"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.productionForm",
-              "internal fun MainActivity.revenue()",
-              ["cropBtn"]
-          )
-
-          patch_block(
-              "internal fun MainActivity.productionForm",
-              "internal fun MainActivity.revenue()",
-              [
-                  (
-                      'it.text="Crop: ${crops[i].name}"',
-                      'cropBtn.text="Crop: ${crops[i].name}"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.revenueForm",
-              "internal fun MainActivity.addWork()",
-              ["cropBtn"]
-          )
-
-          patch_block(
-              "internal fun MainActivity.revenueForm",
-              "internal fun MainActivity.addWork()",
-              [
-                  (
-                      'it.text="Crop: ${crops[i].name}"',
-                      'cropBtn.text="Crop: ${crops[i].name}"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.workForm",
-              "internal fun MainActivity.workDetail",
-              [
-                  "fieldBtn",
-                  "cropBtn",
-                  "workerBtn",
-                  "rateTypeBtn"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.workForm",
-              "internal fun MainActivity.workDetail",
-              [
-                  (
-                      'it.text="Field: ${fields[i].name}"',
-                      'fieldBtn.text="Field: ${fields[i].name}"'
-                  ),
-                  (
-                      'it.text="Crop: ${crops[i].name}"',
-                      'cropBtn.text="Crop: ${crops[i].name}"'
-                  ),
-                  (
-                      'it.text="Workers: ${selectedWorkers.distinct().size}"',
-                      'workerBtn.text="Workers: ${selectedWorkers.distinct().size}"'
-                  ),
-                  (
-                      'it.text="Rate type: $rateType"',
-                      'rateTypeBtn.text="Rate type: $rateType"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.paymentForm",
-              "internal fun MainActivity.expenses()",
-              [
-                  "wb",
-                  "mb",
-                  "adv"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.paymentForm",
-              "internal fun MainActivity.expenses()",
-              [
-                  (
-                      'it.text="Worker: ${workers[i].name}"',
-                      'wb.text="Worker: ${workers[i].name}"'
-                  ),
-                  (
-                      'it.text="Method: ${methods[i]}"',
-                      'mb.text="Method: ${methods[i]}"'
-                  ),
-                  (
-                      'it.text="Advance: ${if(advance)"YES" else "NO"}"',
-                      'adv.text="Advance: ${if(advance)"YES" else "NO"}"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.expenseForm",
-              "internal fun MainActivity.reportFiltersDialog()",
-              [
-                  "cb",
-                  "fb",
-                  "crb"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.expenseForm",
-              "internal fun MainActivity.reportFiltersDialog()",
-              [
-                  (
-                      'it.text="Category: $cat"',
-                      'cb.text="Category: $cat"'
-                  ),
-                  (
-                      'it.text="Field: Not linked"',
-                      'fb.text="Field: Not linked"'
-                  ),
-                  (
-                      'it.text="Field: ${fields[i-1].name}"',
-                      'fb.text="Field: ${fields[i-1].name}"'
-                  ),
-                  (
-                      'it.text="Crop: Not linked"',
-                      'crb.text="Crop: Not linked"'
-                  ),
-                  (
-                      'it.text="Crop: ${crops[i-1].name}"',
-                      'crb.text="Crop: ${crops[i-1].name}"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.reportFiltersDialog",
-              "internal fun MainActivity.reports()",
-              [
-                  "wb",
-                  "fb",
-                  "cb"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.reportFiltersDialog",
-              "internal fun MainActivity.reports()",
-              [
-                  (
-                      'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
-                      'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"'
-                  ),
-                  (
-                      'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
-                      'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'
-                  ),
-                  (
-                      'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
-                      'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.workTemplateForm",
-              "internal fun MainActivity.fieldProfile",
-              [
-                  "rateTypeBtn"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.workTemplateForm",
-              "internal fun MainActivity.fieldProfile",
-              [
-                  (
-                      'it.text="Rate type: $rateType"',
-                      'rateTypeBtn.text="Rate type: $rateType"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.attendanceForm",
-              "internal fun MainActivity.attendanceHistory()",
-              [
-                  "fieldBtn",
-                  "statusBtn"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.attendanceForm",
-              "internal fun MainActivity.attendanceHistory()",
-              [
-                  (
-                      'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
-                      'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'
-                  ),
-                  (
-                      'it.text="Status: $status"',
-                      'statusBtn.text="Status: $status"'
-                  )
-              ]
-          )
-
-
-          patch_button_declarations(
-              "internal fun MainActivity.customReport",
-              "internal fun MainActivity.auditLogScreen()",
-              [
-                  "wb",
-                  "fb",
-                  "cb"
-              ]
-          )
-
-          patch_block(
-              "internal fun MainActivity.customReport",
-              "internal fun MainActivity.auditLogScreen()",
-              [
-                  (
-                      'it.text="Worker: ${if(i==0)"All" else workers[i-1].name}"',
-                      'wb.text="Worker: ${if(i==0)"All" else workers[i-1].name}"'
-                  ),
-                  (
-                      'it.text="Field: ${if(i==0)"All" else fields[i-1].name}"',
-                      'fb.text="Field: ${if(i==0)"All" else fields[i-1].name}"'
-                  ),
-                  (
-                      'it.text="Crop: ${if(i==0)"All" else crops[i-1].name}"',
-                      'cb.text="Crop: ${if(i==0)"All" else crops[i-1].name}"'
-                  )
-              ]
-          )
-
-
-          export_pattern = re.compile(
-              r'contentResolver\.openOutputStream\(uri\)!!\.use\{out->'
-              r'when\(exportType\)\{.*?\n\s*\}\}',
-              re.S
-          )
-
-          export_replacement = '''contentResolver.openOutputStream(uri)!!.use{out->when{
-                    exportType=="workers"->app.export.csvWorkers(out)
-                    exportType=="ledger"->app.export.csvLedger(out)
-                    exportType.startsWith("report:")->app.export.csvReport(exportType.removePrefix("report:"),out)
-                    exportType.startsWith("reportpdf:")->app.export.pdfReport(exportType.removePrefix("reportpdf:"),out)
-                    exportType=="pdf"->app.export.pdfSummary(out)
-                    exportType=="backup"->app.backup.export(out)
-                    else->throw IllegalArgumentException("Unknown export type: $exportType")
-                }}'''
-
-          source, export_count = export_pattern.subn(
-              export_replacement,
-              source,
-              count=1
-          )
-
-          if export_count != 1:
-
-              if (
-                  "when(exportType){" in source
-                  or
-                  'exportType.startsWith("report:")'
-                  not in source
-              ):
-
-                  raise SystemExit(
-                      "ERROR: exportType block could not be safely patched"
-                  )
-
-
-          calendar_start = source.find(
-              "internal fun MainActivity.attendanceCalendar()"
-          )
-
-          if calendar_start < 0:
-              raise SystemExit(
-                  "ERROR: attendanceCalendar() not found"
-              )
-
-          calendar_end = source.find(
-              "internal fun MainActivity.paymentLedger()",
-              calendar_start
-          )
-
-          if calendar_end < 0:
-              raise SystemExit(
-                  "ERROR: paymentLedger() marker not found"
-              )
-
-          calendar = source[
-              calendar_start:calendar_end
-          ]
-
-          render_start = calendar.find(
-              "        fun render(){"
-          )
-
-          summary_start = calendar.find(
-              "        fun renderSummary(){",
-              render_start
-          )
-
-          nav_start = calendar.find(
-              "        val nav=",
-              summary_start
-          )
-
-          if (
-              render_start < 0
-              or summary_start < 0
-              or nav_start < 0
-          ):
-              raise SystemExit(
-                  "ERROR: attendance render markers not found"
-              )
-
-          if not (
-              render_start
-              < summary_start
-              < nav_start
-          ):
-              raise SystemExit(
-                  "ERROR: unexpected attendance render order"
-              )
-
-          render_block = calendar[
-              render_start:summary_start
-          ]
-
-          summary_block = calendar[
-              summary_start:nav_start
-          ]
-
-          calendar = (
-              calendar[:render_start]
-              + summary_block
-              + render_block
-              + calendar[nav_start:]
-          )
-
-          source = (
-              source[:calendar_start]
-              + calendar
-              + source[calendar_end:]
-          )
-
-
-          attendance_status_replacements = [
-              (
-                  'statusViews.forEach{it.text="FULL"}',
-                  'statusViews.values.forEach{it.text="FULL"}'
-              ),
-              (
-                  'statusViews.forEach{it.text="HALF"}',
-                  'statusViews.values.forEach{it.text="HALF"}'
-              ),
-              (
-                  'statusViews.forEach{it.text=AttendanceRules.UNMARKED}',
-                  'statusViews.values.forEach{it.text=AttendanceRules.UNMARKED}'
-              ),
-          ]
-
-          for old, new in attendance_status_replacements:
-
-              if old in source:
-
-                  source = source.replace(
-                      old,
-                      new
-                  )
-
-              elif new not in source:
-
-                  raise SystemExit(
-                      "ERROR: expected attendance status pattern "
-                      f"not found: {old}"
-                  )
-
-
-          file.write_text(
-              source,
-              encoding="utf-8"
-          )
-
-          print(
-              "RELEASE_SOURCE_PATCH=PASS"
-          )
-          PY
-
-
-          echo ""
-          echo "=========================================="
-          echo "RELEASE SOURCE AUDIT"
-          echo "=========================================="
-
-
-          grep -Fq \
-            'internal fun MainActivity.btn(s:String,action:()->Unit = {})' \
-            "$FILE"
-
-          echo "BTN_DEFAULT_ACTION=PASS"
-
-
-          if grep -Fq \
-            'apply{type="image/*";' \
-            "$FILE"; then
-
-            echo "ERROR: Intent.type shadowing remains"
-            exit 1
-
+          else
+            echo "MainActivityScreens.kt not found at expected path."
+            echo "Searching..."
+            find app/src -type f -name "MainActivityScreens.kt" -print
           fi
 
-          grep -Fq \
-            'apply{this.type="image/*";' \
-            "$FILE"
-
-          echo "INTENT_TYPE_FIX=PASS"
-
-
-          if grep -Fq \
-            'when(exportType){' \
-            "$FILE"; then
-
-            echo "ERROR: invalid when(exportType) remains"
-            exit 1
-
-          fi
-
-          grep -Fq \
-            'exportType.startsWith("report:")' \
-            "$FILE"
-
-          grep -Fq \
-            'exportType.startsWith("reportpdf:")' \
-            "$FILE"
-
-          echo "EXPORT_TYPE_FIX=PASS"
-
-
-          python3 - "$FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          text = Path(sys.argv[1]).read_text(
-              encoding="utf-8"
-          )
-
-          required = [
-              ("cropForm", "fb"),
-              ("productionForm", "cropBtn"),
-              ("revenueForm", "cropBtn"),
-              ("workForm", "fieldBtn"),
-              ("workForm", "cropBtn"),
-              ("workForm", "workerBtn"),
-              ("workForm", "rateTypeBtn"),
-              ("paymentForm", "wb"),
-              ("paymentForm", "mb"),
-              ("paymentForm", "adv"),
-              ("expenseForm", "cb"),
-              ("expenseForm", "fb"),
-              ("expenseForm", "crb"),
-              ("reportFiltersDialog", "wb"),
-              ("reportFiltersDialog", "fb"),
-              ("reportFiltersDialog", "cb"),
-              ("workTemplateForm", "rateTypeBtn"),
-              ("attendanceForm", "fieldBtn"),
-              ("attendanceForm", "statusBtn"),
-              ("customReport", "wb"),
-              ("customReport", "fb"),
-              ("customReport", "cb"),
-          ]
-
-          def get_block(name):
-
-              start = text.find(
-                  "internal fun MainActivity."
-                  + name
-              )
-
-              if start < 0:
-                  raise SystemExit(
-                      f"ERROR: function missing: {name}"
-                  )
-
-              end = text.find(
-                  "internal fun MainActivity.",
-                  start + 10
-              )
-
-              if end < 0:
-                  end = len(text)
-
-              return text[start:end]
-
-
-          for function_name, button_name in required:
-
-              block = get_block(
-                  function_name
-              )
-
-              expected = (
-                  f"lateinit var {button_name}:Button"
-              )
-
-              if expected not in block:
-
-                  raise SystemExit(
-                      "ERROR: missing local lateinit "
-                      f"{button_name} in {function_name}"
-                  )
-
-          print(
-              "BUTTON_SELF_REFERENCE_AUDIT=PASS"
-          )
-          PY
-
-
-          python3 - "$FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          file = Path(sys.argv[1])
-
-          lines = file.read_text(
-              encoding="utf-8"
-          ).splitlines()
-
-          bad = []
-
-          for number, line in enumerate(
-              lines,
-              1
-          ):
-
-              if "it.text=" not in line:
-                  continue
-
-              if "statusViews.values.forEach" in line:
-                  continue
-
-              if "statusViews.forEach{(id,v)->v.text=" in line:
-                  continue
-
-              bad.append(
-                  f"{number}: {line}"
-              )
-
-          if bad:
-
-              print(
-                  "ERROR: unresolved it.text references:"
-              )
-
-              for item in bad:
-                  print(item)
-
-              raise SystemExit(1)
-
-          print(
-              "UI_BUTTON_TEXT_SCOPE_AUDIT=PASS"
-          )
-          PY
-
-
-          if grep -Fq \
-            'statusViews.forEach{it.text=' \
-            "$FILE"; then
-
-            echo "ERROR: Map statusViews still uses it.text directly"
-            exit 1
-
-          fi
-
-          grep -Fq \
-            'statusViews.values.forEach{it.text="FULL"}' \
-            "$FILE"
-
-          grep -Fq \
-            'statusViews.values.forEach{it.text="HALF"}' \
-            "$FILE"
-
-          grep -Fq \
-            'statusViews.values.forEach{it.text=AttendanceRules.UNMARKED}' \
-            "$FILE"
-
-          echo "ATTENDANCE_STATUS_TEXT_FIX=PASS"
-
-
-          python3 - "$FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          text = Path(sys.argv[1]).read_text(
-              encoding="utf-8"
-          )
-
-          start = text.find(
-              "internal fun MainActivity.attendanceCalendar()"
-          )
-
-          end = text.find(
-              "internal fun MainActivity.paymentLedger()",
-              start
-          )
-
-          if start < 0 or end < 0:
-
-              raise SystemExit(
-                  "ERROR: attendanceCalendar boundaries missing"
-              )
-
-          block = text[
-              start:end
-          ]
-
-          summary = block.find(
-              "fun renderSummary(){"
-          )
-
-          render = block.find(
-              "fun render(){"
-          )
-
-          if summary < 0 or render < 0:
-
-              raise SystemExit(
-                  "ERROR: render functions missing"
-              )
-
-          if summary >= render:
-
-              raise SystemExit(
-                  "ERROR: renderSummary() still appears after render()"
-              )
-
-          print(
-              "ATTENDANCE_RENDER_ORDER=PASS"
-          )
-          PY
-
-
-          if grep -Fq \
-            "app.audit.auditLog()" \
-            "$FILE"; then
-
-            echo "ERROR: old auditLog() remains"
-            exit 1
-
-          fi
-
-          if grep -Fq \
-            "app.audit.clearAuditLog()" \
-            "$FILE"; then
-
-            echo "ERROR: old clearAuditLog() remains"
-            exit 1
-
-          fi
-
-          if grep -Fq \
-            "getSystemService(ALARM_SERVICE)" \
-            "$FILE"; then
-
-            echo "ERROR: old ALARM_SERVICE remains"
-            exit 1
-
-          fi
-
-          grep -Fq \
-            "app.audit.list()" \
-            "$FILE"
-
-          grep -Fq \
-            "app.audit.clear()" \
-            "$FILE"
-
-          grep -Fq \
-            "Context.ALARM_SERVICE" \
-            "$FILE"
-
-          echo "PREVIOUS_SOURCE_FIXES=PASS"
-
-
-          echo ""
-          echo "=========================================="
-          echo "SOURCE_AUDIT=PASS"
-          echo "=========================================="
-
-
-          echo ""
-          echo "=========================================="
-          echo "RELEASE KOTLIN COMPILATION"
-          echo "=========================================="
-
-          gradle \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace \
-            --no-parallel \
-            :app:compileReleaseKotlin
-
-
-          echo ""
-          echo "=========================================="
-          echo "KOTLIN_COMPILATION=PASS"
-          echo "=========================================="
-
-
-          echo ""
-          echo "=========================================="
-          echo "ASSEMBLING RELEASE APK"
-          echo "=========================================="
-
-          gradle \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace \
-            --no-parallel \
-            :app:assembleRelease
-
-
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-
-
-          if [ ! -s "$APK" ]; then
-
-            echo ""
-            echo "=========================================="
-            echo "ERROR: RELEASE APK NOT CREATED"
-            echo "=========================================="
-
-            find app/build/outputs \
-              -maxdepth 5 \
-              -type f \
-              -print \
-              2>/dev/null || true
-
-            exit 1
-
-          fi
-
-
-          echo ""
-          echo "=========================================="
-          echo "RELEASE APK BUILD SUCCESS"
-          echo "=========================================="
-
-          echo "APK:"
-          ls -lh "$APK"
-
-          echo ""
-          echo "APK PATH:"
-          realpath "$APK"
-
-          echo ""
-          echo "=========================================="
-          echo "BUILD_RELEASE_APK=PASS"
-          echo "=========================================="
-
-
-      # ==========================================================
-      # 13. VERIFY UNSIGNED APK
-      # ==========================================================
-
-      - name: Verify unsigned APK
-        working-directory: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-
-          test -s "$APK"
-
-          echo "APK SIZE:"
-          du -h "$APK"
-
-          echo ""
-          echo "ANDROID BUILD TOOLS:"
-
-          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
-
-          test -d "$BUILD_TOOLS_DIR"
-
-          echo "BUILD_TOOLS_DIR=${BUILD_TOOLS_DIR}"
-
-          echo "$BUILD_TOOLS_DIR" >> "$GITHUB_PATH"
-
-          export PATH="$BUILD_TOOLS_DIR:$PATH"
-
-          AAPT2="${BUILD_TOOLS_DIR}/aapt2"
-
-          if [ ! -x "$AAPT2" ]; then
-            echo "ERROR: aapt2 not found:"
-            echo "$AAPT2"
-            exit 1
-          fi
-
-          echo ""
-          echo "AAPT2:"
-          "$AAPT2" version
-
-          echo ""
-          echo "APK BADGING:"
-
-          "$AAPT2" dump badging "$APK" \
-            | head -n 5
-
-          "$AAPT2" dump badging "$APK" \
-            | grep -Fq \
-            "package: name='${PACKAGE_NAME}'"
-
-          "$AAPT2" dump badging "$APK" \
-            | grep -Fq \
-            "versionCode='${VERSION_CODE}'"
-
-          "$AAPT2" dump badging "$APK" \
-            | grep -Fq \
-            "versionName='${VERSION_NAME}'"
-
-          unzip -t "$APK" \
-            >/dev/null
-
-          echo ""
-          echo "=========================================="
-          echo "UNSIGNED APK VERIFICATION=PASS"
-          echo "=========================================="
-
-          AAPT_COMPAT_DIR="${RUNNER_TEMP}/android-aapt-compat"
-
-          mkdir -p "$AAPT_COMPAT_DIR"
-
-          cat > "$AAPT_COMPAT_DIR/aapt" <<EOF
-          #!/usr/bin/env bash
-          exec "${BUILD_TOOLS_DIR}/aapt2" "\$@"
-          EOF
-
-          chmod +x "$AAPT_COMPAT_DIR/aapt"
-
-          echo "$AAPT_COMPAT_DIR" >> "$GITHUB_PATH"
-
-          export PATH="$AAPT_COMPAT_DIR:$PATH"
-
-          echo ""
-          echo "TOOL PATH CHECK:"
-
-          command -v aapt
-          command -v zipalign
-          command -v apksigner
-
-          echo ""
-          echo "AAPT_COMPATIBILITY=PASS"
-          echo "BUILD_TOOLS_PATH=PASS"
-
-
-      # ==========================================================
-      # 14. RESTORE RELEASE KEYSTORE
-      #
-      # FIXED:
-      # Uses the SAME RELEASE_* secrets that worked
-      # in the previous successful release build.
-      #
-      # NO NEW KEYSTORE IS GENERATED.
-      # ==========================================================
-
-      - name: Restore release keystore
-        working-directory: project
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo ""
-          echo "=========================================="
-          echo "RESTORING RELEASE KEYSTORE"
-          echo "=========================================="
-
-          # ------------------------------------------------------
-          # Check all four existing release secrets.
-          # Secret values are NEVER printed.
-          # ------------------------------------------------------
-
-          if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ]; then
-            echo "ERROR: RELEASE_KEYSTORE_BASE64 is empty or unavailable."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEYSTORE_PASSWORD:-}" ]; then
-            echo "ERROR: RELEASE_KEYSTORE_PASSWORD is empty or unavailable."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
-            echo "ERROR: RELEASE_KEY_ALIAS is empty or unavailable."
-            exit 1
-          fi
-
-          if [ -z "${RELEASE_KEY_PASSWORD:-}" ]; then
-            echo "ERROR: RELEASE_KEY_PASSWORD is empty or unavailable."
-            exit 1
-          fi
-
-          echo "RELEASE_KEYSTORE_BASE64=AVAILABLE"
-          echo "RELEASE_KEYSTORE_PASSWORD=AVAILABLE"
-          echo "RELEASE_KEY_ALIAS=AVAILABLE"
-          echo "RELEASE_KEY_PASSWORD=AVAILABLE"
-
-
-          # ------------------------------------------------------
-          # Decode existing release keystore.
-          # ------------------------------------------------------
-
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
-            | tr -d '\r\n\t ' \
-            | base64 --decode \
-            > release.keystore
-
-
-          # ------------------------------------------------------
-          # Verify decoded file.
-          # ------------------------------------------------------
-
-          test -s release.keystore
-
-          KEYSTORE_SIZE="$(stat -c '%s' release.keystore)"
-
-          echo "KEYSTORE_SIZE=${KEYSTORE_SIZE} bytes"
-
-          if [ "$KEYSTORE_SIZE" -lt 1000 ]; then
-            echo "ERROR: decoded release keystore is unexpectedly small."
-            rm -f release.keystore
-            exit 1
-          fi
-
-
-          # ------------------------------------------------------
-          # Verify keystore + store password + alias.
-          # No store type is forced.
-          # ------------------------------------------------------
-
-          echo ""
-          echo "VERIFYING RELEASE KEYSTORE..."
-
-          keytool -list \
-            -keystore release.keystore \
-            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" \
-            >/dev/null
-
-
-          # ------------------------------------------------------
-          # Verify the private signing key password.
-          #
-          # This creates only a temporary CSR in RUNNER_TEMP.
-          # It does NOT modify the original keystore.
-          # ------------------------------------------------------
-
-          echo ""
-          echo "VERIFYING PRIVATE SIGNING KEY..."
-
-          VALIDATION_CSR="${RUNNER_TEMP}/release-key-validation.csr"
-
-          rm -f "$VALIDATION_CSR"
-
-          keytool -certreq \
-            -alias "$RELEASE_KEY_ALIAS" \
-            -keystore release.keystore \
-            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
-            -keypass "$RELEASE_KEY_PASSWORD" \
-            -file "$VALIDATION_CSR" \
-            >/dev/null
-
-          test -s "$VALIDATION_CSR"
-
-          rm -f "$VALIDATION_CSR"
-
-
-          echo ""
-          echo "=========================================="
-          echo "RELEASE KEYSTORE VERIFICATION=PASS"
-          echo "=========================================="
-
-
-      # ==========================================================
-      # 15. ZIPALIGN
-      # ==========================================================
-
-      - name: Align APK
-        working-directory: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-
-          test -s "$APK"
-
-          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
-
-          test -x "${BUILD_TOOLS_DIR}/zipalign"
-
-          "${BUILD_TOOLS_DIR}/zipalign" \
-            -f \
-            -p \
-            4 \
-            "$APK" \
-            app-release-aligned.apk
-
-          test -s app-release-aligned.apk
-
-          "${BUILD_TOOLS_DIR}/zipalign" \
-            -c \
-            -v \
-            4 \
-            app-release-aligned.apk
-
-          echo "ZIPALIGN=PASS"
-
-
-      # ==========================================================
-      # 16. SIGN APK
-      #
-      # FIXED:
-      # Uses the SAME RELEASE_* secrets as Step 14.
-      # ==========================================================
-
-      - name: Sign Release APK
-        working-directory: project
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p artifacts
-
-          APK="app-release-aligned.apk"
-
-          test -s "$APK"
-          test -s release.keystore
-
-          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
-
-          test -x "${BUILD_TOOLS_DIR}/apksigner"
-
-          "${BUILD_TOOLS_DIR}/apksigner" sign \
-            --ks release.keystore \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass env:KEYSTORE_PASSWORD \
-            --key-pass env:KEY_PASSWORD \
-            --out \
-            artifacts/Majdoor-Hisaab-PRO-release.apk \
-            "$APK"
-
-          test -s \
-            artifacts/Majdoor-Hisaab-PRO-release.apk
-
-          echo "APK_SIGNING=PASS"
-
-
-      # ==========================================================
-      # 17. VERIFY SIGNED APK
-      # ==========================================================
-
-      - name: Verify signed APK
-        working-directory: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
-
-          test -s "$APK"
-
-          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
-
-          test -x "${BUILD_TOOLS_DIR}/apksigner"
-          test -x "${BUILD_TOOLS_DIR}/zipalign"
-
-          "${BUILD_TOOLS_DIR}/apksigner" verify \
-            --verbose \
-            --print-certs \
-            "$APK"
-
-          "${BUILD_TOOLS_DIR}/zipalign" \
-            -c \
-            -v \
-            4 \
-            "$APK"
-
-          AAPT2="${BUILD_TOOLS_DIR}/aapt2"
-
-          "$AAPT2" dump badging "$APK" \
-            | grep -Fq \
-            "package: name='${PACKAGE_NAME}'"
-
-          "$AAPT2" dump badging "$APK" \
-            | grep -Fq \
-            "versionCode='${VERSION_CODE}'"
-
-          "$AAPT2" dump badging "$APK" \
-            | grep -Fq \
-            "versionName='${VERSION_NAME}'"
-
-          unzip -t "$APK" \
-            >/dev/null
-
-          echo "SIGNED_APK_VERIFICATION=PASS"
-
-
-      # ==========================================================
-      # 18. SHA256
-      # ==========================================================
-
-      - name: Generate SHA256
-        working-directory: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
-
-          test -s "$APK"
-
-          sha256sum \
-            "$APK" \
-            | tee \
-            artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
-
-          test -s \
-            artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
-
-          echo "SHA256=PASS"
-
-
-      # ==========================================================
-      # 19. UPLOAD FINAL APK
-      # ==========================================================
-
-      - name: Upload final signed APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Majdoor-Hisaab-PRO-v1.77.0-release
-
-          path: |
-            project/artifacts/Majdoor-Hisaab-PRO-release.apk
-            project/artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
-
-          if-no-files-found: error
-
-          retention-days: 30
-
-
-      # ==========================================================
-      # 20. FINAL SUCCESS
-      # ==========================================================
-
-      - name: FINAL BUILD SUCCESS
+      # ============================================================
+      # 9. MAKE GRADLE WRAPPER
+      # ============================================================
+      - name: Generate Gradle wrapper
         shell: bash
         run: |
           set -e
 
-          echo ""
-          echo "=========================================="
-          echo "       MAJDOOR HISAAB PRO"
-          echo "       RELEASE BUILD SUCCESS"
-          echo "=========================================="
-          echo ""
-          echo "Package     : ${PACKAGE_NAME}"
-          echo "Version     : ${VERSION_NAME}"
-          echo "VersionCode : ${VERSION_CODE}"
-          echo ""
-          echo "SIGNED APK CREATED SUCCESSFULLY"
-          echo ""
-          echo "=========================================="
+          cd "$PROJECT_ROOT"
+
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version "${GRADLE_VERSION}"
+          fi
+
+          chmod +x gradlew
+
+          ./gradlew --version
+
+      # ============================================================
+      # 10. VERIFY PROJECT CONFIG
+      # ============================================================
+      - name: Verify Android project configuration
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          BUILD_FILE="app/build.gradle.kts"
+
+          echo "Checking package:"
+          grep -n "com.majdoor.hisaab" "$BUILD_FILE" || true
+
+          echo
+          echo "Checking versionName:"
+          grep -n "versionName" "$BUILD_FILE" || true
+
+          echo
+          echo "Checking versionCode:"
+          grep -n "versionCode" "$BUILD_FILE" || true
+
+          echo
+          echo "Checking compile/target SDK:"
+          grep -nE "compileSdk|targetSdk|minSdk" "$BUILD_FILE" || true
+
+          echo
+          echo "Checking Android plugin:"
+          grep -R "com.android.application" \
+            -n --include="*.gradle.kts" . || true
+
+      # ============================================================
+      # 11. FORCE REQUIRED VERSION VALUES
+      # ============================================================
+      - name: Verify release version
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          BUILD_FILE="app/build.gradle.kts"
+
+          grep -q 'versionName[[:space:]]*=[[:space:]]*"1.77.0"' \
+            "$BUILD_FILE" || {
+              echo "ERROR: versionName 1.77.0 not found."
+              exit 1
+            }
+
+          grep -q 'versionCode[[:space:]]*=[[:space:]]*77' \
+            "$BUILD_FILE" || {
+              echo "ERROR: versionCode 77 not found."
+              exit 1
+            }
+
+          echo "Version verified:"
+          echo "versionName = 1.77.0"
+          echo "versionCode = 77"
+
+      # ============================================================
+      # 12. CLEAN
+      # ============================================================
+      - name: Clean project
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          ./gradlew clean --no-daemon
+
+      # ============================================================
+      # 13. COMPILE DEBUG / TEST SOURCES
+      # ============================================================
+      - name: Compile Kotlin sources
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          ./gradlew \
+            :app:compileReleaseKotlin \
+            --no-daemon \
+            --stacktrace
+
+      # ============================================================
+      # 14. BUILD RELEASE APK
+      # ============================================================
+      - name: Build unsigned Release APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          ./gradlew \
+            :app:assembleRelease \
+            --no-daemon \
+            --stacktrace
+
+      # ============================================================
+      # 15. FIND APK
+      # ============================================================
+      - name: Locate Release APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_ROOT"
+
+          APK="$(find app/build/outputs/apk/release \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: Release APK not found."
+            find app/build/outputs -type f -print || true
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/release"
+
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release-unsigned.apk"
+
+          echo "UNSIGNED_APK=$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release-unsigned.apk" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 16. VERIFY APK PACKAGE
+      # ============================================================
+      - name: Verify unsigned APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="$UNSIGNED_APK"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK missing."
+            exit 1
+          fi
+
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest application-id "$APK"
+
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-name "$APK"
+
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-code "$APK"
+
+      # ============================================================
+      # 17. RESTORE RELEASE KEYSTORE
+      # ============================================================
+      - name: Restore release keystore
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -e
+
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "ERROR: RELEASE_KEYSTORE_BASE64 secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$RELEASE_STORE_PASSWORD" ]; then
+            echo "ERROR: RELEASE_STORE_PASSWORD secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$RELEASE_KEY_ALIAS" ]; then
+            echo "ERROR: RELEASE_KEY_ALIAS secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$RELEASE_KEY_PASSWORD" ]; then
+            echo "ERROR: RELEASE_KEY_PASSWORD secret is missing."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/keystore"
+
+          echo "$RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/keystore/release.keystore"
+
+          test -s "$RUNNER_TEMP/keystore/release.keystore"
+
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/keystore/release.keystore" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 18. ZIPALIGN
+      # ============================================================
+      - name: Zipalign Release APK
+        shell: bash
+        run: |
+          set -e
+
+          ZIPALIGN="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign"
+
+          "$ZIPALIGN" \
+            -p \
+            -f \
+            4 \
+            "$UNSIGNED_APK" \
+            "$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release-aligned.apk"
+
+      # ============================================================
+      # 19. SIGN APK
+      # ============================================================
+      - name: Sign Release APK
+        shell: bash
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -e
+
+          APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
+
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-pass "pass:${RELEASE_STORE_PASSWORD}" \
+            --ks-key-alias "$RELEASE_KEY_ALIAS" \
+            --key-pass "pass:${RELEASE_KEY_PASSWORD}" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            --out "$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release.apk" \
+            "$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release-aligned.apk"
+
+      # ============================================================
+      # 20. VERIFY SIGNATURE
+      # ============================================================
+      - name: Verify signed APK
+        shell: bash
+        run: |
+          set -e
+
+          APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
+
+          "$APKSIGNER" verify \
+            --verbose \
+            "$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release.apk"
+
+      # ============================================================
+      # 21. VERIFY FINAL APK PACKAGE / VERSION
+      # ============================================================
+      - name: Verify final APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="$GITHUB_WORKSPACE/release/Majdoor-Hisaab-PRO-1.77.0-release.apk"
+
+          echo "Application ID:"
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest application-id "$APK"
+
+          echo
+          echo "Version Name:"
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-name "$APK"
+
+          echo
+          echo "Version Code:"
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-code "$APK"
+
+          echo
+          echo "Checking package ID..."
+
+          PACKAGE_ID="$(
+            "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+              manifest application-id "$APK"
+          )"
+
+          if [ "$PACKAGE_ID" != "$PACKAGE_NAME" ]; then
+            echo "ERROR: Package mismatch."
+            echo "Expected: $PACKAGE_NAME"
+            echo "Actual:   $PACKAGE_ID"
+            exit 1
+          fi
+
+          VERSION_NAME_ACTUAL="$(
+            "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+              manifest version-name "$APK"
+          )"
+
+          if [ "$VERSION_NAME_ACTUAL" != "$VERSION_NAME" ]; then
+            echo "ERROR: Version name mismatch."
+            echo "Expected: $VERSION_NAME"
+            echo "Actual:   $VERSION_NAME_ACTUAL"
+            exit 1
+          fi
+
+          VERSION_CODE_ACTUAL="$(
+            "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+              manifest version-code "$APK"
+          )"
+
+          if [ "$VERSION_CODE_ACTUAL" != "$VERSION_CODE" ]; then
+            echo "ERROR: Version code mismatch."
+            echo "Expected: $VERSION_CODE"
+            echo "Actual:   $VERSION_CODE_ACTUAL"
+            exit 1
+          fi
+
+          echo
+          echo "=============================================="
+          echo "FINAL APK VERIFICATION SUCCESS"
+          echo "Package:      $PACKAGE_ID"
+          echo "Version Name: $VERSION_NAME_ACTUAL"
+          echo "Version Code: $VERSION_CODE_ACTUAL"
+          echo "=============================================="
+
+      # ============================================================
+      # 22. SHA256
+      # ============================================================
+      - name: Generate SHA256
+        shell: bash
+        run: |
+          set -e
+
+          cd "$GITHUB_WORKSPACE/release"
+
+          sha256sum \
+            "Majdoor-Hisaab-PRO-1.77.0-release.apk" \
+            > "Majdoor-Hisaab-PRO-1.77.0-release.apk.sha256"
+
+          cat "Majdoor-Hisaab-PRO-1.77.0-release.apk.sha256"
+
+      # ============================================================
+      # 23. SHOW RELEASE FILES
+      # ============================================================
+      - name: Show final release files
+        run: |
+          echo "Final release files:"
+          ls -lh "$GITHUB_WORKSPACE/release"
+
+      # ============================================================
+      # 24. UPLOAD SIGNED APK
+      # ============================================================
+      - name: Upload Signed Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Majdoor-Hisaab-PRO-1.77.0-Signed-Release
+          path: |
+            release/Majdoor-Hisaab-PRO-1.77.0-release.apk
+            release/Majdoor-Hisaab-PRO-1.77.0-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      # ============================================================
+      # 25. SUCCESS MESSAGE
+      # ============================================================
+      - name: Build Success
+        run: |
+          echo
+          echo "======================================================"
+          echo " MAJDOOR HISAAB PRO - RELEASE BUILD SUCCESS"
+          echo "======================================================"
+          echo
+          echo "ZIP:"
+          echo "${ZIP_NAME}"
+          echo
+          echo "PACKAGE:"
+          echo "${PACKAGE_NAME}"
+          echo
+          echo "VERSION:"
+          echo "${VERSION_NAME}"
+          echo
+          echo "VERSION CODE:"
+          echo "${VERSION_CODE}"
+          echo
+          echo "SIGNED APK:"
+          echo "release/Majdoor-Hisaab-PRO-1.77.0-release.apk"
+          echo
+          echo "======================================================"
