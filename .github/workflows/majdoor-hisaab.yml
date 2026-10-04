@@ -56,22 +56,19 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " MAJDOOR HISAAB PRO - V81 FINAL RELEASE"
+          echo " MAJDOOR HISAAB PRO - V81 FINAL"
           echo "============================================================"
 
           pwd
 
           echo
-          echo "Repository files:"
-          find . -maxdepth 5 -type f \
-            \( \
-              -name "*.zip" \
-              -o -name "settings.gradle.kts" \
-              -o -name "build.gradle.kts" \
-              -o -name "app.gradle.kts" \
-              -o -name "gradle-wrapper.properties" \
-            \) \
-            -print | sort
+          echo "===== ZIP FILES ====="
+
+          find . \
+            -type f \
+            -name "*.zip" \
+            -print \
+            | sort
 
 
       # ============================================================
@@ -168,7 +165,7 @@ jobs:
 
 
       # ============================================================
-      # 6. LOCATE / EXTRACT V81 PROJECT
+      # 6. LOCATE / EXTRACT V81
       # ============================================================
 
       - name: Locate and extract V81 project
@@ -177,13 +174,13 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " LOCATING ANDROID PROJECT"
+          echo " LOCATING V81 PROJECT"
           echo "============================================================"
 
           FOUND_ROOT=""
 
           # --------------------------------------------------------
-          # Root Android project
+          # Root project
           # --------------------------------------------------------
 
           if [[ -f "settings.gradle.kts" ]] && \
@@ -218,6 +215,7 @@ jobs:
 
               echo
               echo "Available ZIP files:"
+
               find "$PWD" \
                 -type f \
                 -name "*.zip" \
@@ -228,13 +226,16 @@ jobs:
 
             fi
 
+
             echo
-            echo "V81 ZIP:"
+            echo "Using V81 ZIP:"
             echo "$ZIP_PATH"
+
 
             rm -rf "$PWD/extracted_project"
 
             mkdir -p "$PWD/extracted_project"
+
 
             unzip -q \
               "$ZIP_PATH" \
@@ -305,15 +306,12 @@ jobs:
           echo "ANDROID_PROJECT_ROOT=$FOUND_ROOT" >> "$GITHUB_ENV"
 
           echo
-          echo "============================================================"
-          echo " ANDROID PROJECT"
-          echo "============================================================"
-
+          echo "ANDROID PROJECT:"
           echo "$FOUND_ROOT"
 
 
       # ============================================================
-      # 7. SET UP GRADLE
+      # 7. GRADLE
       # ============================================================
 
       - name: Set up Gradle
@@ -324,7 +322,7 @@ jobs:
 
 
       # ============================================================
-      # 8. VERIFY PROJECT CONFIGURATION
+      # 8. VERIFY PROJECT CONFIG
       # ============================================================
 
       - name: Verify project configuration
@@ -337,41 +335,50 @@ jobs:
           test -f app/build.gradle.kts
 
           echo "===== settings.gradle.kts ====="
+
           sed -n '1,260p' settings.gradle.kts
+
 
           echo
           echo "===== app/build.gradle.kts ====="
+
           sed -n '1,420p' app/build.gradle.kts
 
+
           echo
-          echo "===== CONFIGURATION CHECK ====="
+          echo "===== CONFIG CHECK ====="
 
           grep -q \
             'com.majdoor.hisaab' \
             app/build.gradle.kts
 
+
           grep -Eq \
             'compileSdk.*36|compileSdk = 36' \
             app/build.gradle.kts
+
 
           grep -Eq \
             'targetSdk.*36|targetSdk = 36' \
             app/build.gradle.kts
 
+
           grep -Eq \
             'versionCode.*77|versionCode = 77' \
             app/build.gradle.kts
 
+
           grep -Eq \
             'versionName.*1.77.0|versionName = "1.77.0"' \
             app/build.gradle.kts
+
 
           echo
           echo "PROJECT CONFIGURATION PASSED"
 
 
       # ============================================================
-      # 9. LOCATE MAINACTIVITYSCREENS
+      # 9. LOCATE SOURCE
       # ============================================================
 
       - name: Locate MainActivityScreens
@@ -388,12 +395,19 @@ jobs:
               | head -n 1
           )"
 
+
           if [[ -z "$SRC" ]]; then
+
             echo "ERROR: MainActivityScreens.kt not found."
+
             exit 1
+
           fi
 
-          echo "MAIN_ACTIVITY_SCREENS=$SRC" >> "$GITHUB_ENV"
+
+          echo "MAIN_ACTIVITY_SCREENS=$SRC" \
+            >> "$GITHUB_ENV"
+
 
           echo
           echo "SOURCE:"
@@ -401,10 +415,10 @@ jobs:
 
 
       # ============================================================
-      # 10. FINAL V81 KOTLIN FIXES
+      # 10. DEFINITIVE V81 SOURCE FIX
       # ============================================================
 
-      - name: Apply FINAL V81 Kotlin fixes
+      - name: Apply definitive V81 Kotlin fixes
         working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
         shell: bash
         run: |
@@ -415,19 +429,26 @@ jobs:
           import re
           from pathlib import Path
 
-          src = Path(os.environ["MAIN_ACTIVITY_SCREENS"])
+
+          src = Path(
+              os.environ["MAIN_ACTIVITY_SCREENS"]
+          )
+
 
           if not src.exists():
+
               raise SystemExit(
                   f"ERROR: Source not found: {src}"
               )
+
 
           text = src.read_text(
               encoding="utf-8"
           )
 
+
           print("============================================================")
-          print(" APPLYING FINAL V81 KOTLIN FIXES")
+          print(" DEFINITIVE V81 SOURCE FIX")
           print("============================================================")
 
 
@@ -440,6 +461,7 @@ jobs:
               "internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{"
           )
 
+
           text = text.replace(
               "internal fun MainActivity.btn(s: String, action: () -> Unit) = TextView(this).apply {",
               "internal fun MainActivity.btn(s: String, action: () -> Unit = {}) = TextView(this).apply {"
@@ -447,37 +469,14 @@ jobs:
 
 
           # ========================================================
-          # 2. PROFESSIONAL BUTTON REFERENCE HELPER
-          # ========================================================
-
-          marker = "    internal fun MainActivity.page(title:String):LinearLayout{"
-
-          helper = '''    internal fun MainActivity.btnRef(s:String, action:(TextView)->Unit):TextView{
-              var ref:TextView?=null
-              val view=btn(s){ ref?.let(action) }
-              ref=view
-              return view
-          }
-
-          '''
-
-          if marker in text and "internal fun MainActivity.btnRef" not in text:
-
-              text = text.replace(
-                  marker,
-                  helper + marker,
-                  1
-              )
-
-
-          # ========================================================
-          # 3. ScrollView
+          # 2. ScrollView
           # ========================================================
 
           text = text.replace(
               "fillViewport=true",
               "setFillViewport(true)"
           )
+
 
           text = text.replace(
               "fillViewport = true",
@@ -486,7 +485,17 @@ jobs:
 
 
           # ========================================================
-          # 4. statusViews MAP
+          # 3. pick() RETURN TYPE
+          # ========================================================
+
+          text = text.replace(
+              "onPick:(Int)->Unit):Button {",
+              "onPick:(Int)->Unit):TextView {"
+          )
+
+
+          # ========================================================
+          # 4. statusViews Map
           # ========================================================
 
           text = text.replace(
@@ -494,10 +503,12 @@ jobs:
               'statusViews.values.forEach{it.text="FULL"}'
           )
 
+
           text = text.replace(
               'statusViews.forEach{it.text="HALF"}',
               'statusViews.values.forEach{it.text="HALF"}'
           )
+
 
           text = text.replace(
               'statusViews.forEach{it.text=AttendanceRules.UNMARKED}',
@@ -506,12 +517,23 @@ jobs:
 
 
           # ========================================================
-          # 5. ALL PROBLEMATIC btn() CALLBACKS
+          # 5. SAFE BUTTON VARIABLE TRANSFORMATION
+          #
+          # IMPORTANT:
+          # Do NOT use btnRef().
+          #
+          # Every button which changes its own text gets:
+          #
+          # lateinit var buttonName: TextView
+          # buttonName=btn(...)
+          #
+          # This removes the broken lambda inference problem.
           # ========================================================
 
           lines = text.splitlines()
 
-          problematic_names = {
+
+          button_names = [
               "fb",
               "cb",
               "crb",
@@ -523,223 +545,136 @@ jobs:
               "statusBtn",
               "rateTypeBtn",
               "workerBtn"
-          }
+          ]
 
 
-          for index, line in enumerate(lines):
+          for line_index, line in enumerate(lines):
 
-              match = re.search(
-                  r'val\s+(\w+)=btn\(',
-                  line
+              matches = list(
+                  re.finditer(
+                      r'val\s+(\w+)\s*=btn\(',
+                      line
+                  )
               )
 
-              if not match:
-                  continue
 
-              name = match.group(1)
-
-              if name not in problematic_names:
-                  continue
-
-              if "it.text=" not in line:
+              if not matches:
                   continue
 
 
-              line = line.replace(
-                  f"val {name}=btn(",
-                  f"val {name}=btnRef(",
-                  1
+              pieces = []
+
+              cursor = 0
+
+
+              for match_index, match in enumerate(matches):
+
+                  name = match.group(1)
+
+                  segment_start = match.start()
+
+
+                  if match_index + 1 < len(matches):
+
+                      segment_end = matches[
+                          match_index + 1
+                      ].start()
+
+                  else:
+
+                      segment_end = len(line)
+
+
+                  segment = line[
+                      segment_start:
+                      segment_end
+                  ]
+
+
+                  if (
+                      name in button_names
+                      and "it.text=" in segment
+                  ):
+
+                      segment = segment.replace(
+                          f"val {name}=btn(",
+                          f"lateinit var {name}: TextView; {name}=btn(",
+                          1
+                      )
+
+
+                      segment = segment.replace(
+                          "it.text=",
+                          f"{name}.text="
+                      )
+
+
+                  pieces.append(
+                      line[cursor:segment_start]
+                  )
+
+
+                  pieces.append(
+                      segment
+                  )
+
+
+                  cursor = segment_end
+
+
+              pieces.append(
+                  line[cursor:]
               )
 
-              line = line.replace(
-                  "{AlertDialog",
-                  "{button->AlertDialog",
-                  1
+
+              lines[line_index] = "".join(
+                  pieces
               )
 
-              line = line.replace(
-                  "{val labels",
-                  "{button->val labels",
-                  1
-              )
 
-              line = line.replace(
-                  "{advance=",
-                  "{button->advance=",
-                  1
-              )
-
-              line = line.replace(
-                  ";it.text=",
-                  ";button.text="
-              )
-
-              line = line.replace(
-                  "{it.text=",
-                  "{button.text="
-              )
-
-              lines[index] = line
+          text = "\n".join(lines) + "\n"
 
 
           # ========================================================
           # 6. WORKER BUTTON
           # ========================================================
 
-          for index, line in enumerate(lines):
-
-              if "val workerBtn=btn(" in line:
-
-                  line = line.replace(
-                      "val workerBtn=btn(",
-                      "val workerBtn=btnRef(",
-                      1
-                  )
-
-                  if line.rstrip().endswith("){"):
-
-                      line = (
-                          line.rstrip()[:-2]
-                          + "){button->"
-                      )
-
-                  lines[index] = line
-
-
-              if 'setPositiveButton("Done"){_,_->it.text=' in line:
-
-                  lines[index] = line.replace(
-                      'setPositiveButton("Done"){_,_->it.text=',
-                      'setPositiveButton("Done"){_,_->button.text='
-                  )
+          text = text.replace(
+              'setPositiveButton("Done"){_,_->it.text="Workers: ${selectedWorkers.distinct().size}"}',
+              'setPositiveButton("Done"){_,_->workerBtn.text="Workers: ${selectedWorkers.distinct().size}"}'
+          )
 
 
           # ========================================================
-          # 7. ATTENDANCE FIELD / STATUS BUTTONS
+          # 7. MULTI-LINE ATTENDANCE FIELD BUTTON
           # ========================================================
 
-          in_attendance_form = False
-
-          for index, line in enumerate(lines):
-
-              if "internal fun MainActivity.attendanceForm" in line:
-
-                  in_attendance_form = True
+          text = text.replace(
+              'val fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){',
+              'lateinit var fieldBtn: TextView; fieldBtn=btn("Field: ${if(fieldId.isBlank()) "Not linked" else selectedName(fieldId,fields.map{it.id to it.name})}"){'
+          )
 
 
-              if in_attendance_form:
-
-                  if "val fieldBtn=btn(" in line:
-
-                      line = line.replace(
-                          "val fieldBtn=btn(",
-                          "val fieldBtn=btnRef(",
-                          1
-                      )
-
-                      if line.rstrip().endswith("){"):
-
-                          line = (
-                              line.rstrip()[:-2]
-                              + "){button->"
-                          )
-
-                      lines[index] = line
+          text = text.replace(
+              'val statusBtn=btn("Status: $status"){',
+              'lateinit var statusBtn: TextView; statusBtn=btn("Status: $status"){'
+          )
 
 
-                  if "val statusBtn=btn(" in line:
-
-                      line = line.replace(
-                          "val statusBtn=btn(",
-                          "val statusBtn=btnRef(",
-                          1
-                      )
-
-                      if line.rstrip().endswith("){"):
-
-                          line = (
-                              line.rstrip()[:-2]
-                              + "){button->"
-                          )
-
-                      lines[index] = line
+          text = text.replace(
+              'it.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"',
+              'fieldBtn.text="Field: ${if(i==0) "Not linked" else fields[i-1].name}"'
+          )
 
 
-                  if "it.text=" in line:
-
-                      lines[index] = line.replace(
-                          "it.text=",
-                          "button.text="
-                      )
-
-
-              if "internal fun MainActivity.attendanceHistory" in line:
-
-                  in_attendance_form = False
-
-
-          text = "\n".join(lines) + "\n"
+          text = text.replace(
+              'it.text="Status: $status"',
+              'statusBtn.text="Status: $status"'
+          )
 
 
           # ========================================================
-          # 8. FINAL REMAINING it.text CALLBACKS
-          # ========================================================
-
-          lines = text.splitlines()
-
-          for index, line in enumerate(lines):
-
-              if (
-                  "it.text=" in line
-                  and "statusViews.values.forEach" not in line
-              ):
-
-                  match = re.search(
-                      r'val\s+(\w+)=btn\(',
-                      line
-                  )
-
-                  if match:
-
-                      name = match.group(1)
-
-                      line = line.replace(
-                          f"val {name}=btn(",
-                          f"val {name}=btnRef(",
-                          1
-                      )
-
-                      line = line.replace(
-                          "{AlertDialog",
-                          "{button->AlertDialog",
-                          1
-                      )
-
-                      line = line.replace(
-                          "{val labels",
-                          "{button->val labels",
-                          1
-                      )
-
-                      line = line.replace(
-                          ";it.text=",
-                          ";button.text="
-                      )
-
-                  else:
-
-                      line = line.replace(
-                          "it.text=",
-                          "button.text="
-                      )
-
-                  lines[index] = line
-
-          text = "\n".join(lines) + "\n"
-
-
-          # ========================================================
-          # 9. INTENT TYPE SHADOWING
+          # 8. INTENT TYPE SHADOWING
           # ========================================================
 
           text = re.sub(
@@ -748,11 +683,13 @@ jobs:
               text
           )
 
+
           text = re.sub(
               r'(\.apply\s*\{\s*)type\s*=\s*"application/zip"',
               r'\1this.type="application/zip"',
               text
           )
+
 
           text = re.sub(
               r'(\.apply\s*\{\s*)type\s*=\s*"\*/\*"',
@@ -762,7 +699,7 @@ jobs:
 
 
           # ========================================================
-          # 10. AUDIT COMPATIBILITY
+          # 9. AUDIT COMPATIBILITY
           # ========================================================
 
           text = text.replace(
@@ -770,10 +707,12 @@ jobs:
               ".auditLog"
           )
 
+
           text = text.replace(
               "clearAuditLog",
               "clear"
           )
+
 
           text = text.replace(
               "getSystemService(ALARM_SERVICE)",
@@ -782,33 +721,36 @@ jobs:
 
 
           # ========================================================
-          # 11. PICK() RETURN TYPE
-          # ========================================================
-
-          text = re.sub(
-              r'(onPick\s*:\s*\(Int\)\s*->\s*Unit\s*\)\s*:)Button',
-              r'\1TextView',
-              text
-          )
-
-
-          # ========================================================
-          # 12. DEFINITIVE EXPORT BLOCK REPLACEMENT
+          # 10. DEFINITIVE EXPORT FIX
           # ========================================================
 
           export_start = text.find(
-              "contentResolver.openOutputStream(uri)!!.use{out->"
+              "contentResolver.openOutputStream(uri)!!.use{out->when(exportType){"
           )
 
+
+          export_end_marker = (
+              "            } else if(req==1002){"
+          )
+
+
           export_end = text.find(
-              "            } else if(req==1002){",
+              export_end_marker,
               export_start
           )
 
-          if export_start < 0 or export_end < 0:
+
+          if export_start < 0:
 
               raise SystemExit(
-                  "ERROR: Export block boundaries not found."
+                  "ERROR: Original export block start not found."
+              )
+
+
+          if export_end < 0:
+
+              raise SystemExit(
+                  "ERROR: Original export block end not found."
               )
 
 
@@ -831,12 +773,13 @@ jobs:
 
 
           # ========================================================
-          # 13. RENDER SUMMARY FORWARD REFERENCE
+          # 11. RENDER SUMMARY FORWARD REFERENCE
           # ========================================================
 
           calendar_start = text.find(
               "internal fun MainActivity.attendanceCalendar"
           )
+
 
           calendar_end = text.find(
               "internal fun MainActivity.paymentLedger",
@@ -854,44 +797,101 @@ jobs:
                   calendar_end
               ]
 
-              render_pos = calendar.find(
-                  "fun render(){"
+
+              render_start = calendar.find(
+                  "        fun render(){"
               )
 
-              summary_pos = calendar.find(
-                  "fun renderSummary(){"
+
+              summary_start = calendar.find(
+                  "        fun renderSummary(){"
               )
+
+
+              def find_function_end(
+                  source,
+                  start
+              ):
+
+                  brace_start = source.find(
+                      "{",
+                      start
+                  )
+
+
+                  if brace_start < 0:
+                      return -1
+
+
+                  depth = 0
+
+
+                  for pos in range(
+                      brace_start,
+                      len(source)
+                  ):
+
+                      char = source[pos]
+
+
+                      if char == "{":
+                          depth += 1
+
+
+                      elif char == "}":
+
+                          depth -= 1
+
+
+                          if depth == 0:
+                              return pos + 1
+
+
+                  return -1
 
 
               if (
-                  render_pos >= 0
-                  and summary_pos > render_pos
+                  render_start >= 0
+                  and summary_start > render_start
               ):
 
-                  summary_end = calendar.find(
-                      "        val nav=",
-                      summary_pos
+                  render_end = find_function_end(
+                      calendar,
+                      render_start
                   )
 
-                  if summary_end > summary_pos:
+
+                  summary_end = find_function_end(
+                      calendar,
+                      summary_start
+                  )
+
+
+                  if (
+                      render_end > 0
+                      and summary_end > 0
+                  ):
 
                       render_block = calendar[
-                          render_pos:
-                          summary_pos
+                          render_start:
+                          render_end
                       ]
 
+
                       summary_block = calendar[
-                          summary_pos:
+                          summary_start:
                           summary_end
                       ]
 
+
                       calendar = (
-                          calendar[:render_pos]
+                          calendar[:render_start]
                           + summary_block
                           + "\n"
                           + render_block
                           + calendar[summary_end:]
                       )
+
 
                       text = (
                           text[:calendar_start]
@@ -901,7 +901,7 @@ jobs:
 
 
           # ========================================================
-          # 14. SAVE
+          # 12. SAVE
           # ========================================================
 
           src.write_text(
@@ -911,17 +911,19 @@ jobs:
 
 
           print()
-          print("FINAL V81 SOURCE PATCH COMPLETED")
-          print("SOURCE:", src)
+          print("============================================================")
+          print(" SOURCE PATCH COMPLETE")
+          print("============================================================")
+          print(src)
 
           PY
 
 
       # ============================================================
-      # 11. SOURCE SANITY CHECK
+      # 11. FINAL SOURCE AUDIT
       # ============================================================
 
-      - name: Final Kotlin source sanity check
+      - name: Final Kotlin source audit
         working-directory: ${{ env.ANDROID_PROJECT_ROOT }}
         shell: bash
         run: |
@@ -929,14 +931,17 @@ jobs:
 
           SRC="$MAIN_ACTIVITY_SCREENS"
 
+
           echo "============================================================"
-          echo " FINAL KOTLIN SOURCE SANITY CHECK"
+          echo " FINAL KOTLIN SOURCE AUDIT"
           echo "============================================================"
+
 
           test -f "$SRC"
 
+
           echo
-          echo "===== btn() ====="
+          echo "===== BTN ====="
 
           grep -n \
             "fun MainActivity.btn" \
@@ -945,10 +950,10 @@ jobs:
 
 
           echo
-          echo "===== btnRef() ====="
+          echo "===== PICK ====="
 
           grep -n \
-            "fun MainActivity.btnRef" \
+            "fun MainActivity.pick" \
             "$SRC" \
             || true
 
@@ -964,64 +969,89 @@ jobs:
 
 
           echo
-          echo "===== CHECKING OLD EXPORT SYNTAX ====="
+          echo "===== CHECK 1: OLD EXPORT ====="
 
           if grep -Eq \
             'when[[:space:]]*\([[:space:]]*exportType[[:space:]]*\)' \
             "$SRC"; then
 
             echo "ERROR: when(exportType) still exists."
+
             exit 1
 
           fi
 
-          echo "PASS: when(exportType) removed."
+          echo "PASS"
 
 
           echo
-          echo "===== CHECKING OLD fillViewport ====="
+          echo "===== CHECK 2: fillViewport ====="
 
           if grep -Eq \
             'fillViewport[[:space:]]*=' \
             "$SRC"; then
 
             echo "ERROR: old fillViewport assignment remains."
+
             exit 1
 
           fi
 
-          echo "PASS: ScrollView fixed."
+          echo "PASS"
 
 
           echo
-          echo "===== CHECKING PROBLEMATIC it.text ====="
+          echo "===== CHECK 3: BROKEN btnRef ====="
 
-          if grep -n \
-            'it.text=' \
-            "$SRC" \
-            | grep -v \
-              'statusViews.values.forEach'; then
+          if grep -q \
+            "btnRef(" \
+            "$SRC"; then
 
-            echo "ERROR: unresolved it.text callback remains."
+            echo "ERROR: btnRef() must not exist."
+
             exit 1
 
           fi
 
-          echo "PASS: it.text callbacks fixed."
+          echo "PASS"
 
 
           echo
-          echo "===== CHECKING BUTTON REFERENCE ====="
+          echo "===== CHECK 4: UNRESOLVED it.text ====="
+
+          REMAINING_IT="$(
+            grep -n \
+              'it.text=' \
+              "$SRC" \
+              | grep -v \
+                'statusViews.values.forEach' \
+              || true
+          )"
+
+
+          if [[ -n "$REMAINING_IT" ]]; then
+
+            echo "ERROR: unresolved it.text remains:"
+            echo "$REMAINING_IT"
+
+            exit 1
+
+          fi
+
+          echo "PASS"
+
+
+          echo
+          echo "===== CHECK 5: BUTTON VARIABLES ====="
 
           grep -nE \
-            'btnRef\(|button\.text=' \
+            'lateinit var (fb|cb|crb|wb|mb|adv|cropBtn|fieldBtn|statusBtn|rateTypeBtn|workerBtn): TextView' \
             "$SRC" \
-            | head -100 \
             || true
 
 
           echo
-          echo "===== CHECKING renderSummary ====="
+          echo "===== CHECK 6: renderSummary ====="
 
           grep -n \
             "fun renderSummary" \
@@ -1030,23 +1060,26 @@ jobs:
 
 
           echo
-          echo "===== CHECKING PICK ====="
+          echo "===== CHECK 7: export when ====="
 
           grep -n \
-            "onPick" \
+            -A10 \
+            "when {" \
             "$SRC" \
-            | head -20 \
+            | grep \
+              -A10 \
+              "exportType == \"workers\"" \
             || true
 
 
           echo
           echo "============================================================"
-          echo " SOURCE SANITY CHECK PASSED"
+          echo " FINAL SOURCE AUDIT PASSED"
           echo "============================================================"
 
 
       # ============================================================
-      # 12. VERIFY GRADLE
+      # 12. GRADLE ENVIRONMENT
       # ============================================================
 
       - name: Verify Gradle environment
@@ -1056,11 +1089,15 @@ jobs:
           set -euo pipefail
 
           echo "===== JAVA ====="
+
           java -version
+
 
           echo
           echo "===== GRADLE ====="
+
           gradle --version
+
 
           echo
           echo "GRADLE ENVIRONMENT PASSED"
@@ -1077,7 +1114,7 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " CLEAN PROJECT"
+          echo " CLEAN"
           echo "============================================================"
 
           gradle \
@@ -1085,12 +1122,13 @@ jobs:
             --stacktrace \
             clean
 
+
           echo
           echo "CLEAN PASSED"
 
 
       # ============================================================
-      # 14. COMPILE RELEASE KOTLIN
+      # 14. REAL KOTLIN COMPILE
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -1103,10 +1141,12 @@ jobs:
           echo " COMPILE RELEASE KOTLIN"
           echo "============================================================"
 
+
           gradle \
             --no-daemon \
             --stacktrace \
             :app:compileReleaseKotlin
+
 
           echo
           echo "============================================================"
@@ -1115,7 +1155,7 @@ jobs:
 
 
       # ============================================================
-      # 15. ASSEMBLE RELEASE APK
+      # 15. ASSEMBLE RELEASE
       # ============================================================
 
       - name: Assemble Release APK
@@ -1128,13 +1168,16 @@ jobs:
           echo " ASSEMBLE RELEASE APK"
           echo "============================================================"
 
+
           gradle \
             --no-daemon \
             --stacktrace \
             :app:assembleRelease
 
+
           echo
-          echo "===== GENERATED APK FILES ====="
+          echo "===== APK FILES ====="
+
 
           find \
             app/build/outputs/apk \
@@ -1145,7 +1188,7 @@ jobs:
 
 
       # ============================================================
-      # 16. LOCATE RELEASE APK
+      # 16. LOCATE APK
       # ============================================================
 
       - name: Locate release APK
@@ -1155,6 +1198,7 @@ jobs:
           set -euo pipefail
 
           APK=""
+
 
           if [[ -f \
             "app/build/outputs/apk/release/app-release-unsigned.apk"
@@ -1208,17 +1252,20 @@ jobs:
           fi
 
 
-          echo "RELEASE_APK=$APK" >> "$GITHUB_ENV"
+          echo "RELEASE_APK=$APK" \
+            >> "$GITHUB_ENV"
+
 
           echo
           echo "RELEASE APK:"
           echo "$APK"
 
+
           ls -lh "$APK"
 
 
       # ============================================================
-      # 17. VERIFY APK PACKAGE / VERSION
+      # 17. VERIFY PACKAGE / VERSION
       # ============================================================
 
       - name: Verify APK package and version
@@ -1229,15 +1276,13 @@ jobs:
 
           AAPT="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt"
 
-          echo "============================================================"
-          echo " APK PACKAGE / VERSION"
-          echo "============================================================"
 
           BADGING="$(
             "$AAPT" \
               dump badging \
               "$RELEASE_APK"
           )"
+
 
           echo "$BADGING" \
             | grep -E \
@@ -1246,29 +1291,17 @@ jobs:
 
           echo "$BADGING" \
             | grep -q \
-              "name='${PACKAGE_NAME}'" \
-            || {
-              echo "ERROR: Package mismatch."
-              exit 1
-            }
+              "name='${PACKAGE_NAME}'"
 
 
           echo "$BADGING" \
             | grep -q \
-              "versionCode='${VERSION_CODE}'" \
-            || {
-              echo "ERROR: VersionCode mismatch."
-              exit 1
-            }
+              "versionCode='${VERSION_CODE}'"
 
 
           echo "$BADGING" \
             | grep -q \
-              "versionName='${VERSION_NAME}'" \
-            || {
-              echo "ERROR: VersionName mismatch."
-              exit 1
-            }
+              "versionName='${VERSION_NAME}'"
 
 
           echo
@@ -1290,28 +1323,36 @@ jobs:
           set -euo pipefail
 
           echo "============================================================"
-          echo " PREPARE RELEASE SIGNING"
+          echo " PREPARE SIGNING"
           echo "============================================================"
 
-          if [[ -z "${KEYSTORE_BASE64:-}" ]]; then
-            echo "ERROR: KEYSTORE_BASE64 secret missing."
-            exit 1
-          fi
 
-          if [[ -z "${KEYSTORE_PASSWORD:-}" ]]; then
-            echo "ERROR: KEYSTORE_PASSWORD secret missing."
-            exit 1
-          fi
+          test -n "${KEYSTORE_BASE64:-}" \
+            || {
+              echo "ERROR: KEYSTORE_BASE64 missing."
+              exit 1
+            }
 
-          if [[ -z "${KEY_ALIAS:-}" ]]; then
-            echo "ERROR: KEY_ALIAS secret missing."
-            exit 1
-          fi
 
-          if [[ -z "${KEY_PASSWORD:-}" ]]; then
-            echo "ERROR: KEY_PASSWORD secret missing."
-            exit 1
-          fi
+          test -n "${KEYSTORE_PASSWORD:-}" \
+            || {
+              echo "ERROR: KEYSTORE_PASSWORD missing."
+              exit 1
+            }
+
+
+          test -n "${KEY_ALIAS:-}" \
+            || {
+              echo "ERROR: KEY_ALIAS missing."
+              exit 1
+            }
+
+
+          test -n "${KEY_PASSWORD:-}" \
+            || {
+              echo "ERROR: KEY_PASSWORD missing."
+              exit 1
+            }
 
 
           SIGN_DIR="$RUNNER_TEMP/release-signing"
@@ -1345,11 +1386,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " ZIPALIGN RELEASE APK"
-          echo "============================================================"
-
           ZIPALIGN="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign"
+
 
           mkdir -p \
             "$RUNNER_TEMP/apk"
@@ -1381,7 +1419,7 @@ jobs:
 
 
       # ============================================================
-      # 20. SIGN APK
+      # 20. SIGN
       # ============================================================
 
       - name: Sign Release APK
@@ -1393,11 +1431,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " SIGN RELEASE APK"
-          echo "============================================================"
-
           APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
+
 
           SIGNED="$RUNNER_TEMP/apk/Majdoor-Hisaab-PRO-${VERSION_NAME}-Release-Signed.apk"
 
@@ -1434,10 +1469,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " VERIFY APK SIGNATURE"
-          echo "============================================================"
-
           APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
 
 
@@ -1459,10 +1490,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "============================================================"
-          echo " FINAL APK VALIDATION"
-          echo "============================================================"
 
           AAPT="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt"
 
@@ -1512,7 +1539,7 @@ jobs:
 
 
       # ============================================================
-      # 23. PREPARE FINAL ARTIFACT
+      # 23. PREPARE ARTIFACT
       # ============================================================
 
       - name: Prepare final release artifact
@@ -1520,11 +1547,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============================================================"
-          echo " PREPARE FINAL RELEASE ARTIFACT"
-          echo "============================================================"
-
           FINAL_DIR="$GITHUB_WORKSPACE/final-release"
+
 
           mkdir -p \
             "$FINAL_DIR"
@@ -1546,6 +1570,7 @@ jobs:
           echo
           echo "===== FINAL RELEASE ====="
 
+
           ls -lh \
             "$FINAL_DIR"
 
@@ -1553,12 +1578,13 @@ jobs:
           echo
           echo "===== SHA256 ====="
 
+
           cat \
             "$FINAL_DIR/SHA256SUMS.txt"
 
 
       # ============================================================
-      # 24. UPLOAD SIGNED APK
+      # 24. UPLOAD
       # ============================================================
 
       - name: Upload signed Release APK
@@ -1573,7 +1599,7 @@ jobs:
 
 
       # ============================================================
-      # 25. FINAL VERIFICATION
+      # 25. FINAL SUCCESS
       # ============================================================
 
       - name: Final release verification
@@ -1584,8 +1610,8 @@ jobs:
           echo
           echo "============================================================"
           echo
-          echo "        MAJDOOR HISAAB PRO"
-          echo "        FINAL SIGNED RELEASE APK"
+          echo "       MAJDOOR HISAAB PRO"
+          echo "       FINAL SIGNED RELEASE APK"
           echo
           echo "============================================================"
           echo
