@@ -91,7 +91,6 @@ jobs:
           fi
 
           if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
-            echo ""
             echo "ERROR: Android SDK not found."
             exit 1
           fi
@@ -115,7 +114,6 @@ jobs:
           fi
 
           if [ -z "$SDKMANAGER" ]; then
-            echo ""
             echo "ERROR: sdkmanager not found."
             exit 1
           fi
@@ -132,7 +130,6 @@ jobs:
           echo "$SDKMANAGER"
 
           echo ""
-          echo "sdkmanager version:"
           "$SDKMANAGER" --version
 
 
@@ -183,26 +180,6 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
           echo ""
-          echo "Android platform:"
-          ls -ld "$ANDROID_HOME/platforms/android-36"
-
-          echo ""
-          echo "Build tools:"
-          ls -ld "$ANDROID_HOME/build-tools/36.0.0"
-
-          echo ""
-          echo "ADB:"
-          "$ANDROID_HOME/platform-tools/adb" version
-
-          echo ""
-          echo "AAPT:"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" version
-
-          echo ""
-          echo "APKSIGNER:"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" version
-
-          echo ""
           echo "ANDROID SDK VERIFICATION PASSED."
 
 
@@ -238,7 +215,7 @@ jobs:
             echo "ERROR: V82 ZIP NOT FOUND."
 
             echo ""
-            echo "ZIP files found in repository:"
+            echo "Available ZIP files:"
 
             find . \
               -type f \
@@ -253,9 +230,6 @@ jobs:
           echo ""
           echo "V82 ZIP FOUND:"
           ls -lh "$ZIP_NAME"
-
-          echo ""
-          echo "V82 ZIP verification passed."
 
 
       # ============================================================
@@ -272,7 +246,6 @@ jobs:
           echo "=============================================="
 
           rm -rf build_source
-
           mkdir -p build_source
 
           unzip -q "$ZIP_NAME" -d build_source
@@ -288,18 +261,7 @@ jobs:
             -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo ""
             echo "ERROR: Gradle settings file not found."
-
-            echo ""
-            echo "Extracted structure:"
-            find build_source \
-              -maxdepth 6 \
-              -type f \
-              -print \
-              | sort \
-              | head -300
-
             exit 1
           fi
 
@@ -308,12 +270,8 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
           echo ""
-          echo "Android project:"
+          echo "PROJECT:"
           echo "$PROJECT_DIR"
-
-          echo ""
-          echo "Project root:"
-          ls -la "$PROJECT_DIR"
 
 
       # ============================================================
@@ -325,39 +283,37 @@ jobs:
         run: |
           set -e
 
+          cd "$PROJECT_DIR"
+
           echo "=============================================="
           echo "VERIFY ANDROID PROJECT"
           echo "=============================================="
 
-          cd "$PROJECT_DIR"
-
-          echo ""
           echo "Working directory:"
           pwd
 
           if [ ! -d "app" ]; then
-            echo ""
             echo "ERROR: app directory not found."
             exit 1
           fi
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
-            echo ""
             echo "ERROR: app Gradle file not found."
             exit 1
           fi
 
           echo ""
-          echo "Android app module verified."
+          echo "ANDROID PROJECT VERIFIED."
 
 
       # ============================================================
-      # 10. VERIFY KOTLIN SOURCES BEFORE REPAIR
+      # 10. LOCATE KOTLIN SOURCES
       # ============================================================
 
       - name: Locate V82 Kotlin Sources
         shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
@@ -365,10 +321,8 @@ jobs:
           echo "LOCATE V82 KOTLIN SOURCES"
           echo "=============================================="
 
-          cd "$PROJECT_DIR"
-
           echo ""
-          echo "Project:"
+          echo "PROJECT:"
           pwd
 
           KOTLIN_COUNT=$(find app/src/main \
@@ -384,18 +338,17 @@ jobs:
             echo ""
             echo "ERROR: No Kotlin source files found."
 
-            echo ""
-            echo "app/src/main structure:"
             find app/src/main \
-              -maxdepth 6 \
+              -maxdepth 8 \
               -type f \
+              -print \
               | sort
 
             exit 1
           fi
 
           echo ""
-          echo "Kotlin files:"
+          echo "Kotlin sources:"
 
           find app/src/main \
             -type f \
@@ -405,24 +358,23 @@ jobs:
 
 
       # ============================================================
-      # 11. REPAIR V82 KOTLIN btn() ACTION PARAMETERS
+      # 11. CORRECT V82 btn() REPAIR
       #
       # IMPORTANT:
-      # THIS STEP NOW RUNS INSIDE PROJECT_DIR.
       #
-      # V82 has calls such as:
+      # The previous repair had:
       #
-      #     val fb = btn("Field: All")
+      #     depth = 0
       #
-      # while btn() requires:
+      # which corrupted nested expressions.
       #
-      #     btn("text", action)
+      # THIS VERSION CORRECTLY STARTS:
       #
-      # or:
+      #     depth = 1
       #
-      #     btn("text") { ... }
+      # because btn( has already opened one parenthesis.
       #
-      # We add {} ONLY to action-less btn() calls.
+      # Only action-less btn("...") calls receive {}.
       # Existing btn(...){...} calls are untouched.
       # ============================================================
 
@@ -440,28 +392,30 @@ jobs:
           echo "Working directory:"
           pwd
 
-          echo ""
-          echo "Kotlin files:"
-          find app/src/main \
-            -type f \
-            -name "*.kt" \
-            -print \
-            | sort
-
           python3 <<'PY'
           from pathlib import Path
 
-          sources = list(Path("app/src/main").rglob("*.kt"))
+          root = Path("app/src/main")
+
+          sources = list(root.rglob("*.kt"))
 
           if not sources:
               raise SystemExit(
-                  "ERROR: No Kotlin source files found inside project."
+                  "ERROR: No Kotlin source files found."
               )
 
-          total_patched = 0
+
+          # --------------------------------------------------------
+          # Find the closing ')' of btn(
+          #
+          # IMPORTANT:
+          # depth starts at 1 because the '(' in btn(
+          # is already open.
+          # --------------------------------------------------------
 
           def find_close(s, start):
-              depth = 0
+
+              depth = 1
               i = start
               mode = "normal"
 
@@ -487,6 +441,486 @@ jobs:
                           continue
 
                       if c == "(":
+                          depth += 1
+
+                      elif c == ")":
+                          depth -= 1
+
+                          if depth == 0:
+                              return i
+
+                      i += 1
+
+
+                  elif mode == "string":
+
+                      if s[i] == "\\":
+                          i += 2
+                          continue
+
+                      if s[i] == '"':
+                          mode = "normal"
+
+                      i += 1
+
+
+                  elif mode == "char":
+
+                      if s[i] == "\\":
+                          i += 2
+                          continue
+
+                      if s[i] == "'":
+                          mode = "normal"
+
+                      i += 1
+
+
+                  else:
+
+                      if s.startswith('"""', i):
+                          mode = "normal"
+                          i += 3
+                      else:
+                          i += 1
+
+
+              return None
+
+
+          # --------------------------------------------------------
+          # Check whether btn(...) already contains an action
+          # parameter at top level.
+          # --------------------------------------------------------
+
+          def has_top_level_comma(content):
+
+              depth = 0
+              i = 0
+              mode = "normal"
+
+              while i < len(content):
+
+                  if mode == "normal":
+
+                      if content.startswith('"""', i):
+                          mode = "triple"
+                          i += 3
+                          continue
+
+                      c = content[i]
+
+                      if c == '"':
+                          mode = "string"
+
+                      elif c == "'":
+                          mode = "char"
+
+                      elif c == "(":
+                          depth += 1
+
+                      elif c == ")":
+                          depth -= 1
+
+                      elif c == "," and depth == 0:
+                          return True
+
+                      i += 1
+
+
+                  elif mode == "string":
+
+                      if content[i] == "\\":
+                          i += 2
+                          continue
+
+                      if content[i] == '"':
+                          mode = "normal"
+
+                      i += 1
+
+
+                  elif mode == "char":
+
+                      if content[i] == "\\":
+                          i += 2
+                          continue
+
+                      if content[i] == "'":
+                          mode = "normal"
+
+                      i += 1
+
+
+                  else:
+
+                      if content.startswith('"""', i):
+                          mode = "normal"
+                          i += 3
+                      else:
+                          i += 1
+
+
+              return False
+
+
+          total_patched = 0
+
+
+          for path in sources:
+
+              text = path.read_text(encoding="utf-8")
+
+              patches = []
+
+              i = 0
+
+
+              while True:
+
+                  j = text.find("btn(", i)
+
+                  if j < 0:
+                      break
+
+
+                  # j + 4 is the first character after btn(
+                  k = find_close(text, j + 4)
+
+                  if k is None:
+                      raise SystemExit(
+                          f"ERROR: Could not parse btn() in {path}"
+                      )
+
+
+                  content = text[j + 4:k]
+
+
+                  # A comma at top level means btn already has
+                  # its action parameter.
+                  if has_top_level_comma(content):
+                      i = k + 1
+                      continue
+
+
+                  # Check for trailing lambda:
+                  #
+                  # btn("text") { ... }
+                  #
+
+                  nxt = k + 1
+
+                  while nxt < len(text) and text[nxt].isspace():
+                      nxt += 1
+
+
+                  if nxt < len(text) and text[nxt] == "{":
+                      i = k + 1
+                      continue
+
+
+                  # This btn() has no action parameter.
+                  patches.append(k + 1)
+
+                  i = k + 1
+
+
+              if patches:
+
+                  for pos in reversed(patches):
+                      text = text[:pos] + " {}" + text[pos:]
+
+
+                  path.write_text(
+                      text,
+                      encoding="utf-8"
+                  )
+
+
+                  print(
+                      f"PATCHED {path}: "
+                      f"{len(patches)} action-less btn() calls"
+                  )
+
+
+                  total_patched += len(patches)
+
+
+          print("")
+          print("==============================================")
+          print("TOTAL btn() FIXES:", total_patched)
+          print("==============================================")
+
+
+          if total_patched != 35:
+              print("")
+              print(
+                  "WARNING: Expected approximately 35 fixes "
+                  f"from original V82 source, got {total_patched}."
+              )
+
+          print("")
+          print("btn() repair finished safely.")
+          PY
+
+
+      # ============================================================
+      # 12. VERIFY REPAIR DID NOT CORRUPT EXPRESSIONS
+      # ============================================================
+
+      - name: Verify V82 Repair Integrity
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY V82 REPAIR INTEGRITY"
+          echo "=============================================="
+
+
+          # --------------------------------------------------------
+          # No corruption such as:
+          #
+          # listOf("All"){}+
+          # map{}...
+          #
+          # --------------------------------------------------------
+
+          if grep -R -n -E \
+            'listOf\([^)]*\)\{\}[+]' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: Repair corrupted listOf expression."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # No corruption before toTypedArray()
+          # --------------------------------------------------------
+
+          if grep -R -n \
+            '){}\.toTypedArray' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: Repair corrupted toTypedArray expression."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # No invalid fillViewport assignment.
+          # --------------------------------------------------------
+
+          if grep -R -n \
+            'fillViewport[[:space:]]*=' \
+            app/src/main \
+            --include="*.kt" \
+            --include="*.java"; then
+
+            echo ""
+            echo "ERROR: Invalid fillViewport assignment."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # No old ReportFilter malformed positional call in
+          # customReport.
+          # --------------------------------------------------------
+
+          if grep -n \
+            'ReportFilter(fromIso,toIso,wid,fid,cid)' \
+            app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt; then
+
+            echo ""
+            echo "WARNING: Positional ReportFilter found."
+            echo "Named argument validation will be checked separately."
+          fi
+
+
+          echo ""
+          echo "REPAIR INTEGRITY PASSED."
+
+
+      # ============================================================
+      # 13. FIX CUSTOM REPORT FILTER WITH EXPLICIT NAMED ARGUMENTS
+      #
+      # This does not change functionality.
+      # It only removes ambiguity for Kotlin overload/type inference.
+      # ============================================================
+
+      - name: Normalize Custom Report Filter
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "NORMALIZE CUSTOM REPORT FILTER"
+          echo "=============================================="
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path(
+              "app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+          )
+
+          text = p.read_text(encoding="utf-8")
+
+          old = (
+              'com.majdoor.hisaab.report.ReportFilter('
+              'fromIso,toIso,wid,fid,cid)'
+          )
+
+          new = (
+              'com.majdoor.hisaab.report.ReportFilter('
+              'from=fromIso, '
+              'to=toIso, '
+              'workerId=wid, '
+              'fieldId=fid, '
+              'cropId=cid)'
+          )
+
+          if old in text:
+
+              text = text.replace(old, new)
+
+              p.write_text(
+                  text,
+                  encoding="utf-8"
+              )
+
+              print("Custom ReportFilter normalized.")
+
+          else:
+              print(
+                  "Custom ReportFilter already normalized "
+                  "or not present."
+              )
+          PY
+
+          echo ""
+          echo "CUSTOM REPORT FILTER CHECK PASSED."
+
+
+      # ============================================================
+      # 14. KOTLIN SOURCE FINAL AUDIT
+      # ============================================================
+
+      - name: Final V82 Kotlin Source Audit
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "FINAL V82 KOTLIN SOURCE AUDIT"
+          echo "=============================================="
+
+
+          # --------------------------------------------------------
+          # No invalid btn lambda parameter.
+          # --------------------------------------------------------
+
+          if grep -R -n -E \
+            'btn\(.*\)\{[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*->' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: Invalid btn lambda parameter."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # No lateinit Button workaround.
+          # --------------------------------------------------------
+
+          if grep -R -n -E \
+            'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: Invalid lateinit Button workaround."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # No old exportType pattern.
+          # --------------------------------------------------------
+
+          if grep -R -n \
+            'when(exportType)' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: Old when(exportType) found."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # pick() must not return Button.
+          # --------------------------------------------------------
+
+          if grep -R -n -E \
+            'fun[[:space:]]+MainActivity\.pick.*:[[:space:]]*Button' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: pick() returns Button."
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # Count remaining actionless btn() calls.
+          #
+          # Correct parser: depth = 1.
+          # --------------------------------------------------------
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          root = Path("app/src/main")
+
+
+          def find_close(s, start):
+
+              depth = 1
+              i = start
+              mode = "normal"
+
+              while i < len(s):
+
+                  if mode == "normal":
+
+                      if s.startswith('"""', i):
+                          mode = "triple"
+                          i += 3
+                          continue
+
+                      c = s[i]
+
+                      if c == '"':
+                          mode = "string"
+
+                      elif c == "'":
+                          mode = "char"
+
+                      elif c == "(":
                           depth += 1
 
                       elif c == ")":
@@ -597,351 +1031,14 @@ jobs:
               return False
 
 
-          for path in sources:
-
-              text = path.read_text(encoding="utf-8")
-
-              patches = []
-
-              i = 0
-
-              while True:
-
-                  j = text.find("btn(", i)
-
-                  if j < 0:
-                      break
-
-                  # Find matching closing parenthesis.
-                  k = find_close(text, j + 4)
-
-                  if k is None:
-                      break
-
-                  content = text[j + 4:k]
-
-                  # If there is a top-level comma, btn already has
-                  # its action parameter.
-                  if has_top_level_comma(content):
-                      i = k + 1
-                      continue
-
-                  # Look after closing ')'.
-                  nxt = k + 1
-
-                  while nxt < len(text) and text[nxt].isspace():
-                      nxt += 1
-
-                  # Existing trailing lambda.
-                  if nxt < len(text) and text[nxt] == "{":
-                      i = k + 1
-                      continue
-
-                  # No action parameter.
-                  patches.append(k + 1)
-
-                  i = k + 1
-
-
-              if patches:
-
-                  for pos in reversed(patches):
-                      text = text[:pos] + "{}" + text[pos:]
-
-                  path.write_text(text, encoding="utf-8")
-
-                  print(
-                      f"PATCHED: {path} -> "
-                      f"{len(patches)} actionless btn() call(s)"
-                  )
-
-                  total_patched += len(patches)
-
-
-          print("")
-          print("==============================================")
-          print("TOTAL btn() ACTION FIXES:", total_patched)
-          print("==============================================")
-
-          if total_patched == 0:
-              print("")
-              print(
-                  "No actionless btn() calls were found. "
-                  "This is acceptable if the source was already fixed."
-              )
-          PY
-
-          echo ""
-          echo "V82 btn() repair step completed."
-
-
-      # ============================================================
-      # 12. POST-REPAIR SOURCE AUDIT
-      # ============================================================
-
-      - name: Audit Repaired V82 Kotlin
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "POST-REPAIR V82 KOTLIN AUDIT"
-          echo "=============================================="
-
-          echo ""
-          echo "Working directory:"
-          pwd
-
-          echo ""
-          echo "Kotlin source count:"
-          find app/src/main \
-            -type f \
-            -name "*.kt" \
-            | wc -l
-
-
-          # --------------------------------------------------------
-          # CHECK 1
-          # --------------------------------------------------------
-
-          echo ""
-          echo "CHECK 1: fillViewport"
-
-          if grep -R -n \
-            "fillViewport[[:space:]]*=" \
-            app/src/main \
-            --include="*.kt" \
-            --include="*.java"; then
-
-            echo ""
-            echo "ERROR: Invalid fillViewport assignment found."
-            exit 1
-          fi
-
-          echo "PASS"
-
-
-          # --------------------------------------------------------
-          # CHECK 2
-          # --------------------------------------------------------
-
-          echo ""
-          echo "CHECK 2: pick() return type"
-
-          if grep -R -n -E \
-            'fun[[:space:]]+MainActivity\.pick.*:[[:space:]]*Button' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: pick() still returns Button."
-            exit 1
-          fi
-
-          echo "PASS"
-
-
-          # --------------------------------------------------------
-          # CHECK 3
-          # --------------------------------------------------------
-
-          echo ""
-          echo "CHECK 3: exportType"
-
-          if grep -R -n \
-            'when(exportType)' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: Old when(exportType) found."
-            exit 1
-          fi
-
-          echo "PASS"
-
-
-          # --------------------------------------------------------
-          # CHECK 4
-          # --------------------------------------------------------
-
-          echo ""
-          echo "CHECK 4: lateinit Button workaround"
-
-          if grep -R -n -E \
-            'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: Invalid lateinit Button workaround found."
-            exit 1
-          fi
-
-          echo "PASS"
-
-
-          # --------------------------------------------------------
-          # CHECK 5
-          # --------------------------------------------------------
-
-          echo ""
-          echo "CHECK 5: invalid btn lambda parameter"
-
-          if grep -R -n -E \
-            'btn\(.*\)\{[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*->' \
-            app/src/main \
-            --include="*.kt"; then
-
-            echo ""
-            echo "ERROR: Invalid btn lambda parameter found."
-            exit 1
-          fi
-
-          echo "PASS"
-
-
-          # --------------------------------------------------------
-          # CHECK 6
-          # --------------------------------------------------------
-
-          echo ""
-          echo "CHECK 6: suspicious actionless btn() calls"
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          def find_close(s, start):
-              depth = 0
-              i = start
-              mode = "normal"
-
-              while i < len(s):
-
-                  if mode == "normal":
-
-                      if s.startswith('"""', i):
-                          mode = "triple"
-                          i += 3
-                          continue
-
-                      c = s[i]
-
-                      if c == '"':
-                          mode = "string"
-                      elif c == "'":
-                          mode = "char"
-                      elif c == "(":
-                          depth += 1
-                      elif c == ")":
-                          depth -= 1
-                          if depth == 0:
-                              return i
-
-                      i += 1
-
-                  elif mode == "string":
-
-                      if s[i] == "\\":
-                          i += 2
-                          continue
-
-                      if s[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-                  elif mode == "char":
-
-                      if s[i] == "\\":
-                          i += 2
-                          continue
-
-                      if s[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-                  else:
-
-                      if s.startswith('"""', i):
-                          mode = "normal"
-                          i += 3
-                      else:
-                          i += 1
-
-              return None
-
-
-          def top_level_comma(content):
-
-              depth = 0
-              i = 0
-              mode = "normal"
-
-              while i < len(content):
-
-                  if mode == "normal":
-
-                      if content.startswith('"""', i):
-                          mode = "triple"
-                          i += 3
-                          continue
-
-                      c = content[i]
-
-                      if c == '"':
-                          mode = "string"
-                      elif c == "'":
-                          mode = "char"
-                      elif c == "(":
-                          depth += 1
-                      elif c == ")":
-                          depth -= 1
-                      elif c == "," and depth == 0:
-                          return True
-
-                      i += 1
-
-                  elif mode == "string":
-
-                      if content[i] == "\\":
-                          i += 2
-                          continue
-
-                      if content[i] == '"':
-                          mode = "normal"
-
-                      i += 1
-
-                  elif mode == "char":
-
-                      if content[i] == "\\":
-                          i += 2
-                          continue
-
-                      if content[i] == "'":
-                          mode = "normal"
-
-                      i += 1
-
-                  else:
-
-                      if content.startswith('"""', i):
-                          mode = "normal"
-                          i += 3
-                      else:
-                          i += 1
-
-              return False
-
-
           suspicious = []
 
-          for path in Path("app/src/main").rglob("*.kt"):
 
-              text = path.read_text(encoding="utf-8")
+          for path in root.rglob("*.kt"):
+
+              text = path.read_text(
+                  encoding="utf-8"
+              )
 
               i = 0
 
@@ -952,30 +1049,46 @@ jobs:
                   if j < 0:
                       break
 
-                  k = find_close(text, j + 4)
+                  k = find_close(
+                      text,
+                      j + 4
+                  )
 
                   if k is None:
-                      break
+                      raise SystemExit(
+                          f"ERROR: Could not parse {path}"
+                      )
 
                   content = text[j + 4:k]
 
-                  if top_level_comma(content):
+                  if has_top_level_comma(content):
+
                       i = k + 1
                       continue
 
                   nxt = k + 1
 
-                  while nxt < len(text) and text[nxt].isspace():
+                  while (
+                      nxt < len(text)
+                      and text[nxt].isspace()
+                  ):
                       nxt += 1
 
-                  if nxt < len(text) and text[nxt] == "{":
+                  if (
+                      nxt < len(text)
+                      and text[nxt] == "{"
+                  ):
+
                       i = k + 1
                       continue
 
-                  line = text.count("\n", 0, j) + 1
+                  line = (
+                      text.count("\n", 0, j)
+                      + 1
+                  )
 
                   suspicious.append(
-                      f"{path}:{line}: btn({content[:100]})"
+                      f"{path}:{line}"
                   )
 
                   i = k + 1
@@ -984,26 +1097,31 @@ jobs:
           if suspicious:
 
               print("")
-              print("ERROR: Actionless btn() calls remain:")
+              print(
+                  "ERROR: Actionless btn() calls remain:"
+              )
 
-              for item in suspicious:
-                  print(item)
+              for x in suspicious:
+                  print(x)
 
               raise SystemExit(1)
 
+
           print("")
-          print("PASS: No actionless btn() calls remain.")
+          print(
+              "PASS: No actionless btn() calls remain."
+          )
           PY
 
 
           echo ""
           echo "=============================================="
-          echo "V82 KOTLIN SOURCE AUDIT PASSED"
+          echo "FINAL KOTLIN SOURCE AUDIT PASSED"
           echo "=============================================="
 
 
       # ============================================================
-      # 13. SHOW GRADLE ENVIRONMENT
+      # 15. GRADLE ENVIRONMENT
       # ============================================================
 
       - name: Gradle Environment
@@ -1013,7 +1131,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "BUILD ENVIRONMENT"
+          echo "GRADLE ENVIRONMENT"
           echo "=============================================="
 
           echo ""
@@ -1025,12 +1143,12 @@ jobs:
           gradle --version
 
           echo ""
-          echo "ANDROID_HOME:"
+          echo "ANDROID HOME:"
           echo "$ANDROID_HOME"
 
 
       # ============================================================
-      # 14. CLEAN PROJECT
+      # 16. CLEAN PROJECT
       # ============================================================
 
       - name: Clean Project
@@ -1053,7 +1171,7 @@ jobs:
 
 
       # ============================================================
-      # 15. COMPILE RELEASE KOTLIN
+      # 17. COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -1079,7 +1197,7 @@ jobs:
 
 
       # ============================================================
-      # 16. ASSEMBLE RELEASE APK
+      # 18. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1105,7 +1223,7 @@ jobs:
 
 
       # ============================================================
-      # 17. LOCATE RELEASE APK
+      # 19. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -1137,7 +1255,7 @@ jobs:
 
 
       # ============================================================
-      # 18. VERIFY APK PACKAGE
+      # 20. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -1151,16 +1269,15 @@ jobs:
 
           APK="$APK_PATH"
 
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-            dump badging "$APK" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
-
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
               dump badging "$APK"
           )
+
+          echo "$BADGING" \
+            | grep -E \
+              "package:|versionCode|versionName" \
+            | head -10
 
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
@@ -1178,7 +1295,7 @@ jobs:
 
 
       # ============================================================
-      # 19. RESTORE RELEASE KEYSTORE
+      # 21. RESTORE RELEASE KEYSTORE
       # ============================================================
 
       - name: Restore Release Keystore
@@ -1193,7 +1310,6 @@ jobs:
           echo "=============================================="
 
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo ""
             echo "ERROR: KEYSTORE_BASE64 secret is missing."
             exit 1
           fi
@@ -1203,17 +1319,16 @@ jobs:
             > release-keystore.jks
 
           if [ ! -s release-keystore.jks ]; then
-            echo ""
             echo "ERROR: Keystore is empty."
             exit 1
           fi
 
           echo ""
-          echo "Release keystore restored."
+          echo "RELEASE KEYSTORE RESTORED."
 
 
       # ============================================================
-      # 20. ZIPALIGN
+      # 22. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1226,7 +1341,6 @@ jobs:
           echo "=============================================="
 
           INPUT_APK="$APK_PATH"
-
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
@@ -1237,13 +1351,9 @@ jobs:
             "$ALIGNED_APK"
 
           if [ ! -f "$ALIGNED_APK" ]; then
-            echo ""
             echo "ERROR: Zipaligned APK not created."
             exit 1
           fi
-
-          echo ""
-          echo "Checking alignment..."
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -c \
@@ -1258,7 +1368,7 @@ jobs:
 
 
       # ============================================================
-      # 21. SIGN RELEASE APK
+      # 23. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1300,8 +1410,7 @@ jobs:
             "$ALIGNED_APK"
 
           if [ ! -f "$SIGNED_APK" ]; then
-            echo ""
-            echo "ERROR: Signed APK was not created."
+            echo "ERROR: Signed APK not created."
             exit 1
           fi
 
@@ -1311,7 +1420,7 @@ jobs:
 
 
       # ============================================================
-      # 22. VERIFY APK SIGNATURE
+      # 24. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1335,7 +1444,7 @@ jobs:
 
 
       # ============================================================
-      # 23. FINAL APK VALIDATION
+      # 25. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1350,7 +1459,6 @@ jobs:
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           if [ ! -f "$APK" ]; then
-            echo ""
             echo "ERROR: Final APK missing."
             exit 1
           fi
@@ -1362,7 +1470,6 @@ jobs:
           echo "$SIZE bytes"
 
           if [ "$SIZE" -lt 100000 ]; then
-            echo ""
             echo "ERROR: APK size unexpectedly small."
             exit 1
           fi
@@ -1382,7 +1489,7 @@ jobs:
 
 
       # ============================================================
-      # 24. UPLOAD SIGNED APK
+      # 26. UPLOAD SIGNED APK
       # ============================================================
 
       - name: Upload Signed Release APK
@@ -1395,7 +1502,7 @@ jobs:
 
 
       # ============================================================
-      # 25. UPLOAD BUILD REPORTS
+      # 27. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
