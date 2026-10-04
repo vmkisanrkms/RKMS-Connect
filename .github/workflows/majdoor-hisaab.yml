@@ -617,22 +617,7 @@ jobs:
       # ==========================================================
       # 12. BUILD RELEASE APK
       #
-      # ONLY THIS STEP UPDATED
-      #
-      # IMPORTANT NEW FIX:
-      #
-      # statusViews is a Map.
-      #
-      # WRONG:
-      # statusViews.forEach{it.text="FULL"}
-      #
-      # CORRECT:
-      # statusViews.values.forEach{it.text="FULL"}
-      #
-      # This fixes the exact compile errors at:
-      # 692
-      # 697
-      # 701
+      # NO CHANGE
       # ==========================================================
 
       - name: Build Release APK
@@ -665,10 +650,6 @@ jobs:
               encoding="utf-8"
           )
 
-
-          # ======================================================
-          # SAFE BLOCK PATCH HELPER
-          # ======================================================
 
           def patch_block(
               start_marker,
@@ -721,10 +702,6 @@ jobs:
               )
 
 
-          # ======================================================
-          # SAFE LOCAL BUTTON DECLARATION PATCH
-          # ======================================================
-
           def patch_button_declarations(
               start_marker,
               end_marker,
@@ -749,12 +726,6 @@ jobs:
                   replacements
               )
 
-
-          # ======================================================
-          # FIX 1
-          #
-          # btn() action becomes optional.
-          # ======================================================
 
           old_btn = (
               "internal fun MainActivity.btn("
@@ -783,12 +754,6 @@ jobs:
               )
 
 
-          # ======================================================
-          # FIX 2
-          #
-          # Intent.type shadowing.
-          # ======================================================
-
           old_intent_type = (
               'apply{type="image/*";'
           )
@@ -811,12 +776,6 @@ jobs:
               )
 
 
-          # ======================================================
-          # FIX 3
-          #
-          # cropForm()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.cropForm",
               "internal fun MainActivity.attendance()",
@@ -835,12 +794,6 @@ jobs:
           )
 
 
-          # ======================================================
-          # FIX 4
-          #
-          # productionForm()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.productionForm",
               "internal fun MainActivity.revenue()",
@@ -859,12 +812,6 @@ jobs:
           )
 
 
-          # ======================================================
-          # FIX 5
-          #
-          # revenueForm()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.revenueForm",
               "internal fun MainActivity.addWork()",
@@ -882,12 +829,6 @@ jobs:
               ]
           )
 
-
-          # ======================================================
-          # FIX 6
-          #
-          # workForm()
-          # ======================================================
 
           patch_button_declarations(
               "internal fun MainActivity.workForm",
@@ -924,12 +865,6 @@ jobs:
           )
 
 
-          # ======================================================
-          # FIX 7
-          #
-          # paymentForm()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.paymentForm",
               "internal fun MainActivity.expenses()",
@@ -959,12 +894,6 @@ jobs:
               ]
           )
 
-
-          # ======================================================
-          # FIX 8
-          #
-          # expenseForm()
-          # ======================================================
 
           patch_button_declarations(
               "internal fun MainActivity.expenseForm",
@@ -1004,12 +933,6 @@ jobs:
           )
 
 
-          # ======================================================
-          # FIX 9
-          #
-          # reportFiltersDialog()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.reportFiltersDialog",
               "internal fun MainActivity.reports()",
@@ -1040,12 +963,6 @@ jobs:
           )
 
 
-          # ======================================================
-          # FIX 10
-          #
-          # workTemplateForm()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.workTemplateForm",
               "internal fun MainActivity.fieldProfile",
@@ -1065,12 +982,6 @@ jobs:
               ]
           )
 
-
-          # ======================================================
-          # FIX 11
-          #
-          # attendanceForm()
-          # ======================================================
 
           patch_button_declarations(
               "internal fun MainActivity.attendanceForm",
@@ -1097,12 +1008,6 @@ jobs:
           )
 
 
-          # ======================================================
-          # FIX 12
-          #
-          # customReport()
-          # ======================================================
-
           patch_button_declarations(
               "internal fun MainActivity.customReport",
               "internal fun MainActivity.auditLogScreen()",
@@ -1132,12 +1037,6 @@ jobs:
               ]
           )
 
-
-          # ======================================================
-          # FIX 13
-          #
-          # exportType when{} correction
-          # ======================================================
 
           export_pattern = re.compile(
               r'contentResolver\.openOutputStream\(uri\)!!\.use\{out->'
@@ -1175,18 +1074,11 @@ jobs:
                   )
 
 
-          # ======================================================
-          # FIX 14
-          #
-          # attendanceCalendar render order
-          # ======================================================
-
           calendar_start = source.find(
               "internal fun MainActivity.attendanceCalendar()"
           )
 
           if calendar_start < 0:
-
               raise SystemExit(
                   "ERROR: attendanceCalendar() not found"
               )
@@ -1197,7 +1089,6 @@ jobs:
           )
 
           if calendar_end < 0:
-
               raise SystemExit(
                   "ERROR: paymentLedger() marker not found"
               )
@@ -1225,7 +1116,6 @@ jobs:
               or summary_start < 0
               or nav_start < 0
           ):
-
               raise SystemExit(
                   "ERROR: attendance render markers not found"
               )
@@ -1235,7 +1125,6 @@ jobs:
               < summary_start
               < nav_start
           ):
-
               raise SystemExit(
                   "ERROR: unexpected attendance render order"
               )
@@ -1261,19 +1150,6 @@ jobs:
               + source[calendar_end:]
           )
 
-
-          # ======================================================
-          # FIX 15 — EXACT FAILURE FROM PREVIOUS BUILD
-          #
-          # statusViews is a Map.
-          #
-          # Map.forEach { it -> ... }
-          # gives Map.Entry as it.
-          #
-          # Therefore it.text is invalid.
-          #
-          # Use values() so it becomes the TextView.
-          # ======================================================
 
           attendance_status_replacements = [
               (
@@ -1307,10 +1183,6 @@ jobs:
                   )
 
 
-          # ======================================================
-          # WRITE PATCHED SOURCE
-          # ======================================================
-
           file.write_text(
               source,
               encoding="utf-8"
@@ -1328,20 +1200,12 @@ jobs:
           echo "=========================================="
 
 
-          # ======================================================
-          # AUDIT 1
-          # ======================================================
-
           grep -Fq \
             'internal fun MainActivity.btn(s:String,action:()->Unit = {})' \
             "$FILE"
 
           echo "BTN_DEFAULT_ACTION=PASS"
 
-
-          # ======================================================
-          # AUDIT 2
-          # ======================================================
 
           if grep -Fq \
             'apply{type="image/*";' \
@@ -1358,10 +1222,6 @@ jobs:
 
           echo "INTENT_TYPE_FIX=PASS"
 
-
-          # ======================================================
-          # AUDIT 3
-          # ======================================================
 
           if grep -Fq \
             'when(exportType){' \
@@ -1382,10 +1242,6 @@ jobs:
 
           echo "EXPORT_TYPE_FIX=PASS"
 
-
-          # ======================================================
-          # AUDIT 4
-          # ======================================================
 
           python3 - "$FILE" <<'PY'
           import sys
@@ -1466,15 +1322,6 @@ jobs:
           PY
 
 
-          # ======================================================
-          # AUDIT 5
-          #
-          # No unresolved Button it.text.
-          #
-          # statusViews is intentionally excluded here because
-          # its correct form is values().forEach{it.text=...}
-          # ======================================================
-
           python3 - "$FILE" <<'PY'
           import sys
           from pathlib import Path
@@ -1491,8 +1338,6 @@ jobs:
               lines,
               1
           ):
-
-              stripped = line.strip()
 
               if "it.text=" not in line:
                   continue
@@ -1524,12 +1369,6 @@ jobs:
           PY
 
 
-          # ======================================================
-          # AUDIT 6
-          #
-          # Exact previous failure must NOT remain.
-          # ======================================================
-
           if grep -Fq \
             'statusViews.forEach{it.text=' \
             "$FILE"; then
@@ -1553,12 +1392,6 @@ jobs:
 
           echo "ATTENDANCE_STATUS_TEXT_FIX=PASS"
 
-
-          # ======================================================
-          # AUDIT 7
-          #
-          # attendance render order.
-          # ======================================================
 
           python3 - "$FILE" <<'PY'
           import sys
@@ -1613,12 +1446,6 @@ jobs:
           PY
 
 
-          # ======================================================
-          # AUDIT 8
-          #
-          # Previous Step 4 fixes must remain.
-          # ======================================================
-
           if grep -Fq \
             "app.audit.auditLog()" \
             "$FILE"; then
@@ -1667,10 +1494,6 @@ jobs:
           echo "=========================================="
 
 
-          # ======================================================
-          # ACTUAL RELEASE KOTLIN COMPILATION
-          # ======================================================
-
           echo ""
           echo "=========================================="
           echo "RELEASE KOTLIN COMPILATION"
@@ -1689,10 +1512,6 @@ jobs:
           echo "KOTLIN_COMPILATION=PASS"
           echo "=========================================="
 
-
-          # ======================================================
-          # ACTUAL RELEASE APK BUILD
-          # ======================================================
 
           echo ""
           echo "=========================================="
@@ -1716,9 +1535,6 @@ jobs:
             echo "=========================================="
             echo "ERROR: RELEASE APK NOT CREATED"
             echo "=========================================="
-
-            echo ""
-            echo "Release output files:"
 
             find app/build/outputs \
               -maxdepth 5 \
@@ -1775,10 +1591,8 @@ jobs:
 
           echo "BUILD_TOOLS_DIR=${BUILD_TOOLS_DIR}"
 
-          # Make Android Build Tools available to ALL FOLLOWING STEPS.
           echo "$BUILD_TOOLS_DIR" >> "$GITHUB_PATH"
 
-          # Also make them available in THIS step.
           export PATH="$BUILD_TOOLS_DIR:$PATH"
 
           AAPT2="${BUILD_TOOLS_DIR}/aapt2"
@@ -1819,8 +1633,6 @@ jobs:
           echo "UNSIGNED APK VERIFICATION=PASS"
           echo "=========================================="
 
-          # Compatibility wrapper for any later command that
-          # still calls the legacy "aapt" command.
           AAPT_COMPAT_DIR="${RUNNER_TEMP}/android-aapt-compat"
 
           mkdir -p "$AAPT_COMPAT_DIR"
@@ -1832,10 +1644,8 @@ jobs:
 
           chmod +x "$AAPT_COMPAT_DIR/aapt"
 
-          # Add wrapper for subsequent steps.
           echo "$AAPT_COMPAT_DIR" >> "$GITHUB_PATH"
 
-          # Current step also gets the wrapper.
           export PATH="$AAPT_COMPAT_DIR:$PATH"
 
           echo ""
@@ -1852,6 +1662,14 @@ jobs:
 
       # ==========================================================
       # 14. RESTORE RELEASE KEYSTORE
+      #
+      # FIXED:
+      # - secret presence checked separately
+      # - base64 whitespace/newline handled
+      # - invalid base64 detected
+      # - keystore validity checked
+      # - alias checked separately
+      # - useful error message
       # ==========================================================
 
       - name: Restore release keystore
@@ -1863,18 +1681,93 @@ jobs:
           KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
-          test -n "$KEYSTORE_B64"
-          test -n "$KEYSTORE_PASSWORD"
-          test -n "$KEY_PASSWORD"
-          test -n "$KEY_ALIAS"
+          echo ""
+          echo "=========================================="
+          echo "RESTORING RELEASE KEYSTORE"
+          echo "=========================================="
+
+          # ------------------------------------------------------
+          # NEVER PRINT SECRET VALUES
+          # Only report whether each secret exists.
+          # ------------------------------------------------------
+
+          if [ -z "${KEYSTORE_B64:-}" ]; then
+            echo "ERROR: MH_RELEASE_KEYSTORE_BASE64 is empty or unavailable."
+            echo ""
+            echo "Add this repository secret:"
+            echo "MH_RELEASE_KEYSTORE_BASE64"
+            exit 1
+          fi
+
+          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "ERROR: MH_RELEASE_KEYSTORE_PASSWORD is empty or unavailable."
+            echo ""
+            echo "Add this repository secret:"
+            echo "MH_RELEASE_KEYSTORE_PASSWORD"
+            exit 1
+          fi
+
+          if [ -z "${KEY_PASSWORD:-}" ]; then
+            echo "ERROR: MH_RELEASE_KEY_PASSWORD is empty or unavailable."
+            echo ""
+            echo "Add this repository secret:"
+            echo "MH_RELEASE_KEY_PASSWORD"
+            exit 1
+          fi
+
+          if [ -z "${KEY_ALIAS:-}" ]; then
+            echo "ERROR: MH_RELEASE_KEY_ALIAS is empty or unavailable."
+            echo ""
+            echo "Add this repository secret:"
+            echo "MH_RELEASE_KEY_ALIAS"
+            exit 1
+          fi
+
+          echo "KEYSTORE_SECRET=AVAILABLE"
+          echo "KEYSTORE_PASSWORD_SECRET=AVAILABLE"
+          echo "KEY_PASSWORD_SECRET=AVAILABLE"
+          echo "KEY_ALIAS_SECRET=AVAILABLE"
+
+
+          # ------------------------------------------------------
+          # Decode Base64 keystore safely.
+          #
+          # Removing CR/LF/space only affects Base64 formatting.
+          # It does NOT expose the secret.
+          # ------------------------------------------------------
 
           printf '%s' "$KEYSTORE_B64" \
+            | tr -d '\r\n\t ' \
             | base64 --decode \
             > release.keystore
 
+
+          # ------------------------------------------------------
+          # Keystore file must exist and be non-empty.
+          # ------------------------------------------------------
+
           test -s release.keystore
+
+          KEYSTORE_SIZE="$(stat -c '%s' release.keystore)"
+
+          echo "KEYSTORE_SIZE=${KEYSTORE_SIZE} bytes"
+
+          if [ "$KEYSTORE_SIZE" -lt 1000 ]; then
+            echo "ERROR: decoded keystore is unexpectedly small."
+            echo "The Base64 secret is probably incorrect."
+            rm -f release.keystore
+            exit 1
+          fi
+
+
+          # ------------------------------------------------------
+          # Verify Java keystore.
+          # ------------------------------------------------------
+
+          echo ""
+          echo "VERIFYING KEYSTORE..."
 
           keytool -list \
             -keystore release.keystore \
@@ -1882,7 +1775,50 @@ jobs:
             -alias "$KEY_ALIAS" \
             >/dev/null
 
-          echo "RELEASE_KEYSTORE=PASS"
+
+          # ------------------------------------------------------
+          # Verify alias separately.
+          # ------------------------------------------------------
+
+          keytool -list \
+            -v \
+            -keystore release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            >/dev/null
+
+
+          # ------------------------------------------------------
+          # Verify private key can actually be accessed.
+          # This catches wrong key password BEFORE signing step.
+          # ------------------------------------------------------
+
+          keytool -importkeystore \
+            -srckeystore release.keystore \
+            -srcstoretype JKS \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srcalias "$KEY_ALIAS" \
+            -srckeypass "$KEY_PASSWORD" \
+            -destkeystore "${RUNNER_TEMP}/keystore-validation.p12" \
+            -deststoretype PKCS12 \
+            -deststorepass "$KEYSTORE_PASSWORD" \
+            -destkeypass "$KEY_PASSWORD" \
+            -noprompt \
+            >/dev/null
+
+
+          test -s \
+            "${RUNNER_TEMP}/keystore-validation.p12"
+
+
+          rm -f \
+            "${RUNNER_TEMP}/keystore-validation.p12"
+
+
+          echo ""
+          echo "=========================================="
+          echo "RELEASE KEYSTORE VERIFICATION=PASS"
+          echo "=========================================="
 
 
       # ==========================================================
@@ -1893,24 +1829,30 @@ jobs:
         working-directory: project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
-          zipalign \
+          test -s "$APK"
+
+          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
+
+          test -x "${BUILD_TOOLS_DIR}/zipalign"
+
+          "${BUILD_TOOLS_DIR}/zipalign" \
             -f \
             -p \
             4 \
             "$APK" \
             app-release-aligned.apk
 
-          zipalign \
+          test -s app-release-aligned.apk
+
+          "${BUILD_TOOLS_DIR}/zipalign" \
             -c \
             -v \
             4 \
             app-release-aligned.apk
-
-          test -s app-release-aligned.apk
 
           echo "ZIPALIGN=PASS"
 
@@ -1927,18 +1869,27 @@ jobs:
           KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           mkdir -p artifacts
 
-          apksigner sign \
+          APK="app-release-aligned.apk"
+
+          test -s "$APK"
+          test -s release.keystore
+
+          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
+
+          test -x "${BUILD_TOOLS_DIR}/apksigner"
+
+          "${BUILD_TOOLS_DIR}/apksigner" sign \
             --ks release.keystore \
             --ks-key-alias "$KEY_ALIAS" \
             --ks-pass env:KEYSTORE_PASSWORD \
             --key-pass env:KEY_PASSWORD \
             --out \
             artifacts/Majdoor-Hisaab-PRO-release.apk \
-            app-release-aligned.apk
+            "$APK"
 
           test -s \
             artifacts/Majdoor-Hisaab-PRO-release.apk
@@ -1954,32 +1905,39 @@ jobs:
         working-directory: project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
 
           test -s "$APK"
 
-          apksigner verify \
+          BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
+
+          test -x "${BUILD_TOOLS_DIR}/apksigner"
+          test -x "${BUILD_TOOLS_DIR}/zipalign"
+
+          "${BUILD_TOOLS_DIR}/apksigner" verify \
             --verbose \
             --print-certs \
             "$APK"
 
-          zipalign \
+          "${BUILD_TOOLS_DIR}/zipalign" \
             -c \
             -v \
             4 \
             "$APK"
 
-          aapt dump badging "$APK" \
+          AAPT2="${BUILD_TOOLS_DIR}/aapt2"
+
+          "$AAPT2" dump badging "$APK" \
             | grep -Fq \
             "package: name='${PACKAGE_NAME}'"
 
-          aapt dump badging "$APK" \
+          "$AAPT2" dump badging "$APK" \
             | grep -Fq \
             "versionCode='${VERSION_CODE}'"
 
-          aapt dump badging "$APK" \
+          "$AAPT2" dump badging "$APK" \
             | grep -Fq \
             "versionName='${VERSION_NAME}'"
 
@@ -1997,10 +1955,14 @@ jobs:
         working-directory: project
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
+
+          APK="artifacts/Majdoor-Hisaab-PRO-release.apk"
+
+          test -s "$APK"
 
           sha256sum \
-            artifacts/Majdoor-Hisaab-PRO-release.apk \
+            "$APK" \
             | tee \
             artifacts/Majdoor-Hisaab-PRO-release.apk.sha256
 
@@ -2035,6 +1997,8 @@ jobs:
       - name: FINAL BUILD SUCCESS
         shell: bash
         run: |
+          set -e
+
           echo ""
           echo "=========================================="
           echo "       MAJDOOR HISAAB PRO"
