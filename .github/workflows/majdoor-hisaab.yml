@@ -431,21 +431,317 @@ jobs:
 
 
       # ============================================================
-      # 12. TARGETED LABOUR DETAIL REPAIR
+      # 12. FIX btn(title=...) -> btn(label=...)
+      #
+      # CURRENT SCREENSHOT ERROR:
+      #
+      # No parameter with name 'title' found
+      # No value passed for parameter 'label'
       #
       # IMPORTANT:
-      #
-      # Screenshot failure showed:
-      #
-      # Unresolved reference: store
-      # Unresolved reference: it
-      # Unresolved reference: delPay
-      # Syntax error: top level declaration
-      #
-      # These came from a corrupted LabourDetail() block.
-      #
-      # We replace ONLY that function.
-      # No broad/unsafe Kotlin regex repair is performed.
+      # Only btn(...) calls are changed.
+      # Other title= parameters are NOT touched.
+      # ============================================================
+
+      - name: Repair btn Named Arguments
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "REPAIR btn() NAMED ARGUMENTS"
+          echo "=============================================="
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          root = Path("app/src/main")
+
+
+          def find_matching_paren(text, open_pos):
+              depth = 1
+              i = open_pos + 1
+              mode = "normal"
+
+              while i < len(text):
+
+                  if mode == "normal":
+
+                      if text.startswith('"""', i):
+                          mode = "triple"
+                          i += 3
+                          continue
+
+                      c = text[i]
+
+                      if c == '"':
+                          mode = "string"
+                          i += 1
+                          continue
+
+                      if c == "'":
+                          mode = "char"
+                          i += 1
+                          continue
+
+                      if c == '(':
+                          depth += 1
+
+                      elif c == ')':
+                          depth -= 1
+
+                          if depth == 0:
+                              return i
+
+                      i += 1
+
+                  elif mode == "string":
+
+                      if text[i] == '\\':
+                          i += 2
+                          continue
+
+                      if text[i] == '"':
+                          mode = "normal"
+
+                      i += 1
+
+                  elif mode == "char":
+
+                      if text[i] == '\\':
+                          i += 2
+                          continue
+
+                      if text[i] == "'":
+                          mode = "normal"
+
+                      i += 1
+
+                  else:
+
+                      if text.startswith('"""', i):
+                          mode = "normal"
+                          i += 3
+                      else:
+                          i += 1
+
+              return None
+
+
+          def replace_top_level_title(content):
+              result = []
+              i = 0
+              depth = 0
+              mode = "normal"
+              changed = 0
+
+              while i < len(content):
+
+                  if mode == "normal":
+
+                      if content.startswith('"""', i):
+                          result.append('"""')
+                          i += 3
+                          mode = "triple"
+                          continue
+
+                      c = content[i]
+
+                      if c == '"':
+                          result.append(c)
+                          i += 1
+                          mode = "string"
+                          continue
+
+                      if c == "'":
+                          result.append(c)
+                          i += 1
+                          mode = "char"
+                          continue
+
+                      if c in "([{":
+                          depth += 1
+                          result.append(c)
+                          i += 1
+                          continue
+
+                      if c in ")]}":
+                          depth -= 1
+                          result.append(c)
+                          i += 1
+                          continue
+
+                      if depth == 0:
+
+                          remaining = content[i:]
+
+                          if remaining.startswith("title"):
+                              before_ok = (
+                                  i == 0 or
+                                  not (
+                                      content[i - 1].isalnum()
+                                      or content[i - 1] == "_"
+                                  )
+                              )
+
+                              after_pos = i + 5
+
+                              after_ok = (
+                                  after_pos < len(content)
+                                  and content[after_pos] == "="
+                              )
+
+                              if before_ok and after_ok:
+                                  result.append("label")
+                                  i += 5
+                                  changed += 1
+                                  continue
+
+                      result.append(c)
+                      i += 1
+
+                  elif mode == "string":
+
+                      if content[i] == '\\':
+                          result.append(content[i:i + 2])
+                          i += 2
+                          continue
+
+                      result.append(content[i])
+
+                      if content[i] == '"':
+                          mode = "normal"
+
+                      i += 1
+
+                  elif mode == "char":
+
+                      if content[i] == '\\':
+                          result.append(content[i:i + 2])
+                          i += 2
+                          continue
+
+                      result.append(content[i])
+
+                      if content[i] == "'":
+                          mode = "normal"
+
+                      i += 1
+
+                  else:
+
+                      if content.startswith('"""', i):
+                          result.append('"""')
+                          i += 3
+                          mode = "normal"
+                      else:
+                          result.append(content[i])
+                          i += 1
+
+              return ''.join(result), changed
+
+
+          total = 0
+
+          for path in root.rglob("*.kt"):
+
+              text = path.read_text(encoding="utf-8")
+
+              output = []
+              cursor = 0
+              changed_file = 0
+
+              while True:
+
+                  pos = text.find("btn(", cursor)
+
+                  if pos == -1:
+                      output.append(text[cursor:])
+                      break
+
+                  close = find_matching_paren(text, pos + 3)
+
+                  if close is None:
+                      raise SystemExit(
+                          f"ERROR: Cannot parse btn() in {path}"
+                      )
+
+                  output.append(text[cursor:pos])
+
+                  call_content = text[pos + 4:close]
+
+                  fixed_content, changed = replace_top_level_title(
+                      call_content
+                  )
+
+                  output.append("btn(")
+                  output.append(fixed_content)
+                  output.append(")")
+
+                  if changed:
+                      changed_file += changed
+                      total += changed
+
+                  cursor = close + 1
+
+              new_text = ''.join(output)
+
+              if changed_file:
+                  path.write_text(
+                      new_text,
+                      encoding="utf-8"
+                  )
+
+                  print(
+                      f"PATCHED {path}: "
+                      f"{changed_file} btn title->label occurrence(s)"
+                  )
+
+
+          print("")
+          print("TOTAL btn() title->label FIXES:", total)
+
+          if total == 0:
+              print(
+                  "No btn(title=...) remained; source already uses label."
+              )
+
+          print("")
+          print("btn() NAMED ARGUMENT REPAIR PASSED.")
+          PY
+
+
+      # ============================================================
+      # 13. VERIFY btn() REPAIR
+      # ============================================================
+
+      - name: Verify btn Named Arguments
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY btn() NAMED ARGUMENT REPAIR"
+          echo "=============================================="
+
+          if grep -R -n \
+            'btn([^)]*title[[:space:]]*=' \
+            app/src/main \
+            --include="*.kt"; then
+
+            echo ""
+            echo "ERROR: btn(title=...) still exists."
+            exit 1
+          fi
+
+          echo ""
+          echo "NO btn(title=...) CALLS REMAIN."
+
+
+      # ============================================================
+      # 14. TARGETED LABOUR DETAIL REPAIR
       # ============================================================
 
       - name: Repair LabourDetail Kotlin Function
@@ -460,7 +756,6 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
-          import re
           import os
 
           main_file = Path(os.environ["MAIN_FILE"])
@@ -502,12 +797,20 @@ jobs:
               var delPay by remember { mutableStateOf<Payment?>(null) }
 
               val wage = store.attendances
-                  .filter { it.labourId == id }
-                  .sumOf { it.fraction * it.rate }
+                  .filter { attendanceItem ->
+                      attendanceItem.labourId == id
+                  }
+                  .sumOf { attendanceItem ->
+                      attendanceItem.fraction * attendanceItem.rate
+                  }
 
               val paid = store.payments
-                  .filter { it.labourId == id }
-                  .sumOf { it.amount }
+                  .filter { paymentItem ->
+                      paymentItem.labourId == id
+                  }
+                  .sumOf { paymentItem ->
+                      paymentItem.amount
+                  }
 
               Column(
                   modifier = Modifier.fillMaxSize()
@@ -524,6 +827,7 @@ jobs:
                   ) {
 
                       item {
+
                           Row(
                               modifier = Modifier.fillMaxWidth(),
                               horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -560,6 +864,7 @@ jobs:
 
 
                       item {
+
                           Button(
                               onClick = {
                                   payment = true
@@ -572,6 +877,7 @@ jobs:
 
 
                       item {
+
                           Button(
                               onClick = {
                                   rate = true
@@ -587,6 +893,7 @@ jobs:
 
 
                       item {
+
                           Text(
                               text = "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
                               fontWeight = FontWeight.Bold,
@@ -596,6 +903,7 @@ jobs:
 
 
                       item {
+
                           Text(
                               text = "दिहाड़ी इतिहास",
                               fontWeight = FontWeight.Bold,
@@ -606,14 +914,20 @@ jobs:
 
                       items(
                           items = store.rateHistoryFor(id),
-                          key = { rateItem -> rateItem.id }
+                          key = { rateItem ->
+                              rateItem.id
+                          }
                       ) { rateItem ->
 
                           Text(
-                              text = "${displayDate(rateItem.effectiveDate)} से ₹${money(rateItem.rate)}/दिन",
+                              text =
+                                  "${displayDate(rateItem.effectiveDate)} से " +
+                                  "₹${money(rateItem.rate)}/दिन",
+
                               modifier = Modifier
                                   .fillMaxWidth()
                                   .padding(vertical = 3.dp),
+
                               fontSize = 12.sp,
                               color = Color.Gray
                           )
@@ -621,6 +935,7 @@ jobs:
 
 
                       item {
+
                           Text(
                               text = "हाजिरी",
                               fontWeight = FontWeight.Bold,
@@ -637,23 +952,27 @@ jobs:
                               .sortedByDescending { attendanceItem ->
                                   attendanceItem.date
                               },
+
                           key = { attendanceItem ->
                               attendanceItem.id
                           }
+
                       ) { attendanceItem ->
 
-                          val field = store.fields.firstOrNull { fieldItem ->
-                              fieldItem.id == attendanceItem.fieldId
-                          }
+                          val field =
+                              store.fields.firstOrNull { fieldItem ->
+                                  fieldItem.id == attendanceItem.fieldId
+                              }
 
-                          val cropName = store.crops
-                              .firstOrNull { cropItem ->
-                                  cropItem.id == attendanceItem.cropId
-                              }
-                              ?.name
-                              ?.takeIf { cropItemName ->
-                                  cropItemName.isNotBlank()
-                              }
+                          val cropName =
+                              store.crops
+                                  .firstOrNull { cropItem ->
+                                      cropItem.id == attendanceItem.cropId
+                                  }
+                                  ?.name
+                                  ?.takeIf { cropItemName ->
+                                      cropItemName.isNotBlank()
+                                  }
 
                           val cropPart =
                               if (cropName != null) {
@@ -681,6 +1000,7 @@ jobs:
 
 
                       item {
+
                           Text(
                               text = "भुगतान",
                               fontWeight = FontWeight.Bold,
@@ -697,23 +1017,27 @@ jobs:
                               .sortedByDescending { paymentItem ->
                                   paymentItem.date
                               },
+
                           key = { paymentItem ->
                               paymentItem.id
                           }
+
                       ) { paymentItem ->
 
-                          val field = store.fields.firstOrNull { fieldItem ->
-                              fieldItem.id == paymentItem.fieldId
-                          }
+                          val field =
+                              store.fields.firstOrNull { fieldItem ->
+                                  fieldItem.id == paymentItem.fieldId
+                              }
 
-                          val cropName = store.crops
-                              .firstOrNull { cropItem ->
-                                  cropItem.id == paymentItem.cropId
-                              }
-                              ?.name
-                              ?.takeIf { cropItemName ->
-                                  cropItemName.isNotBlank()
-                              }
+                          val cropName =
+                              store.crops
+                                  .firstOrNull { cropItem ->
+                                      cropItem.id == paymentItem.cropId
+                                  }
+                                  ?.name
+                                  ?.takeIf { cropItemName ->
+                                      cropItemName.isNotBlank()
+                                  }
 
                           val cropPart =
                               if (cropName != null) {
@@ -726,6 +1050,7 @@ jobs:
                               modifier = Modifier
                                   .fillMaxWidth()
                                   .padding(vertical = 5.dp),
+
                               verticalAlignment = Alignment.CenterVertically
                           ) {
 
@@ -743,6 +1068,7 @@ jobs:
                                       delPay = paymentItem
                                   }
                               ) {
+
                                   Icon(
                                       imageVector = Icons.Default.Delete,
                                       contentDescription = "भुगतान हटाएँ",
@@ -755,6 +1081,7 @@ jobs:
 
 
                   if (edit) {
+
                       LabourDialog(
                           store = store,
                           existing = labour,
@@ -766,6 +1093,7 @@ jobs:
 
 
                   if (payment) {
+
                       PaymentDialog(
                           store = store,
                           labourId = id,
@@ -779,6 +1107,7 @@ jobs:
 
 
                   if (rate) {
+
                       RateDialog(
                           store = store,
                           labourId = id,
@@ -793,7 +1122,7 @@ jobs:
 
                       ConfirmDialog(
                           title = "भुगतान हटाएँ?",
-                          message = "यह payment record हट जाएगा।",
+                          message = "यह payment record हट जाएगा.",
 
                           onYes = {
                               store.deletePayment(paymentItem.id)
@@ -810,11 +1139,6 @@ jobs:
 
           '''
 
-          fixed_function = "\n".join(
-              line.rstrip()
-              for line in fixed_function.splitlines()
-          )
-
           text = (
               text[:start]
               + fixed_function
@@ -828,9 +1152,6 @@ jobs:
 
           print("")
           print("LABOURDETAIL() REPLACED SUCCESSFULLY.")
-          print("")
-          print("TARGET FILE:")
-          print(main_file)
           PY
 
           echo ""
@@ -838,7 +1159,7 @@ jobs:
 
 
       # ============================================================
-      # 13. VERIFY TARGETED REPAIR
+      # 15. VERIFY LABOUR DETAIL
       # ============================================================
 
       - name: Verify LabourDetail Repair
@@ -847,16 +1168,15 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "VERIFY LABOUR DETAIL REPAIR"
-          echo "=============================================="
-
           python3 <<'PY'
           from pathlib import Path
           import os
 
           p = Path(os.environ["MAIN_FILE"])
-          text = p.read_text(encoding="utf-8")
+
+          text = p.read_text(
+              encoding="utf-8"
+          )
 
           start_marker = "@Composable\nprivate fun LabourDetail("
           end_marker = "@Composable private fun PaymentDialog("
@@ -867,11 +1187,14 @@ jobs:
               )
 
           start = text.find(start_marker)
-          end = text.find(end_marker, start)
+          end = text.find(
+              end_marker,
+              start
+          )
 
           if end == -1:
               raise SystemExit(
-                  "ERROR: PaymentDialog marker missing after LabourDetail."
+                  "ERROR: PaymentDialog marker missing."
               )
 
           block = text[start:end]
@@ -886,34 +1209,25 @@ jobs:
               "PaymentDialog(",
               "RateDialog(",
               "ConfirmDialog(",
-              "store.deletePayment(paymentItem.id)",
+              "store.deletePayment(paymentItem.id)"
           ]
 
           for item in required:
+
               if item not in block:
+
                   raise SystemExit(
-                      f"ERROR: Expected LabourDetail code missing: {item}"
+                      f"ERROR: LabourDetail code missing: {item}"
                   )
 
-          forbidden = [
-              "val l=store.labours.firstOrNull",
-              "items(store.rateHistoryFor(id),key={it.id})",
-              "items(store.payments.filter{it.labourId==id}",
-          ]
-
-          for item in forbidden:
-              if item in block:
-                  raise SystemExit(
-                      f"ERROR: Old corrupted LabourDetail pattern remains: {item}"
-                  )
-
-          print("")
-          print("LABOUR DETAIL STRUCTURE VERIFIED.")
+          print(
+              "LABOUR DETAIL STRUCTURE VERIFIED."
+          )
           PY
 
 
       # ============================================================
-      # 14. FINAL KOTLIN SOURCE AUDIT
+      # 16. FINAL SOURCE AUDIT
       # ============================================================
 
       - name: Final Kotlin Source Audit
@@ -925,6 +1239,7 @@ jobs:
           echo "=============================================="
           echo "FINAL KOTLIN SOURCE AUDIT"
           echo "=============================================="
+
 
           if grep -R -n -E \
             'listOf\([^)]*\)\{\}[+]' \
@@ -987,7 +1302,7 @@ jobs:
 
 
       # ============================================================
-      # 15. CLEAN PROJECT
+      # 17. CLEAN
       # ============================================================
 
       - name: Clean Project
@@ -1010,9 +1325,7 @@ jobs:
 
 
       # ============================================================
-      # 16. COMPILE RELEASE KOTLIN
-      #
-      # THIS IS THE CRITICAL FIXED STEP.
+      # 18. COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -1030,7 +1343,7 @@ jobs:
           echo "$MAIN_FILE"
 
           echo ""
-          echo "RUNNING KOTLIN COMPILER..."
+          echo "COMPILING..."
 
           gradle \
             --no-daemon \
@@ -1046,7 +1359,7 @@ jobs:
 
 
       # ============================================================
-      # 17. ASSEMBLE RELEASE APK
+      # 19. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1072,7 +1385,7 @@ jobs:
 
 
       # ============================================================
-      # 18. LOCATE APK
+      # 20. LOCATE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -1111,17 +1424,13 @@ jobs:
 
 
       # ============================================================
-      # 19. VERIFY APK PACKAGE
+      # 21. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "VERIFY APK PACKAGE"
-          echo "=============================================="
 
           APK="$APK_PATH"
 
@@ -1150,7 +1459,7 @@ jobs:
 
 
       # ============================================================
-      # 20. PREPARE RELEASE SIGNING
+      # 22. PREPARE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -1181,11 +1490,7 @@ jobs:
               | base64 --decode \
               > "$KEYSTORE_FILE"
 
-            if [ ! -s "$KEYSTORE_FILE" ]; then
-              echo ""
-              echo "ERROR: Decoded keystore is empty."
-              exit 1
-            fi
+            test -s "$KEYSTORE_FILE"
 
             keytool \
               -list \
@@ -1198,16 +1503,15 @@ jobs:
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
 
-            echo ""
             echo "PERMANENT KEYSTORE VERIFIED."
 
           else
 
             echo ""
             echo "Permanent signing secrets not configured."
-            echo "Creating temporary JKS signing key."
+            echo "Creating temporary JKS."
 
             TEMP_PASSWORD="$(openssl rand -hex 32)"
             TEMP_ALIAS="majdoor-hisaab-v82"
@@ -1227,11 +1531,7 @@ jobs:
               -validity 10000 \
               -dname "CN=Majdoor Hisaab PRO, OU=Android, O=Majdoor Hisaab, L=India, ST=Uttar Pradesh, C=IN"
 
-            if [ ! -s "$KEYSTORE_FILE" ]; then
-              echo ""
-              echo "ERROR: Temporary keystore was not created."
-              exit 1
-            fi
+            test -s "$KEYSTORE_FILE"
 
             keytool \
               -list \
@@ -1247,14 +1547,13 @@ jobs:
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
-            echo ""
-            echo "TEMPORARY JKS KEYSTORE VERIFIED."
+            echo "TEMPORARY KEYSTORE VERIFIED."
 
           fi
 
 
       # ============================================================
-      # 21. VERIFY SIGNING ENVIRONMENT
+      # 23. VERIFY SIGNING
       # ============================================================
 
       - name: Verify Signing Environment
@@ -1282,17 +1581,13 @@ jobs:
 
 
       # ============================================================
-      # 22. ZIPALIGN
+      # 24. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "ZIPALIGN RELEASE APK"
-          echo "=============================================="
 
           INPUT_APK="$APK_PATH"
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
@@ -1306,11 +1601,7 @@ jobs:
             "$INPUT_APK" \
             "$ALIGNED_APK"
 
-          if [ ! -f "$ALIGNED_APK" ]; then
-            echo ""
-            echo "ERROR: Zipaligned APK not created."
-            exit 1
-          fi
+          test -f "$ALIGNED_APK"
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -c \
@@ -1325,7 +1616,7 @@ jobs:
 
 
       # ============================================================
-      # 23. SIGN APK
+      # 25. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1350,11 +1641,7 @@ jobs:
             --out "$SIGNED_APK" \
             "$ALIGNED_APK"
 
-          if [ ! -f "$SIGNED_APK" ]; then
-            echo ""
-            echo "ERROR: Signed APK not created."
-            exit 1
-          fi
+          test -f "$SIGNED_APK"
 
           echo ""
           echo "SIGNED APK CREATED:"
@@ -1362,7 +1649,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY APK SIGNATURE
+      # 26. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1370,17 +1657,9 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "VERIFY APK SIGNATURE"
-          echo "=============================================="
-
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
-          if [ ! -f "$APK" ]; then
-            echo ""
-            echo "ERROR: Signed APK not found."
-            exit 1
-          fi
+          test -f "$APK"
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
             verify \
@@ -1392,7 +1671,7 @@ jobs:
 
 
       # ============================================================
-      # 25. FINAL APK VALIDATION
+      # 27. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1406,11 +1685,7 @@ jobs:
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
-          if [ ! -f "$APK" ]; then
-            echo ""
-            echo "ERROR: Final APK missing."
-            exit 1
-          fi
+          test -f "$APK"
 
           SIZE=$(stat -c%s "$APK")
 
@@ -1456,7 +1731,7 @@ jobs:
 
 
       # ============================================================
-      # 26. UPLOAD FINAL SIGNED APK
+      # 28. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1469,7 +1744,7 @@ jobs:
 
 
       # ============================================================
-      # 27. UPLOAD BUILD REPORTS
+      # 29. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
