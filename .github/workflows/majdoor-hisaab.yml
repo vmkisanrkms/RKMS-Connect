@@ -617,19 +617,22 @@ jobs:
       # ==========================================================
       # 12. BUILD RELEASE APK
       #
-      # FINAL AUDITED VERSION
+      # ONLY THIS STEP UPDATED
       #
-      # FIXES:
-      # 1. btn() optional action
-      # 2. Intent.type shadowing
-      # 3. scoped lateinit Button declarations
-      # 4. scoped Button text references
-      # 5. exportType when{} correction
-      # 6. attendanceCalendar render order
-      # 7. source audit
-      # 8. Kotlin compilation before APK assembly
+      # IMPORTANT NEW FIX:
       #
-      # NO BROAD GLOBAL it.text REPLACEMENT
+      # statusViews is a Map.
+      #
+      # WRONG:
+      # statusViews.forEach{it.text="FULL"}
+      #
+      # CORRECT:
+      # statusViews.values.forEach{it.text="FULL"}
+      #
+      # This fixes the exact compile errors at:
+      # 692
+      # 697
+      # 701
       # ==========================================================
 
       - name: Build Release APK
@@ -1133,21 +1136,7 @@ jobs:
           # ======================================================
           # FIX 13
           #
-          # exportType
-          #
-          # IMPORTANT:
-          #
-          # Old invalid code:
-          #
-          # when(exportType){
-          #     exportType.startsWith(...)
-          # }
-          #
-          # Correct:
-          #
-          # when{
-          #     exportType.startsWith(...)
-          # }
+          # exportType when{} correction
           # ======================================================
 
           export_pattern = re.compile(
@@ -1189,9 +1178,7 @@ jobs:
           # ======================================================
           # FIX 14
           #
-          # attendanceCalendar()
-          #
-          # renderSummary() must appear before render().
+          # attendanceCalendar render order
           # ======================================================
 
           calendar_start = source.find(
@@ -1276,6 +1263,51 @@ jobs:
 
 
           # ======================================================
+          # FIX 15 — EXACT FAILURE FROM PREVIOUS BUILD
+          #
+          # statusViews is a Map.
+          #
+          # Map.forEach { it -> ... }
+          # gives Map.Entry as it.
+          #
+          # Therefore it.text is invalid.
+          #
+          # Use values() so it becomes the TextView.
+          # ======================================================
+
+          attendance_status_replacements = [
+              (
+                  'statusViews.forEach{it.text="FULL"}',
+                  'statusViews.values.forEach{it.text="FULL"}'
+              ),
+              (
+                  'statusViews.forEach{it.text="HALF"}',
+                  'statusViews.values.forEach{it.text="HALF"}'
+              ),
+              (
+                  'statusViews.forEach{it.text=AttendanceRules.UNMARKED}',
+                  'statusViews.values.forEach{it.text=AttendanceRules.UNMARKED}'
+              ),
+          ]
+
+          for old, new in attendance_status_replacements:
+
+              if old in source:
+
+                  source = source.replace(
+                      old,
+                      new
+                  )
+
+              elif new not in source:
+
+                  raise SystemExit(
+                      "ERROR: expected attendance status pattern "
+                      f"not found: {old}"
+                  )
+
+
+          # ======================================================
           # WRITE PATCHED SOURCE
           # ======================================================
 
@@ -1353,8 +1385,6 @@ jobs:
 
           # ======================================================
           # AUDIT 4
-          #
-          # Check every affected local Button.
           # ======================================================
 
           python3 - "$FILE" <<'PY'
@@ -1366,94 +1396,28 @@ jobs:
           )
 
           required = [
-              (
-                  "cropForm",
-                  "fb"
-              ),
-              (
-                  "productionForm",
-                  "cropBtn"
-              ),
-              (
-                  "revenueForm",
-                  "cropBtn"
-              ),
-              (
-                  "workForm",
-                  "fieldBtn"
-              ),
-              (
-                  "workForm",
-                  "cropBtn"
-              ),
-              (
-                  "workForm",
-                  "workerBtn"
-              ),
-              (
-                  "workForm",
-                  "rateTypeBtn"
-              ),
-              (
-                  "paymentForm",
-                  "wb"
-              ),
-              (
-                  "paymentForm",
-                  "mb"
-              ),
-              (
-                  "paymentForm",
-                  "adv"
-              ),
-              (
-                  "expenseForm",
-                  "cb"
-              ),
-              (
-                  "expenseForm",
-                  "fb"
-              ),
-              (
-                  "expenseForm",
-                  "crb"
-              ),
-              (
-                  "reportFiltersDialog",
-                  "wb"
-              ),
-              (
-                  "reportFiltersDialog",
-                  "fb"
-              ),
-              (
-                  "reportFiltersDialog",
-                  "cb"
-              ),
-              (
-                  "workTemplateForm",
-                  "rateTypeBtn"
-              ),
-              (
-                  "attendanceForm",
-                  "fieldBtn"
-              ),
-              (
-                  "attendanceForm",
-                  "statusBtn"
-              ),
-              (
-                  "customReport",
-                  "wb"
-              ),
-              (
-                  "customReport",
-                  "fb"
-              ),
-              (
-                  "customReport",
-                  "cb"
-              ),
+              ("cropForm", "fb"),
+              ("productionForm", "cropBtn"),
+              ("revenueForm", "cropBtn"),
+              ("workForm", "fieldBtn"),
+              ("workForm", "cropBtn"),
+              ("workForm", "workerBtn"),
+              ("workForm", "rateTypeBtn"),
+              ("paymentForm", "wb"),
+              ("paymentForm", "mb"),
+              ("paymentForm", "adv"),
+              ("expenseForm", "cb"),
+              ("expenseForm", "fb"),
+              ("expenseForm", "crb"),
+              ("reportFiltersDialog", "wb"),
+              ("reportFiltersDialog", "fb"),
+              ("reportFiltersDialog", "cb"),
+              ("workTemplateForm", "rateTypeBtn"),
+              ("attendanceForm", "fieldBtn"),
+              ("attendanceForm", "statusBtn"),
+              ("customReport", "wb"),
+              ("customReport", "fb"),
+              ("customReport", "cb"),
           ]
 
           def get_block(name):
@@ -1505,7 +1469,10 @@ jobs:
           # ======================================================
           # AUDIT 5
           #
-          # No unresolved it.text references.
+          # No unresolved Button it.text.
+          #
+          # statusViews is intentionally excluded here because
+          # its correct form is values().forEach{it.text=...}
           # ======================================================
 
           python3 - "$FILE" <<'PY'
@@ -1525,13 +1492,20 @@ jobs:
               1
           ):
 
-              if "it.text=" in line:
+              stripped = line.strip()
 
-                  if "statusViews.forEach" not in line:
+              if "it.text=" not in line:
+                  continue
 
-                      bad.append(
-                          f"{number}: {line}"
-                      )
+              if "statusViews.values.forEach" in line:
+                  continue
+
+              if "statusViews.forEach{(id,v)->v.text=" in line:
+                  continue
+
+              bad.append(
+                  f"{number}: {line}"
+              )
 
           if bad:
 
@@ -1552,6 +1526,36 @@ jobs:
 
           # ======================================================
           # AUDIT 6
+          #
+          # Exact previous failure must NOT remain.
+          # ======================================================
+
+          if grep -Fq \
+            'statusViews.forEach{it.text=' \
+            "$FILE"; then
+
+            echo "ERROR: Map statusViews still uses it.text directly"
+            exit 1
+
+          fi
+
+          grep -Fq \
+            'statusViews.values.forEach{it.text="FULL"}' \
+            "$FILE"
+
+          grep -Fq \
+            'statusViews.values.forEach{it.text="HALF"}' \
+            "$FILE"
+
+          grep -Fq \
+            'statusViews.values.forEach{it.text=AttendanceRules.UNMARKED}' \
+            "$FILE"
+
+          echo "ATTENDANCE_STATUS_TEXT_FIX=PASS"
+
+
+          # ======================================================
+          # AUDIT 7
           #
           # attendance render order.
           # ======================================================
@@ -1610,7 +1614,7 @@ jobs:
 
 
           # ======================================================
-          # AUDIT 7
+          # AUDIT 8
           #
           # Previous Step 4 fixes must remain.
           # ======================================================
