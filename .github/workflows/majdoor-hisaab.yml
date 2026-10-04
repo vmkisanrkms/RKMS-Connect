@@ -104,7 +104,6 @@ jobs:
 
           if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-
           else
             SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
               -type f \
@@ -276,78 +275,34 @@ jobs:
 
 
       # ============================================================
-      # 8. FIX GRADLE WRAPPER EXECUTABLE PERMISSION
+      # 8. FIX GRADLE WRAPPER COMPLETELY
       #
-      # THIS FIXES THE POST SETUP GRADLE PROBLEM.
+      # IMPORTANT:
+      # The previous V82 ZIP had a bad Gradle distribution setup.
+      #
+      # We force the official Gradle 8.11.1 binary distribution.
       # ============================================================
 
-      - name: Fix Gradle Wrapper Permissions
+      - name: Repair Gradle Wrapper
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "FIX GRADLE WRAPPER PERMISSIONS"
-          echo "=============================================="
-
-          echo ""
-          echo "PROJECT:"
-          echo "$PROJECT_DIR"
-
-          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-
-            echo ""
-            echo "ERROR: gradlew not found."
-
-            echo ""
-            echo "Project files:"
-
-            find "$PROJECT_DIR" \
-              -maxdepth 3 \
-              -type f \
-              -print \
-              | sort
-
-            exit 1
-          fi
-
-          chmod +x "$PROJECT_DIR/gradlew"
-
-          if [ -f "$PROJECT_DIR/gradlew.bat" ]; then
-            chmod +x "$PROJECT_DIR/gradlew.bat" || true
-          fi
-
-          echo ""
-          echo "GRADLE WRAPPER PERMISSIONS:"
-          ls -l "$PROJECT_DIR/gradlew"
-
-          if [ ! -x "$PROJECT_DIR/gradlew" ]; then
-            echo ""
-            echo "ERROR: gradlew is still not executable."
-            exit 1
-          fi
-
-          echo ""
-          echo "Gradle wrapper executable permission FIXED."
-
-
-      # ============================================================
-      # 9. VERIFY GRADLE WRAPPER
-      # ============================================================
-
-      - name: Verify Gradle Wrapper
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "VERIFY GRADLE WRAPPER"
+          echo "REPAIR GRADLE WRAPPER"
           echo "=============================================="
 
           cd "$PROJECT_DIR"
 
-          test -f "gradlew"
-          test -x "gradlew"
+          if [ ! -f "gradlew" ]; then
+            echo ""
+            echo "ERROR: gradlew not found."
+            exit 1
+          fi
+
+          chmod +x gradlew
+
+          mkdir -p gradle/wrapper
 
           if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             echo ""
@@ -355,26 +310,60 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+networkTimeout=120000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+EOF
+
+          echo ""
+          echo "GRADLE WRAPPER PROPERTIES:"
+          cat gradle/wrapper/gradle-wrapper.properties
+
+          echo ""
+          echo "GRADLEW PERMISSION:"
+          ls -l gradlew
+
+          if [ ! -x gradlew ]; then
             echo ""
-            echo "ERROR: gradle-wrapper.properties not found."
+            echo "ERROR: gradlew is not executable."
             exit 1
           fi
 
           echo ""
-          echo "gradlew:"
-          ls -lh gradlew
+          echo "GRADLE WRAPPER REPAIR PASSED."
+
+
+      # ============================================================
+      # 9. VERIFY WRAPPER FILES
+      # ============================================================
+
+      - name: Verify Gradle Wrapper Files
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY GRADLE WRAPPER FILES"
+          echo "=============================================="
+
+          cd "$PROJECT_DIR"
+
+          test -f gradlew
+          test -x gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+
+          grep -q \
+            "gradle-8.11.1-bin.zip" \
+            gradle/wrapper/gradle-wrapper.properties
 
           echo ""
-          echo "wrapper jar:"
-          ls -lh gradle/wrapper/gradle-wrapper.jar
-
-          echo ""
-          echo "wrapper properties:"
-          ls -lh gradle/wrapper/gradle-wrapper.properties
-
-          echo ""
-          echo "GRADLE WRAPPER VERIFIED."
+          echo "WRAPPER FILES VERIFIED."
 
 
       # ============================================================
@@ -400,7 +389,6 @@ jobs:
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
-
             echo "ERROR: app Gradle file not found."
             exit 1
           fi
@@ -410,9 +398,7 @@ jobs:
 
 
       # ============================================================
-      # 11. SETUP GRADLE
-      #
-      # Wrapper permission is already fixed BEFORE this step.
+      # 11. SETUP SYSTEM GRADLE 8.11.1
       # ============================================================
 
       - name: Setup Gradle
@@ -422,7 +408,33 @@ jobs:
 
 
       # ============================================================
-      # 12. VERIFY KOTLIN SOURCES
+      # 12. VERIFY SYSTEM GRADLE
+      # ============================================================
+
+      - name: Verify System Gradle
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY SYSTEM GRADLE"
+          echo "=============================================="
+
+          command -v gradle
+
+          GRADLE_VERSION_OUTPUT=$(gradle --version)
+
+          echo "$GRADLE_VERSION_OUTPUT"
+
+          echo "$GRADLE_VERSION_OUTPUT" \
+            | grep -q "Gradle 8.11.1"
+
+          echo ""
+          echo "SYSTEM GRADLE 8.11.1 VERIFIED."
+
+
+      # ============================================================
+      # 13. VERIFY KOTLIN SOURCES
       # ============================================================
 
       - name: Locate V82 Kotlin Sources
@@ -458,7 +470,7 @@ jobs:
 
 
       # ============================================================
-      # 13. SAFE btn() REPAIR
+      # 14. SAFE btn() REPAIR
       # ============================================================
 
       - name: Repair V82 Kotlin btn Actions
@@ -716,7 +728,7 @@ jobs:
 
 
       # ============================================================
-      # 14. FIX INTENT TYPE SHADOWING
+      # 15. FIX INTENT TYPE RECEIVER SHADOWING
       # ============================================================
 
       - name: Fix Intent Type Receiver Shadowing
@@ -794,17 +806,17 @@ jobs:
 
 
       # ============================================================
-      # 15. REPAIR INTEGRITY
+      # 16. VERIFY SOURCE INTEGRITY
       # ============================================================
 
-      - name: Verify V82 Repair Integrity
+      - name: Verify V82 Source Integrity
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY V82 REPAIR INTEGRITY"
+          echo "VERIFY V82 SOURCE INTEGRITY"
           echo "=============================================="
 
 
@@ -887,11 +899,11 @@ jobs:
 
 
           echo ""
-          echo "REPAIR INTEGRITY PASSED."
+          echo "SOURCE INTEGRITY PASSED."
 
 
       # ============================================================
-      # 16. FINAL btn AUDIT
+      # 17. FINAL btn AUDIT
       # ============================================================
 
       - name: Final btn Audit
@@ -1137,7 +1149,15 @@ jobs:
 
 
       # ============================================================
-      # 17. GRADLE ENVIRONMENT
+      # 18. GRADLE ENVIRONMENT
+      #
+      # IMPORTANT:
+      # DO NOT RUN ./gradlew HERE.
+      #
+      # The V82 ZIP wrapper was the source of the
+      # 'distribution did not contain bin/gradle' error.
+      #
+      # System Gradle 8.11.1 is verified and will be used.
       # ============================================================
 
       - name: Gradle Environment
@@ -1159,16 +1179,29 @@ jobs:
           gradle --version
 
           echo ""
-          echo "PROJECT GRADLE WRAPPER:"
-          ./gradlew --version
+          echo "GRADLE PATH:"
+          command -v gradle
 
           echo ""
-          echo "ANDROID_HOME:"
+          echo "ANDROID HOME:"
           echo "$ANDROID_HOME"
+
+          echo ""
+          echo "PROJECT WRAPPER:"
+          ls -lh gradlew
+
+          echo ""
+          echo "WRAPPER PROPERTIES:"
+          cat gradle/wrapper/gradle-wrapper.properties
+
+          echo ""
+          echo "GRADLE ENVIRONMENT PASSED."
 
 
       # ============================================================
-      # 18. CLEAN PROJECT
+      # 19. CLEAN PROJECT
+      #
+      # SYSTEM GRADLE 8.11.1
       # ============================================================
 
       - name: Clean Project
@@ -1181,7 +1214,7 @@ jobs:
           echo "CLEAN PROJECT"
           echo "=============================================="
 
-          ./gradlew \
+          gradle \
             --no-daemon \
             --stacktrace \
             clean
@@ -1191,7 +1224,7 @@ jobs:
 
 
       # ============================================================
-      # 19. COMPILE RELEASE KOTLIN
+      # 20. COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -1204,7 +1237,7 @@ jobs:
           echo "COMPILE RELEASE KOTLIN"
           echo "=============================================="
 
-          ./gradlew \
+          gradle \
             --no-daemon \
             --stacktrace \
             --rerun-tasks \
@@ -1217,7 +1250,7 @@ jobs:
 
 
       # ============================================================
-      # 20. ASSEMBLE RELEASE APK
+      # 21. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1230,7 +1263,7 @@ jobs:
           echo "ASSEMBLE RELEASE APK"
           echo "=============================================="
 
-          ./gradlew \
+          gradle \
             --no-daemon \
             --stacktrace \
             --rerun-tasks \
@@ -1243,7 +1276,7 @@ jobs:
 
 
       # ============================================================
-      # 21. LOCATE RELEASE APK
+      # 22. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -1275,7 +1308,7 @@ jobs:
 
 
       # ============================================================
-      # 22. VERIFY APK PACKAGE
+      # 23. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -1304,6 +1337,7 @@ jobs:
 
             echo ""
             echo "ERROR: Package name mismatch."
+
             echo ""
             echo "EXPECTED:"
             echo "$PACKAGE_NAME"
@@ -1316,7 +1350,7 @@ jobs:
 
 
       # ============================================================
-      # 23. VERIFY SIGNING SECRETS
+      # 24. VERIFY SIGNING SECRETS
       # ============================================================
 
       - name: Verify Release Signing Secrets
@@ -1370,14 +1404,6 @@ jobs:
             echo "SIGNING SECRETS INCOMPLETE"
             echo "=============================================="
 
-            echo ""
-            echo "Required secrets:"
-
-            echo "KEYSTORE_BASE64"
-            echo "KEYSTORE_PASSWORD"
-            echo "KEY_ALIAS"
-            echo "KEY_PASSWORD"
-
             exit 1
           fi
 
@@ -1386,7 +1412,7 @@ jobs:
 
 
       # ============================================================
-      # 24. RESTORE RELEASE KEYSTORE
+      # 25. RESTORE RELEASE KEYSTORE
       # ============================================================
 
       - name: Restore Release Keystore
@@ -1446,7 +1472,7 @@ jobs:
 
 
       # ============================================================
-      # 25. ZIPALIGN
+      # 26. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1491,7 +1517,7 @@ jobs:
 
 
       # ============================================================
-      # 26. SIGN RELEASE APK
+      # 27. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1541,7 +1567,7 @@ jobs:
 
 
       # ============================================================
-      # 27. VERIFY APK SIGNATURE
+      # 28. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1565,7 +1591,7 @@ jobs:
 
 
       # ============================================================
-      # 28. FINAL APK VALIDATION
+      # 29. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1612,7 +1638,7 @@ jobs:
 
 
       # ============================================================
-      # 29. UPLOAD SIGNED APK
+      # 30. UPLOAD SIGNED APK
       # ============================================================
 
       - name: Upload Signed Release APK
@@ -1625,7 +1651,7 @@ jobs:
 
 
       # ============================================================
-      # 30. UPLOAD BUILD REPORTS
+      # 31. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
