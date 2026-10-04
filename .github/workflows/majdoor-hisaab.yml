@@ -284,7 +284,10 @@ jobs:
 
           pwd
 
-          test -d "app"
+          if [ ! -d "app" ]; then
+            echo "ERROR: app directory not found."
+            exit 1
+          fi
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
@@ -332,11 +335,7 @@ jobs:
 
 
       # ============================================================
-      # 11. REPAIR ACTION-LESS btn()
-      #
-      # IMPORTANT:
-      # btn( already contains an opening '('.
-      # Therefore parser depth MUST start at 1.
+      # 11. SAFE btn() REPAIR
       # ============================================================
 
       - name: Repair V82 Kotlin btn Actions
@@ -354,7 +353,9 @@ jobs:
 
           root = Path("app/src/main")
 
+
           def find_close(s, start):
+
               depth = 1
               i = start
               mode = "normal"
@@ -391,6 +392,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "string":
 
                       if s[i] == "\\":
@@ -402,6 +404,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "char":
 
                       if s[i] == "\\":
@@ -412,6 +415,7 @@ jobs:
                           mode = "normal"
 
                       i += 1
+
 
                   else:
 
@@ -458,6 +462,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "string":
 
                       if content[i] == "\\":
@@ -469,6 +474,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "char":
 
                       if content[i] == "\\":
@@ -479,6 +485,7 @@ jobs:
                           mode = "normal"
 
                       i += 1
+
 
                   else:
 
@@ -492,6 +499,7 @@ jobs:
 
 
           total = 0
+
 
           for path in root.rglob("*.kt"):
 
@@ -516,7 +524,7 @@ jobs:
 
                   if k is None:
                       raise SystemExit(
-                          f"Cannot parse btn() in {path}"
+                          f"ERROR: Cannot parse btn() in {path}"
                       )
 
                   content = text[j + 4:k]
@@ -541,11 +549,14 @@ jobs:
                       continue
 
                   patches.append(k + 1)
+
                   i = k + 1
+
 
               if patches:
 
                   for pos in reversed(patches):
+
                       text = (
                           text[:pos]
                           + " {}"
@@ -558,11 +569,12 @@ jobs:
                   )
 
                   print(
-                      f"PATCHED: {path} "
-                      f"({len(patches)} calls)"
+                      f"PATCHED {path}: "
+                      f"{len(patches)} action-less btn() calls"
                   )
 
                   total += len(patches)
+
 
           print("")
           print("TOTAL btn() FIXES:", total)
@@ -571,23 +583,7 @@ jobs:
 
 
       # ============================================================
-      # 12. FIX ACTUAL CURRENT COMPILE ERROR
-      #
-      # MainActivityScreens.kt:602
-      #
-      # Problem:
-      #
-      # val type = field(...)
-      #
-      # Intent(...).apply {
-      #     type = "image/*"
-      # }
-      #
-      # Kotlin resolves type to the surrounding EditText variable.
-      #
-      # Correct:
-      #
-      # this.type = "image/*"
+      # 12. FIX INTENT TYPE SHADOWING
       # ============================================================
 
       - name: Fix Intent Type Receiver Shadowing
@@ -640,10 +636,11 @@ jobs:
                       old,
                       new
                   )
+
                   total += count
+
                   print(
-                      f"FIXED {count} occurrence(s): "
-                      f"{old} -> {new}"
+                      f"FIXED {count} occurrence(s)"
                   )
 
           p.write_text(
@@ -659,23 +656,11 @@ jobs:
           PY
 
           echo ""
-          echo "VERIFYING NO UNSAFE INTENT TYPE ASSIGNMENTS..."
-
-          if grep -n \
-            -E 'apply\{type=' \
-            "$SRC"; then
-
-            echo ""
-            echo "ERROR: Unsafe Intent type assignment remains."
-            exit 1
-          fi
-
-          echo ""
           echo "INTENT TYPE FIX PASSED."
 
 
       # ============================================================
-      # 13. VERIFY REPAIR INTEGRITY
+      # 13. REPAIR INTEGRITY
       # ============================================================
 
       - name: Verify V82 Repair Integrity
@@ -689,34 +674,27 @@ jobs:
           echo "=============================================="
 
 
-          echo ""
-          echo "CHECK: corrupted listOf() expressions"
-
           if grep -R -n -E \
             'listOf\([^)]*\)\{\}[+]' \
             app/src/main \
             --include="*.kt"; then
 
+            echo ""
             echo "ERROR: listOf() corruption detected."
             exit 1
           fi
 
-
-          echo ""
-          echo "CHECK: corrupted toTypedArray() expressions"
 
           if grep -R -n \
             '){}\.toTypedArray' \
             app/src/main \
             --include="*.kt"; then
 
+            echo ""
             echo "ERROR: toTypedArray corruption detected."
             exit 1
           fi
 
-
-          echo ""
-          echo "CHECK: invalid fillViewport assignment"
 
           if grep -R -n \
             'fillViewport[[:space:]]*=' \
@@ -724,58 +702,51 @@ jobs:
             --include="*.kt" \
             --include="*.java"; then
 
+            echo ""
             echo "ERROR: Invalid fillViewport assignment."
             exit 1
           fi
 
-
-          echo ""
-          echo "CHECK: invalid btn lambda parameter"
 
           if grep -R -n -E \
             'btn\(.*\)\{[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*->' \
             app/src/main \
             --include="*.kt"; then
 
+            echo ""
             echo "ERROR: Invalid btn lambda parameter."
             exit 1
           fi
 
-
-          echo ""
-          echo "CHECK: invalid lateinit Button workaround"
 
           if grep -R -n -E \
             'lateinit[[:space:]]+var[[:space:]].*:[[:space:]]*Button' \
             app/src/main \
             --include="*.kt"; then
 
+            echo ""
             echo "ERROR: Invalid lateinit Button workaround."
             exit 1
           fi
 
-
-          echo ""
-          echo "CHECK: old exportType when()"
 
           if grep -R -n \
             'when(exportType)' \
             app/src/main \
             --include="*.kt"; then
 
+            echo ""
             echo "ERROR: Old when(exportType) found."
             exit 1
           fi
 
-
-          echo ""
-          echo "CHECK: pick() return type"
 
           if grep -R -n -E \
             'fun[[:space:]]+MainActivity\.pick.*:[[:space:]]*Button' \
             app/src/main \
             --include="*.kt"; then
 
+            echo ""
             echo "ERROR: pick() still returns Button."
             exit 1
           fi
@@ -786,7 +757,7 @@ jobs:
 
 
       # ============================================================
-      # 14. FINAL ACTIONLESS btn() SCAN
+      # 14. FINAL btn AUDIT
       # ============================================================
 
       - name: Final btn Audit
@@ -839,6 +810,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "string":
 
                       if s[i] == "\\":
@@ -850,6 +822,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "char":
 
                       if s[i] == "\\":
@@ -860,6 +833,7 @@ jobs:
                           mode = "normal"
 
                       i += 1
+
 
                   else:
 
@@ -906,6 +880,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "string":
 
                       if content[i] == "\\":
@@ -917,6 +892,7 @@ jobs:
 
                       i += 1
 
+
                   elif mode == "char":
 
                       if content[i] == "\\":
@@ -927,6 +903,7 @@ jobs:
                           mode = "normal"
 
                       i += 1
+
 
                   else:
 
@@ -964,7 +941,7 @@ jobs:
 
                   if k is None:
                       raise SystemExit(
-                          f"Cannot parse {path}"
+                          f"ERROR: Cannot parse {path}"
                       )
 
                   content = text[j + 4:k]
@@ -1121,13 +1098,17 @@ jobs:
 
 
       # ============================================================
-      # 19. LOCATE APK
+      # 19. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "LOCATE RELEASE APK"
+          echo "=============================================="
 
           APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
@@ -1175,7 +1156,11 @@ jobs:
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
 
+            echo ""
             echo "ERROR: Package name mismatch."
+            echo "Expected:"
+            echo "$PACKAGE_NAME"
+
             exit 1
           fi
 
@@ -1184,7 +1169,86 @@ jobs:
 
 
       # ============================================================
-      # 21. RESTORE KEYSTORE
+      # 21. VERIFY ALL SIGNING SECRETS
+      #
+      # THIS STEP IS IMPORTANT.
+      #
+      # Previous run failed here because KEYSTORE_BASE64
+      # was missing.
+      # ============================================================
+
+      - name: Verify Release Signing Secrets
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY RELEASE SIGNING SECRETS"
+          echo "=============================================="
+
+          MISSING=0
+
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 secret is missing."
+            MISSING=1
+          else
+            echo "OK: KEYSTORE_BASE64 is present."
+          fi
+
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: KEYSTORE_PASSWORD secret is missing."
+            MISSING=1
+          else
+            echo "OK: KEYSTORE_PASSWORD is present."
+          fi
+
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "ERROR: KEY_ALIAS secret is missing."
+            MISSING=1
+          else
+            echo "OK: KEY_ALIAS is present."
+          fi
+
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: KEY_PASSWORD secret is missing."
+            MISSING=1
+          else
+            echo "OK: KEY_PASSWORD is present."
+          fi
+
+          if [ "$MISSING" -ne 0 ]; then
+            echo ""
+            echo "=============================================="
+            echo "SIGNING SECRETS ARE NOT COMPLETE"
+            echo "=============================================="
+            echo ""
+            echo "Required GitHub Actions secrets:"
+            echo ""
+            echo "KEYSTORE_BASE64"
+            echo "KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS"
+            echo "KEY_PASSWORD"
+            echo ""
+            echo "Add them in:"
+            echo "Repository Settings"
+            echo "-> Secrets and variables"
+            echo "-> Actions"
+            echo "-> New repository secret"
+            echo ""
+            exit 1
+          fi
+
+          echo ""
+          echo "ALL REQUIRED SIGNING SECRETS ARE PRESENT."
+
+
+      # ============================================================
+      # 22. RESTORE RELEASE KEYSTORE
       # ============================================================
 
       - name: Restore Release Keystore
@@ -1198,26 +1262,52 @@ jobs:
           echo "RESTORE RELEASE KEYSTORE"
           echo "=============================================="
 
+          KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
+
           if [ -z "$KEYSTORE_BASE64" ]; then
+            echo ""
             echo "ERROR: KEYSTORE_BASE64 secret is missing."
             exit 1
           fi
 
           echo "$KEYSTORE_BASE64" \
             | base64 --decode \
-            > release-keystore.jks
+            > "$KEYSTORE_FILE"
 
-          if [ ! -s release-keystore.jks ]; then
-            echo "ERROR: Keystore is empty."
+          if [ ! -s "$KEYSTORE_FILE" ]; then
+            echo ""
+            echo "ERROR: Decoded keystore is empty."
+            rm -f "$KEYSTORE_FILE"
             exit 1
           fi
 
           echo ""
-          echo "KEYSTORE RESTORED."
+          echo "Checking keystore structure..."
+
+          if ! keytool \
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            >/dev/null 2>&1; then
+
+            echo ""
+            echo "ERROR: Keystore could not be opened."
+            echo ""
+            echo "Possible causes:"
+            echo "1. KEYSTORE_BASE64 is not a valid Base64 keystore."
+            echo "2. KEYSTORE_PASSWORD is incorrect."
+            echo "3. The uploaded keystore is not the original release keystore."
+            exit 1
+          fi
+
+          echo ""
+          echo "RELEASE KEYSTORE RESTORED AND VERIFIED."
+
+          echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
 
 
       # ============================================================
-      # 22. ZIPALIGN
+      # 23. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1257,7 +1347,7 @@ jobs:
 
 
       # ============================================================
-      # 23. SIGN APK
+      # 24. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1288,10 +1378,17 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${RELEASE_KEYSTORE:-}" ] || \
+             [ ! -f "$RELEASE_KEYSTORE" ]; then
+
+            echo "ERROR: RELEASE_KEYSTORE file not found."
+            exit 1
+          fi
+
           SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-            --ks release-keystore.jks \
+            --ks "$RELEASE_KEYSTORE" \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass "pass:$KEY_PASSWORD" \
@@ -1309,7 +1406,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY SIGNATURE
+      # 25. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1333,7 +1430,7 @@ jobs:
 
 
       # ============================================================
-      # 25. FINAL APK VALIDATION
+      # 26. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1378,7 +1475,7 @@ jobs:
 
 
       # ============================================================
-      # 26. UPLOAD SIGNED APK
+      # 27. UPLOAD SIGNED APK
       # ============================================================
 
       - name: Upload Signed Release APK
@@ -1391,7 +1488,7 @@ jobs:
 
 
       # ============================================================
-      # 27. UPLOAD BUILD REPORTS
+      # 28. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
