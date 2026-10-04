@@ -46,8 +46,6 @@ jobs:
 
       # ============================================================
       # 2. JAVA 17
-      # IMPORTANT:
-      # NO GRADLE CACHE HERE
       # ============================================================
 
       - name: Set up JDK 17
@@ -66,7 +64,7 @@ jobs:
 
 
       # ============================================================
-      # 4. INSTALL ANDROID API 36
+      # 4. INSTALL ANDROID SDK 36
       # ============================================================
 
       - name: Install Android SDK 36
@@ -149,10 +147,6 @@ jobs:
 
           PROJECT_ROOT=""
 
-          # ----------------------------------------------------------
-          # Check project directly at repository root
-          # ----------------------------------------------------------
-
           if [ -f "settings.gradle.kts" ] && \
              [ -f "app/build.gradle.kts" ]; then
 
@@ -168,22 +162,9 @@ jobs:
 
             ZIP_PATH=""
 
-            # --------------------------------------------------------
-            # Exact V81 ZIP
-            # --------------------------------------------------------
-
             if [ -f "${ZIP_NAME}" ]; then
-
               ZIP_PATH="${ZIP_NAME}"
-
             fi
-
-
-            # --------------------------------------------------------
-            # Search only V81 ZIP
-            # IMPORTANT:
-            # V104 is NOT used as fallback.
-            # --------------------------------------------------------
 
             if [ -z "${ZIP_PATH}" ]; then
 
@@ -199,11 +180,6 @@ jobs:
               )"
 
             fi
-
-
-            # --------------------------------------------------------
-            # ZIP NOT FOUND
-            # --------------------------------------------------------
 
             if [ -z "${ZIP_PATH}" ]; then
 
@@ -229,15 +205,9 @@ jobs:
 
             fi
 
-
             echo
             echo "V81 SOURCE ZIP:"
             echo "${ZIP_PATH}"
-
-
-            # --------------------------------------------------------
-            # Clean extraction
-            # --------------------------------------------------------
 
             rm -rf extracted
             rm -rf project
@@ -245,19 +215,9 @@ jobs:
             mkdir -p extracted
             mkdir -p project
 
-
-            # --------------------------------------------------------
-            # Extract
-            # --------------------------------------------------------
-
             unzip -q \
               "${ZIP_PATH}" \
               -d extracted
-
-
-            # --------------------------------------------------------
-            # Project directly inside ZIP
-            # --------------------------------------------------------
 
             if [ -f "extracted/settings.gradle.kts" ] && \
                [ -f "extracted/app/build.gradle.kts" ]; then
@@ -271,17 +231,12 @@ jobs:
 
             else
 
-              # ------------------------------------------------------
-              # Find nested project
-              # ------------------------------------------------------
-
               SETTINGS_FILE="$(
                 find extracted \
                   -type f \
                   -name "settings.gradle.kts" \
                   | head -n 1
               )"
-
 
               if [ -z "${SETTINGS_FILE}" ]; then
 
@@ -300,13 +255,11 @@ jobs:
 
               fi
 
-
               ROOT_DIR="$(dirname "${SETTINGS_FILE}")"
 
               echo
               echo "Detected Android project:"
               echo "${ROOT_DIR}"
-
 
               if [ ! -f "${ROOT_DIR}/app/build.gradle.kts" ]; then
 
@@ -317,17 +270,11 @@ jobs:
 
               fi
 
-
               cp -a \
                 "${ROOT_DIR}/." \
                 project/
 
             fi
-
-
-            # --------------------------------------------------------
-            # Final validation
-            # --------------------------------------------------------
 
             if [ ! -f "project/settings.gradle.kts" ]; then
 
@@ -337,7 +284,6 @@ jobs:
 
             fi
 
-
             if [ ! -f "project/app/build.gradle.kts" ]; then
 
               echo "ERROR: app/build.gradle.kts missing after extraction."
@@ -346,11 +292,9 @@ jobs:
 
             fi
 
-
             PROJECT_ROOT="$PWD/project"
 
           fi
-
 
           echo
           echo "=============================================="
@@ -404,11 +348,11 @@ jobs:
 
 
       # ============================================================
-      # 8. INSTALL / SETUP GRADLE 8.11.1
+      # 8. SETUP GRADLE 8.11.1
       #
       # IMPORTANT:
-      # We use installed Gradle directly.
-      # Gradle wrapper will NOT be executed.
+      # GitHub-installed Gradle is used directly.
+      # V81 Gradle wrapper is NOT executed.
       # ============================================================
 
       - name: Set up Gradle
@@ -443,10 +387,6 @@ jobs:
 
           gradle --version
 
-          echo
-          echo "Required Gradle:"
-          echo "${GRADLE_VERSION}"
-
 
       # ============================================================
       # 10. VERIFY V81 SOURCE CONFIGURATION
@@ -469,99 +409,62 @@ jobs:
 
           fi
 
-
           echo "=============================================="
           echo "V81 SOURCE CONFIGURATION"
           echo "=============================================="
 
-
           echo
           echo "Namespace:"
-
           grep -n \
             "namespace" \
             "${BUILD_FILE}" \
             || true
 
-
           echo
           echo "Application ID:"
-
           grep -n \
             "applicationId" \
             "${BUILD_FILE}" \
             || true
 
-
           echo
           echo "compileSdk:"
-
           grep -n \
             "compileSdk" \
             "${BUILD_FILE}" \
             || true
 
-
           echo
           echo "minSdk:"
-
           grep -n \
             "minSdk" \
             "${BUILD_FILE}" \
             || true
 
-
           echo
           echo "targetSdk:"
-
           grep -n \
             "targetSdk" \
             "${BUILD_FILE}" \
             || true
 
-
           echo
           echo "versionCode:"
-
           grep -n \
             "versionCode" \
             "${BUILD_FILE}" \
             || true
 
-
           echo
           echo "versionName:"
-
           grep -n \
             "versionName" \
             "${BUILD_FILE}" \
             || true
 
 
-          echo
-          echo "Android plugin:"
-
-          grep -R \
-            "com.android.application" \
-            -n \
-            --include="*.gradle.kts" \
-            . \
-            || true
-
-
-          echo
-          echo "Kotlin plugin:"
-
-          grep -R \
-            "org.jetbrains.kotlin.android" \
-            -n \
-            --include="*.gradle.kts" \
-            . \
-            || true
-
-
       # ============================================================
-      # 11. VERIFY EXACT VERSION
+      # 11. VERIFY EXACT RELEASE VERSION
       # ============================================================
 
       - name: Verify release version
@@ -572,7 +475,6 @@ jobs:
           cd "${PROJECT_ROOT}"
 
           BUILD_FILE="app/build.gradle.kts"
-
 
           echo "Checking applicationId..."
 
@@ -585,7 +487,6 @@ jobs:
             }
 
           echo "Application ID OK."
-
 
           echo
           echo "Checking versionName..."
@@ -600,7 +501,6 @@ jobs:
 
           echo "versionName OK."
 
-
           echo
           echo "Checking versionCode..."
 
@@ -613,7 +513,6 @@ jobs:
             }
 
           echo "versionCode OK."
-
 
           echo
           echo "Checking compileSdk..."
@@ -628,7 +527,6 @@ jobs:
 
           echo "compileSdk OK."
 
-
           echo
           echo "Checking targetSdk..."
 
@@ -641,7 +539,6 @@ jobs:
             }
 
           echo "targetSdk OK."
-
 
           echo
           echo "=============================================="
@@ -658,9 +555,7 @@ jobs:
       # ============================================================
       # 12. VERIFY GRADLE CONFIGURATION
       #
-      # IMPORTANT:
       # DO NOT RUN ./gradlew
-      # The wrapper download was the previous failure.
       # ============================================================
 
       - name: Verify Gradle configuration
@@ -673,7 +568,6 @@ jobs:
           echo "=============================================="
           echo "GRADLE CONFIGURATION"
           echo "=============================================="
-
 
           if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
 
@@ -695,7 +589,6 @@ jobs:
 
           fi
 
-
           echo
           echo "Using GitHub-installed Gradle:"
 
@@ -703,13 +596,20 @@ jobs:
 
 
       # ============================================================
-      # 13. SAFE SOURCE COMPATIBILITY FIXES
+      # 13. FIX V81 KOTLIN SOURCE
       #
-      # IMPORTANT:
-      # V81 professional btn() is NOT replaced.
+      # FIXES:
+      #
+      # 1. btn() action default
+      # 2. pick() Button -> TextView
+      # 3. Intent type shadowing
+      # 4. fillWidth -> fillViewport
+      # 5. old audit API names
+      #
+      # NO UI/database/calculation logic is changed.
       # ============================================================
 
-      - name: Apply safe source compatibility fixes
+      - name: Apply V81 Kotlin compatibility fixes
         shell: bash
         run: |
           set -e
@@ -718,43 +618,201 @@ jobs:
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
 
-
-          if [ -f "${FILE}" ]; then
-
-            echo "Checking source compatibility..."
-
-            sed -i \
-              's/\.audit\.auditLog/\.auditLog/g' \
-              "${FILE}" \
-              || true
-
-
-            sed -i \
-              's/clearAuditLog/clear/g' \
-              "${FILE}" \
-              || true
-
-
-            sed -i \
-              's/getSystemService(ALARM_SERVICE)/getSystemService(Context.ALARM_SERVICE)/g' \
-              "${FILE}" \
-              || true
-
-
-            echo
-            echo "Safe source compatibility check completed."
-
-          else
-
-            echo
-            echo "MainActivityScreens.kt not found."
-            echo "No compatibility patch applied."
-
+          if [ ! -f "${FILE}" ]; then
+            echo "ERROR: MainActivityScreens.kt not found."
+            exit 1
           fi
+
+          echo "=============================================="
+          echo "APPLYING V81 KOTLIN FIXES"
+          echo "=============================================="
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt")
+          s = p.read_text(encoding="utf-8")
+
+          changes = []
+
+          # ----------------------------------------------------------
+          # FIX 1:
+          # V81 btn() must allow calls without explicit action.
+          # ----------------------------------------------------------
+
+          old = 'internal fun MainActivity.btn(s:String,action:()->Unit)=TextView(this).apply{'
+          new = 'internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{'
+
+          if old in s:
+              s = s.replace(old, new, 1)
+              changes.append("btn() default action added")
+
+
+          # ----------------------------------------------------------
+          # FIX 2:
+          # pick() was declared Button but btn() returns TextView.
+          # ----------------------------------------------------------
+
+          old = 'internal fun MainActivity.pick(title:String, labels:List<String>, current:Int=-1, onPick:(Int)->Unit):Button {'
+          new = 'internal fun MainActivity.pick(title:String, labels:List<String>, current:Int=-1, onPick:(Int)->Unit):TextView {'
+
+          if old in s:
+              s = s.replace(old, new, 1)
+              changes.append("pick() return type changed Button -> TextView")
+
+
+          # ----------------------------------------------------------
+          # FIX 3:
+          # Intent.apply { type = ... } was resolving to outer
+          # worker/field variable named type.
+          # ----------------------------------------------------------
+
+          old = 'Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="image/*";'
+          new = 'Intent(Intent.ACTION_OPEN_DOCUMENT).apply{this.type="image/*";'
+
+          count = s.count(old)
+
+          if count:
+              s = s.replace(old, new)
+              changes.append(f"Intent MIME type fixed ({count} occurrence(s))")
+
+
+          # ----------------------------------------------------------
+          # FIX 4:
+          # If an older V81 source contains fillWidth, correct it.
+          # ----------------------------------------------------------
+
+          count = s.count("fillWidth")
+
+          if count:
+              s = s.replace("fillWidth", "fillViewport")
+              changes.append(f"fillWidth -> fillViewport ({count} occurrence(s))")
+
+
+          # ----------------------------------------------------------
+          # FIX 5:
+          # Safe compatibility replacements.
+          # ----------------------------------------------------------
+
+          count = s.count(".audit.auditLog")
+
+          if count:
+              s = s.replace(".audit.auditLog", ".auditLog")
+              changes.append(f"audit API fixed ({count} occurrence(s))")
+
+
+          count = s.count("clearAuditLog")
+
+          if count:
+              s = s.replace("clearAuditLog", "clear")
+              changes.append(f"clearAuditLog API fixed ({count} occurrence(s))")
+
+
+          count = s.count("getSystemService(ALARM_SERVICE)")
+
+          if count:
+              s = s.replace(
+                  "getSystemService(ALARM_SERVICE)",
+                  "getSystemService(Context.ALARM_SERVICE)"
+              )
+              changes.append(f"ALARM_SERVICE reference fixed ({count} occurrence(s))")
+
+
+          p.write_text(s, encoding="utf-8")
+
+          print("")
+          print("V81 source patch result:")
+
+          if changes:
+              for item in changes:
+                  print("  OK:", item)
+          else:
+              print("  No source changes were necessary.")
+
+          print("")
+          print("MainActivityScreens.kt updated successfully.")
+          PY
 
 
       # ============================================================
-      # 14. VERIFY V81 BUTTON IMPLEMENTATION
+      # 14. VERIFY ALL SOURCE FIXES
+      # ============================================================
+
+      - name: Verify V81 Kotlin fixes
+        shell: bash
+        run: |
+          set -e
+
+          cd "${PROJECT_ROOT}"
+
+          FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
+
+          echo "=============================================="
+          echo "VERIFYING V81 KOTLIN FIXES"
+          echo "=============================================="
+
+          echo
+          echo "Checking btn()..."
+
+          grep -q \
+            'internal fun MainActivity.btn(s:String,action:()->Unit = {})=TextView(this).apply{' \
+            "${FILE}" \
+            || {
+              echo "ERROR: btn() fix not applied."
+              exit 1
+            }
+
+          echo "btn() OK."
+
+          echo
+          echo "Checking pick()..."
+
+          grep -q \
+            'internal fun MainActivity.pick(title:String, labels:List<String>, current:Int=-1, onPick:(Int)->Unit):TextView' \
+            "${FILE}" \
+            || {
+              echo "ERROR: pick() return type fix not applied."
+              exit 1
+            }
+
+          echo "pick() OK."
+
+          echo
+          echo "Checking Intent MIME assignment..."
+
+          if grep -q \
+            'apply{type="image/\*";' \
+            "${FILE}"; then
+
+            echo "ERROR: old shadowed type assignment still exists."
+            exit 1
+
+          fi
+
+          echo "Intent MIME assignment OK."
+
+          echo
+          echo "Checking fillWidth..."
+
+          if grep -q \
+            'fillWidth' \
+            "${FILE}"; then
+
+            echo "ERROR: fillWidth still exists."
+            exit 1
+
+          fi
+
+          echo "fillWidth check OK."
+
+          echo
+          echo "=============================================="
+          echo "ALL V81 SOURCE FIXES VERIFIED"
+          echo "=============================================="
+
+
+      # ============================================================
+      # 15. VERIFY PROFESSIONAL BUTTON IMPLEMENTATION
       # ============================================================
 
       - name: Verify V81 button implementation
@@ -766,40 +824,30 @@ jobs:
 
           FILE="app/src/main/java/com/majdoor/hisaab/MainActivityScreens.kt"
 
+          echo "Checking V81 professional button implementation..."
 
-          if [ -f "${FILE}" ]; then
+          grep -q \
+            'internal fun MainActivity.btn' \
+            "${FILE}" \
+            || {
+              echo "ERROR: V81 btn() function not found."
+              exit 1
+            }
 
-            echo "Checking V81 professional button implementation..."
+          grep -q \
+            'TextView(this)' \
+            "${FILE}" \
+            || {
+              echo "ERROR: V81 TextView button renderer not found."
+              exit 1
+            }
 
-
-            grep -q \
-              'internal fun MainActivity.btn' \
-              "${FILE}" \
-              || {
-                echo "ERROR: V81 btn() function not found."
-                exit 1
-              }
-
-
-            grep -q \
-              'TextView(this)' \
-              "${FILE}" \
-              || {
-                echo "ERROR: V81 TextView button renderer not found."
-                exit 1
-              }
-
-
-            echo
-            echo "V81 professional button implementation verified."
-
-          fi
+          echo
+          echo "V81 professional button implementation verified."
 
 
       # ============================================================
-      # 15. CLEAN
-      # IMPORTANT:
-      # USE gradle, NOT ./gradlew
+      # 16. CLEAN PROJECT
       # ============================================================
 
       - name: Clean project
@@ -816,7 +864,7 @@ jobs:
 
 
       # ============================================================
-      # 16. COMPILE RELEASE KOTLIN
+      # 17. COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -826,14 +874,21 @@ jobs:
 
           cd "${PROJECT_ROOT}"
 
+          echo "=============================================="
+          echo "COMPILING RELEASE KOTLIN"
+          echo "=============================================="
+
           gradle \
             :app:compileReleaseKotlin \
             --no-daemon \
             --stacktrace
 
+          echo
+          echo "Kotlin compilation successful."
+
 
       # ============================================================
-      # 17. BUILD RELEASE APK
+      # 18. BUILD RELEASE APK
       # ============================================================
 
       - name: Build unsigned Release APK
@@ -843,14 +898,21 @@ jobs:
 
           cd "${PROJECT_ROOT}"
 
+          echo "=============================================="
+          echo "BUILDING RELEASE APK"
+          echo "=============================================="
+
           gradle \
             :app:assembleRelease \
             --no-daemon \
             --stacktrace
 
+          echo
+          echo "Release APK build successful."
+
 
       # ============================================================
-      # 18. LOCATE RELEASE APK
+      # 19. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -860,14 +922,12 @@ jobs:
 
           cd "${PROJECT_ROOT}"
 
-
           APK="$(
             find app/build/outputs/apk/release \
               -type f \
               -name "*.apk" \
               | head -n 1
           )"
-
 
           if [ -z "${APK}" ]; then
 
@@ -886,20 +946,16 @@ jobs:
 
           fi
 
-
           echo
           echo "Release APK found:"
           echo "${APK}"
 
-
           mkdir -p \
             "${GITHUB_WORKSPACE}/release"
-
 
           cp \
             "${APK}" \
             "${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release-unsigned.apk"
-
 
           echo \
             "UNSIGNED_APK=${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release-unsigned.apk" \
@@ -907,7 +963,7 @@ jobs:
 
 
       # ============================================================
-      # 19. VERIFY UNSIGNED APK
+      # 20. VERIFY UNSIGNED APK
       # ============================================================
 
       - name: Verify unsigned APK
@@ -917,32 +973,21 @@ jobs:
 
           APK="${UNSIGNED_APK}"
 
-
           if [ ! -f "${APK}" ]; then
-
             echo "ERROR: Unsigned APK missing."
-
             exit 1
-
           fi
-
 
           AAPT="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/aapt"
 
-
           if [ ! -x "${AAPT}" ]; then
-
             echo "ERROR: aapt not found."
-
             exit 1
-
           fi
-
 
           echo "=============================================="
           echo "UNSIGNED APK INFORMATION"
           echo "=============================================="
-
 
           BADGING="$(
             "${AAPT}" \
@@ -950,10 +995,8 @@ jobs:
               "${APK}"
           )"
 
-
           echo "${BADGING}" \
             | grep "^package:"
-
 
           echo
           echo "Checking package..."
@@ -966,9 +1009,7 @@ jobs:
               exit 1
             }
 
-
           echo "Package ID OK."
-
 
           echo
           echo "Checking version..."
@@ -977,13 +1018,12 @@ jobs:
             | grep \
               "^package:"
 
-
           echo
           echo "Unsigned APK verification completed."
 
 
       # ============================================================
-      # 20. RESTORE RELEASE KEYSTORE
+      # 21. RESTORE RELEASE KEYSTORE
       # ============================================================
 
       - name: Restore release keystore
@@ -997,71 +1037,47 @@ jobs:
         run: |
           set -e
 
-
           if [ -z "${RELEASE_KEYSTORE_BASE64}" ]; then
-
             echo "ERROR: RELEASE_KEYSTORE_BASE64 secret is missing."
-
             exit 1
-
           fi
-
 
           if [ -z "${RELEASE_STORE_PASSWORD}" ]; then
-
             echo "ERROR: RELEASE_STORE_PASSWORD secret is missing."
-
             exit 1
-
           fi
-
 
           if [ -z "${RELEASE_KEY_ALIAS}" ]; then
-
             echo "ERROR: RELEASE_KEY_ALIAS secret is missing."
-
             exit 1
-
           fi
-
 
           if [ -z "${RELEASE_KEY_PASSWORD}" ]; then
-
             echo "ERROR: RELEASE_KEY_PASSWORD secret is missing."
-
             exit 1
-
           fi
-
 
           mkdir -p \
             "${RUNNER_TEMP}/keystore"
-
 
           echo "${RELEASE_KEYSTORE_BASE64}" \
             | base64 --decode \
             > "${RUNNER_TEMP}/keystore/release.keystore"
 
-
           if [ ! -s "${RUNNER_TEMP}/keystore/release.keystore" ]; then
-
             echo "ERROR: Release keystore is empty."
-
             exit 1
-
           fi
-
 
           echo \
             "KEYSTORE_PATH=${RUNNER_TEMP}/keystore/release.keystore" \
             >> "$GITHUB_ENV"
 
-
           echo "Release keystore restored successfully."
 
 
       # ============================================================
-      # 21. ZIPALIGN
+      # 22. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1069,18 +1085,12 @@ jobs:
         run: |
           set -e
 
-
           ZIPALIGN="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/zipalign"
 
-
           if [ ! -x "${ZIPALIGN}" ]; then
-
             echo "ERROR: zipalign not found."
-
             exit 1
-
           fi
-
 
           "${ZIPALIGN}" \
             -p \
@@ -1089,13 +1099,12 @@ jobs:
             "${UNSIGNED_APK}" \
             "${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release-aligned.apk"
 
-
           echo
           echo "Zipalign completed."
 
 
       # ============================================================
-      # 22. SIGN RELEASE APK
+      # 23. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1108,18 +1117,12 @@ jobs:
         run: |
           set -e
 
-
           APKSIGNER="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/apksigner"
 
-
           if [ ! -x "${APKSIGNER}" ]; then
-
             echo "ERROR: apksigner not found."
-
             exit 1
-
           fi
-
 
           "${APKSIGNER}" sign \
             --ks "${KEYSTORE_PATH}" \
@@ -1134,7 +1137,6 @@ jobs:
             "${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release.apk" \
             "${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release-aligned.apk"
 
-
           echo
           echo "=============================================="
           echo "APK SIGNING COMPLETED"
@@ -1142,7 +1144,7 @@ jobs:
 
 
       # ============================================================
-      # 23. VERIFY SIGNATURE
+      # 24. VERIFY SIGNATURE
       # ============================================================
 
       - name: Verify signed APK
@@ -1150,14 +1152,11 @@ jobs:
         run: |
           set -e
 
-
           APKSIGNER="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/apksigner"
-
 
           "${APKSIGNER}" verify \
             --verbose \
             "${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release.apk"
-
 
           echo
           echo "=============================================="
@@ -1166,7 +1165,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY FINAL APK
+      # 25. VERIFY FINAL APK
       # ============================================================
 
       - name: Verify final APK
@@ -1174,20 +1173,14 @@ jobs:
         run: |
           set -e
 
-
           APK="${GITHUB_WORKSPACE}/release/Majdoor-Hisaab-PRO-1.77.0-release.apk"
 
           AAPT="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/aapt"
 
-
           if [ ! -f "${APK}" ]; then
-
             echo "ERROR: Final APK missing."
-
             exit 1
-
           fi
-
 
           BADGING="$(
             "${AAPT}" \
@@ -1195,16 +1188,13 @@ jobs:
               "${APK}"
           )"
 
-
           echo
           echo "=============================================="
           echo "FINAL APK INFORMATION"
           echo "=============================================="
 
-
           echo "${BADGING}" \
             | grep "^package:"
-
 
           echo
           echo "Checking package..."
@@ -1217,9 +1207,7 @@ jobs:
               exit 1
             }
 
-
           echo "Package OK."
-
 
           echo
           echo "Checking version name..."
@@ -1232,9 +1220,7 @@ jobs:
               exit 1
             }
 
-
           echo "Version name OK."
-
 
           echo
           echo "Checking version code..."
@@ -1247,15 +1233,12 @@ jobs:
               exit 1
             }
 
-
           echo "Version code OK."
-
 
           echo
           echo "=============================================="
           echo "FINAL APK VERIFICATION SUCCESS"
           echo "=============================================="
-
 
           echo "Package      : ${PACKAGE_NAME}"
           echo "Version Name : ${VERSION_NAME}"
@@ -1263,7 +1246,7 @@ jobs:
 
 
       # ============================================================
-      # 25. SHA256
+      # 26. SHA256
       # ============================================================
 
       - name: Generate SHA256
@@ -1273,12 +1256,10 @@ jobs:
 
           cd "${GITHUB_WORKSPACE}/release"
 
-
           sha256sum \
             "Majdoor-Hisaab-PRO-1.77.0-release.apk" \
             > \
             "Majdoor-Hisaab-PRO-1.77.0-release.apk.sha256"
-
 
           echo
           echo "SHA256:"
@@ -1288,7 +1269,7 @@ jobs:
 
 
       # ============================================================
-      # 26. SHOW FINAL FILES
+      # 27. SHOW FINAL FILES
       # ============================================================
 
       - name: Show final release files
@@ -1306,7 +1287,7 @@ jobs:
 
 
       # ============================================================
-      # 27. UPLOAD SIGNED APK
+      # 28. UPLOAD SIGNED APK
       # ============================================================
 
       - name: Upload Signed Release APK
@@ -1325,7 +1306,7 @@ jobs:
 
 
       # ============================================================
-      # 28. SUCCESS
+      # 29. SUCCESS
       # ============================================================
 
       - name: Build Success
