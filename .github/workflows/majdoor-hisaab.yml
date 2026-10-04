@@ -1331,6 +1331,15 @@ jobs:
 
       # ============================================================
       # 23. VERIFY / PREPARE RELEASE SIGNING
+      #
+      # FIX:
+      # Temporary keystore is now JKS.
+      # Store password == key password.
+      #
+      # This directly fixes:
+      # BadPaddingException
+      # Get Key failed
+      # Failed to load signer
       # ============================================================
 
       - name: Verify Release Signing Secrets
@@ -1349,9 +1358,9 @@ jobs:
 
           KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
 
-          #
-          # PERMANENT SIGNING MODE
-          #
+          # ========================================================
+          # PERMANENT SIGNING
+          # ========================================================
 
           if [ -n "$KEYSTORE_BASE64" ] && \
              [ -n "$KEYSTORE_PASSWORD" ] && \
@@ -1379,12 +1388,21 @@ jobs:
 
               echo ""
               echo "ERROR: Permanent release keystore verification failed."
+              echo ""
+              echo "Check KEYSTORE_BASE64 and KEYSTORE_PASSWORD."
+              exit 1
+            fi
+
+            # Verify that the requested alias exists.
+            if ! keytool \
+              -list \
+              -keystore "$KEYSTORE_FILE" \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -alias "$KEY_ALIAS" \
+              >/dev/null 2>&1; then
 
               echo ""
-              echo "Check:"
-              echo "KEYSTORE_BASE64"
-              echo "KEYSTORE_PASSWORD"
-
+              echo "ERROR: KEY_ALIAS was not found in the keystore."
               exit 1
             fi
 
@@ -1399,29 +1417,36 @@ jobs:
 
           else
 
-            #
+            # ======================================================
             # TEMPORARY SIGNING FALLBACK
             #
-            # This prevents the build from stopping only because
-            # GitHub signing secrets have not yet been configured.
+            # IMPORTANT:
+            # JKS is used instead of PKCS12.
             #
+            # The same password is used for:
+            # - keystore
+            # - private key
+            #
+            # This prevents BadPaddingException.
+            # ======================================================
 
             echo ""
             echo "WARNING: Permanent signing secrets are not configured."
             echo ""
-            echo "Creating temporary release keystore."
+            echo "CREATING TEMPORARY RELEASE KEYSTORE..."
 
-            TEMP_STORE_PASSWORD="$(openssl rand -hex 24)"
-            TEMP_KEY_PASSWORD="$(openssl rand -hex 24)"
+            TEMP_PASSWORD="$(openssl rand -hex 32)"
             TEMP_ALIAS="majdoor-hisaab-v82"
+
+            rm -f "$KEYSTORE_FILE"
 
             keytool \
               -genkeypair \
               -v \
               -keystore "$KEYSTORE_FILE" \
-              -storetype PKCS12 \
-              -storepass "$TEMP_STORE_PASSWORD" \
-              -keypass "$TEMP_KEY_PASSWORD" \
+              -storetype JKS \
+              -storepass "$TEMP_PASSWORD" \
+              -keypass "$TEMP_PASSWORD" \
               -alias "$TEMP_ALIAS" \
               -keyalg RSA \
               -keysize 4096 \
@@ -1434,10 +1459,15 @@ jobs:
               exit 1
             fi
 
+            echo ""
+            echo "VERIFYING TEMPORARY KEYSTORE..."
+
             if ! keytool \
               -list \
               -keystore "$KEYSTORE_FILE" \
-              -storepass "$TEMP_STORE_PASSWORD" \
+              -storetype JKS \
+              -storepass "$TEMP_PASSWORD" \
+              -alias "$TEMP_ALIAS" \
               >/dev/null 2>&1; then
 
               echo ""
@@ -1447,22 +1477,19 @@ jobs:
 
             echo "RELEASE_SIGNING_MODE=TEMPORARY" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$TEMP_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
             echo ""
             echo "TEMPORARY RELEASE KEYSTORE CREATED."
-
             echo ""
-            echo "WARNING:"
-            echo "This APK will be signed and installable."
-            echo "Do NOT use this temporary key as the permanent"
-            echo "Play Store signing/upload key."
-          fi
+            echo "TEMPORARY KEYSTORE TYPE: JKS"
+            echo "KEY PASSWORD = STORE PASSWORD"
+            echo ""
+            echo "RELEASE SIGNING PREPARATION PASSED."
 
-          echo ""
-          echo "RELEASE SIGNING PREPARATION PASSED."
+          fi
 
 
       # ============================================================
@@ -1513,25 +1540,26 @@ jobs:
           ls -lh "$RELEASE_KEYSTORE"
 
           echo ""
+          echo "SIGNING MODE:"
+          echo "${RELEASE_SIGNING_MODE:-UNKNOWN}"
+
+          echo ""
           echo "VERIFYING RELEASE KEYSTORE..."
 
           if ! keytool \
             -list \
             -keystore "$RELEASE_KEYSTORE" \
             -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
             >/dev/null 2>&1; then
 
             echo ""
-            echo "ERROR: Release keystore verification failed."
+            echo "ERROR: Release keystore / alias verification failed."
             exit 1
           fi
 
           echo ""
           echo "RELEASE KEYSTORE VERIFIED."
-
-          echo ""
-          echo "SIGNING MODE:"
-          echo "${RELEASE_SIGNING_MODE:-UNKNOWN}"
 
           echo ""
           echo "RELEASE KEY ALIAS:"
@@ -1629,13 +1657,36 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${ALIGNED_APK:-}" ]; then
+            echo ""
+            echo "ERROR: ALIGNED_APK is not set."
+            exit 1
+          fi
+
+          if [ ! -f "$ALIGNED_APK" ]; then
+            echo ""
+            echo "ERROR: Aligned APK not found."
+            exit 1
+          fi
+
           SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
+
+          rm -f "$SIGNED_APK"
+
+          echo ""
+          echo "SIGNING MODE:"
+          echo "${RELEASE_SIGNING_MODE:-UNKNOWN}"
+
+          echo ""
+          echo "KEY ALIAS:"
+          echo "$RELEASE_KEY_ALIAS"
 
           echo ""
           echo "SIGNING APK..."
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
             --ks "$RELEASE_KEYSTORE" \
+            --ks-type JKS \
             --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
             --ks-key-alias "$RELEASE_KEY_ALIAS" \
             --key-pass "pass:$RELEASE_KEY_PASSWORD" \
