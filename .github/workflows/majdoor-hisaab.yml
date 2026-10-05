@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -40,17 +39,9 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-
-      # ============================================================
-      # 2. JAVA 17
-      # ============================================================
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -59,19 +50,11 @@ jobs:
           java-version: "17"
 
 
-      # ============================================================
-      # 3. GRADLE 8.11.1
-      # ============================================================
-
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
 
-
-      # ============================================================
-      # 4. LOCATE ANDROID SDK
-      # ============================================================
 
       - name: Locate Android SDK
         shell: bash
@@ -80,26 +63,28 @@ jobs:
 
           if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
             SDK_ROOT="$ANDROID_HOME"
+
           elif [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
             SDK_ROOT="$ANDROID_SDK_ROOT"
+
           elif [ -d "/usr/local/lib/android/sdk" ]; then
             SDK_ROOT="/usr/local/lib/android/sdk"
+
           else
             SDK_ROOT=$(find /usr/local/lib/android \
               -maxdepth 3 \
               -type d \
-              -name "sdk" \
+              -name sdk \
               -print \
               -quit 2>/dev/null || true)
           fi
 
-          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
-            echo "ERROR: Android SDK not found."
-            exit 1
-          fi
+          test -n "$SDK_ROOT"
+          test -d "$SDK_ROOT"
 
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
           if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -107,28 +92,19 @@ jobs:
           else
             SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
               -type f \
-              -name "sdkmanager" \
+              -name sdkmanager \
               -print \
               -quit 2>/dev/null || true)
           fi
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
+          test -n "$SDKMANAGER"
+          test -x "$SDKMANAGER"
 
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
-          echo "ANDROID SDK: $SDK_ROOT"
-          echo "SDKMANAGER: $SDKMANAGER"
-
           "$SDKMANAGER" --version
 
-
-      # ============================================================
-      # 5. INSTALL ANDROID SDK 36
-      # ============================================================
 
       - name: Install Android SDK 36
         shell: bash
@@ -145,30 +121,20 @@ jobs:
           echo "ANDROID SDK INSTALLATION PASSED."
 
 
-      # ============================================================
-      # 6. VERIFY ANDROID SDK
-      # ============================================================
-
       - name: Verify Android SDK
         shell: bash
         run: |
           set -e
 
-          test -d "$ANDROID_HOME/platform-tools"
           test -d "$ANDROID_HOME/platforms/android-36"
           test -d "$ANDROID_HOME/build-tools/36.0.0"
 
-          test -x "$ANDROID_HOME/platform-tools/adb"
           test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
           echo "ANDROID SDK VERIFICATION PASSED."
 
-
-      # ============================================================
-      # 7. FIND PROJECT ZIP
-      # ============================================================
 
       - name: Find Majdoor Hisaab Project ZIP
         shell: bash
@@ -185,8 +151,8 @@ jobs:
             FOUND_ZIP=$(
               find . \
                 -type f \
-                -name "Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_*.zip" \
-                -not -path "./.git/*" \
+                -name 'Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_*.zip' \
+                -not -path './.git/*' \
                 -print \
                 | sort \
                 | tail -1
@@ -197,40 +163,24 @@ jobs:
             FOUND_ZIP=$(
               find . \
                 -type f \
-                -iname "*Majdoor*Hisaab*.zip" \
-                -not -path "./.git/*" \
+                -iname '*Majdoor*Hisaab*.zip' \
+                -not -path './.git/*' \
                 -print \
                 | sort \
                 | tail -1
             )
           fi
 
-          if [ -z "$FOUND_ZIP" ] || [ ! -f "$FOUND_ZIP" ]; then
-            echo "ERROR: Majdoor Hisaab project ZIP NOT FOUND."
-            find . \
-              -type f \
-              -name "*.zip" \
-              -not -path "./.git/*" \
-              -print \
-              | sort
-            exit 1
-          fi
+          test -n "$FOUND_ZIP"
+          test -f "$FOUND_ZIP"
 
           FOUND_ZIP="${FOUND_ZIP#./}"
 
-          echo "PROJECT ZIP FOUND:"
-          echo "$FOUND_ZIP"
-
-          ls -lh "$FOUND_ZIP"
-
           echo "ZIP_NAME=$FOUND_ZIP" >> "$GITHUB_ENV"
 
-          echo "ZIP DETECTION PASSED."
+          echo "PROJECT ZIP:"
+          echo "$FOUND_ZIP"
 
-
-      # ============================================================
-      # 8. EXTRACT PROJECT
-      # ============================================================
 
       - name: Extract Majdoor Hisaab Project
         shell: bash
@@ -245,37 +195,22 @@ jobs:
           SETTINGS_FILE=$(find build_source \
             -type f \
             \( \
-              -name "settings.gradle" \
+              -name settings.gradle \
               -o \
-              -name "settings.gradle.kts" \
+              -name settings.gradle.kts \
             \) \
             -print \
             -quit)
 
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Gradle settings file not found."
-
-            find build_source \
-              -maxdepth 8 \
-              -type f \
-              -print \
-              | sort \
-              | head -300
-
-            exit 1
-          fi
+          test -n "$SETTINGS_FILE"
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "PROJECT DIRECTORY:"
+          echo "PROJECT DIR:"
           echo "$PROJECT_DIR"
 
-
-      # ============================================================
-      # 9. VERIFY ANDROID PROJECT
-      # ============================================================
 
       - name: Verify Android Project
         working-directory: ${{ env.PROJECT_DIR }}
@@ -283,22 +218,13 @@ jobs:
         run: |
           set -e
 
-          pwd
+          test -d app
 
-          test -d "app"
-
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERROR: app Gradle file not found."
-            exit 1
-          fi
+          test -f app/build.gradle.kts \
+            || test -f app/build.gradle
 
           echo "ANDROID PROJECT VERIFIED."
 
-
-      # ============================================================
-      # 10. VERIFY GRADLE
-      # ============================================================
 
       - name: Verify Gradle Environment
         working-directory: ${{ env.PROJECT_DIR }}
@@ -318,17 +244,10 @@ jobs:
           echo "EXPECTED GRADLE: $GRADLE_VERSION"
           echo "DETECTED GRADLE: $DETECTED"
 
-          if [ "$DETECTED" != "$GRADLE_VERSION" ]; then
-            echo "ERROR: Gradle version mismatch."
-            exit 1
-          fi
+          test "$DETECTED" = "$GRADLE_VERSION"
 
           echo "GRADLE ENVIRONMENT PASSED."
 
-
-      # ============================================================
-      # 11. LOCATE MAIN KOTLIN SOURCE
-      # ============================================================
 
       - name: Locate Main Kotlin Source
         working-directory: ${{ env.PROJECT_DIR }}
@@ -336,24 +255,20 @@ jobs:
         run: |
           set -e
 
-          MAIN_FILES=$(find app/src/main \
-            -type f \
-            -name "MainActivity.kt" \
-            -print)
+          MAIN_FILES=$(
+            find app/src/main \
+              -type f \
+              -name MainActivity.kt \
+              -print
+          )
 
-          echo "$MAIN_FILES"
+          COUNT=$(
+            echo "$MAIN_FILES" |
+            sed '/^$/d' |
+            wc -l
+          )
 
-          COUNT=$(echo "$MAIN_FILES" | sed '/^$/d' | wc -l)
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: MainActivity.kt not found."
-            exit 1
-          fi
-
-          if [ "$COUNT" -gt 1 ]; then
-            echo "ERROR: Multiple MainActivity.kt files found."
-            exit 1
-          fi
+          test "$COUNT" -eq 1
 
           MAIN_FILE=$(echo "$MAIN_FILES" | head -1)
 
@@ -364,22 +279,7 @@ jobs:
 
 
       # ============================================================
-      # 18. COMPILE RELEASE KOTLIN
-      #
-      # ALL AUDITED FIXES:
-      #
-      # 1. mapList() syntax
-      # 2. LabourDetail() scope/braces
-      # 3. ExpenseDialog() argument order
-      # 4. SaleDialog() argument order
-      # 5. setContent import
-      # 6. persistPhoto() explicit stream types
-      # 7. BottomBar Icon() arguments
-      # 8. TopBar Image() arguments
-      # 9. Dashboard Image() arguments
-      #
-      # The patch is idempotent:
-      # already-fixed source is accepted.
+      # COMPILE RELEASE KOTLIN
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -388,49 +288,50 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN"
-          echo "=============================================="
-
           test -f "$MAIN_FILE"
 
-          echo ""
-          echo "MAIN SOURCE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "KOTLIN FILE COUNT:"
-          find app/src/main \
-            -type f \
-            -name "*.kt" \
-            | wc -l
-
           python3 - "$MAIN_FILE" <<'PY'
+          import re
           import sys
           from pathlib import Path
 
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
 
-          def replace_if_needed(old, new, label):
+
+          def replace_once(old, new, label):
               global source
 
               if old in source:
                   source = source.replace(old, new, 1)
-                  print(f"FIX APPLIED: {label}")
+                  print("FIX APPLIED:", label)
+
               elif new in source:
-                  print(f"ALREADY FIXED: {label}")
+                  print("ALREADY FIXED:", label)
+
               else:
                   raise SystemExit(
-                      f"ERROR: Source pattern not found: {label}"
+                      "ERROR: pattern not found: " + label
                   )
 
+
           # ==========================================================
-          # 1. mapList()
+          # 1. Store context property
           # ==========================================================
 
-          replace_if_needed(
-              '''private fun <T> JSONArray.mapList(mapper:(JSONObject)->T):List<T>=(0 until length()).map{mapper(getJSONObject(it))}''',
+          replace_once(
+              'private class Store(context:Context){',
+              'private class Store(private val context:Context){',
+              'Store context property'
+          )
+
+
+          # ==========================================================
+          # 2. JSONArray.mapList()
+          # ==========================================================
+
+          replace_once(
+              'private fun <T> JSONArray.mapList(mapper:(JSONObject)->T):List<T>=(0 until length()).map{mapper(getJSONObject(it))}',
 
               '''private fun <T> JSONArray.mapList(
               mapper: (JSONObject) -> T
@@ -438,288 +339,22 @@ jobs:
               mapper(getJSONObject(it))
           }''',
 
-              "JSONArray.mapList()"
+              'JSONArray.mapList'
           )
 
-          # ==========================================================
-          # 2. ExpenseDialog()
-          # ==========================================================
-
-          replace_if_needed(
-              '''ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),edit!=null){add=false;edit=null}''',
-
-              '''ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),{add=false;edit=null},edit!=null)''',
-
-              "ExpenseDialog() argument order"
-          )
 
           # ==========================================================
-          # 3. SaleDialog()
-          # ==========================================================
-
-          replace_if_needed(
-              '''SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),edit!=null){add=false;edit=null}''',
-
-              '''SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),{add=false;edit=null},edit!=null)''',
-
-              "SaleDialog() argument order"
-          )
-
-          # ==========================================================
-          # 4. LabourDetail()
-          # ==========================================================
-
-          start_marker = "@Composable private fun LabourDetail"
-          end_marker = "@Composable private fun PaymentDialog"
-
-          start = source.find(start_marker)
-          end = source.find(end_marker, start)
-
-          if start < 0 or end < 0:
-              raise SystemExit(
-                  "ERROR: LabourDetail() boundaries not found."
-              )
-
-          labour_detail = '''@Composable
-          private fun LabourDetail(
-              store: Store,
-              id: String,
-              onBack: () -> Unit
-          ) {
-              val l = store.labours.firstOrNull { it.id == id } ?: return
-
-              var edit by remember { mutableStateOf(false) }
-              var payment by remember { mutableStateOf(false) }
-              var rate by remember { mutableStateOf(false) }
-              var delPay by remember { mutableStateOf<Payment?>(null) }
-
-              val wage = store.attendances
-                  .filter { it.labourId == id }
-                  .sumOf { it.fraction * it.rate }
-
-              val paid = store.payments
-                  .filter { it.labourId == id }
-                  .sumOf { it.amount }
-
-              Column(Modifier.fillMaxSize()) {
-
-                  DetailTopBar(
-                      "👷 ${l.name.ifBlank { "मजदूर" }}",
-                      onBack
-                  )
-
-                  LazyColumn(
-                      Modifier.padding(16.dp),
-                      verticalArrangement = Arrangement.spacedBy(10.dp)
-                  ) {
-
-                      item {
-                          Row(
-                              Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
-                          ) {
-                              Box(Modifier.weight(1f)) {
-                                  Stat("मजदूरी", wage)
-                              }
-
-                              Box(Modifier.weight(1f)) {
-                                  Stat("भुगतान", paid)
-                              }
-
-                              Box(Modifier.weight(1f)) {
-                                  Stat("बाकी", wage - paid)
-                              }
-                          }
-                      }
-
-                      item {
-                          Button(
-                              onClick = { payment = true },
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Text("₹ Cash+ भुगतान जोड़ें")
-                          }
-                      }
-
-                      item {
-                          Button(
-                              onClick = { rate = true },
-                              modifier = Modifier.fillMaxWidth(),
-                              colors = ButtonDefaults.buttonColors(
-                                  containerColor = GreenDark
-                              )
-                          ) {
-                              Text("दिहाड़ी बदलें")
-                          }
-                      }
-
-                      item {
-                          Text(
-                              "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
-                              fontWeight = FontWeight.Bold,
-                              color = Green
-                          )
-                      }
-
-                      item {
-                          Text(
-                              "दिहाड़ी इतिहास",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          store.rateHistoryFor(id),
-                          key = { it.id }
-                      ) { r ->
-                          Text(
-                              "${displayDate(r.effectiveDate)} से ₹${money(r.rate)}/दिन",
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 3.dp),
-                              fontSize = 12.sp,
-                              color = Color.Gray
-                          )
-                      }
-
-                      item {
-                          Text(
-                              "हाजिरी",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          store.attendances
-                              .filter { it.labourId == id }
-                              .sortedByDescending { it.date },
-                          key = { it.id }
-                      ) { a ->
-
-                          val f = store.fields.firstOrNull {
-                              it.id == a.fieldId
-                          }
-
-                          Card(
-                              Modifier.fillMaxWidth()
-                          ) {
-                              Text(
-                                  "${displayDate(a.date)} • ${f?.name ?: "खेत"} • " +
-                                      "${store.crops.firstOrNull { it.id == a.cropId }?.name?.let { "$it • " } ?: ""}" +
-                                      "${if (a.fraction == 1.0) "Full" else "Half"} • " +
-                                      "₹${money(a.fraction * a.rate)}",
-
-                                  Modifier.padding(12.dp)
-                              )
-                          }
-                      }
-
-                      item {
-                          Text(
-                              "भुगतान",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          store.payments
-                              .filter { it.labourId == id }
-                              .sortedByDescending { it.date },
-                          key = { it.id }
-                      ) { p ->
-
-                          val f = store.fields.firstOrNull {
-                              it.id == p.fieldId
-                          }
-
-                          Row(
-                              Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 5.dp),
-                              verticalAlignment = Alignment.CenterVertically
-                          ) {
-
-                              Text(
-                                  "${displayDate(p.date)} • ${f?.name ?: "सामान्य"}" +
-                                      "${store.crops.firstOrNull { it.id == p.cropId }?.name?.let { " • $it" } ?: ""}" +
-                                      " • ₹${money(p.amount)}",
-
-                                  modifier = Modifier.weight(1f)
-                              )
-
-                              IconButton(
-                                  onClick = {
-                                      delPay = p
-                                  }
-                              ) {
-                                  Icon(
-                                      imageVector = Icons.Default.Delete,
-                                      contentDescription = null,
-                                      tint = Color(0xFFB3261E)
-                                  )
-                              }
-                          }
-                      }
-                  }
-
-                  if (edit) {
-                      LabourDialog(store, l) {
-                          edit = false
-                      }
-                  }
-
-                  if (payment) {
-                      PaymentDialog(store, id, null, "") {
-                          payment = false
-                      }
-                  }
-
-                  if (rate) {
-                      RateDialog(store, id) {
-                          rate = false
-                      }
-                  }
-
-                  delPay?.let { p ->
-                      ConfirmDialog(
-                          "भुगतान हटाएँ?",
-                          "यह payment record हट जाएगा।",
-                          {
-                              store.deletePayment(p.id)
-                              delPay = null
-                          },
-                          {
-                              delPay = null
-                          }
-                      )
-                  }
-              }
-          }
-
-          '''
-
-          source = source[:start] + labour_detail + source[end:]
-
-          print("FIX APPLIED: LabourDetail()")
-
-          # ==========================================================
-          # 5. setContent IMPORT
+          # 3. setContent import
           # ==========================================================
 
           if "import androidx.activity.compose.setContent" not in source:
 
-              if "import androidx.activity.ComponentActivity\n" not in source:
-                  raise SystemExit(
-                      "ERROR: ComponentActivity import not found."
-                  )
-
               source = source.replace(
                   "import androidx.activity.ComponentActivity\n",
+
                   "import androidx.activity.ComponentActivity\n"
                   "import androidx.activity.compose.setContent\n",
+
                   1
               )
 
@@ -728,57 +363,95 @@ jobs:
           else:
               print("ALREADY FIXED: setContent import")
 
+
           # ==========================================================
-          # 6. persistPhoto()
+          # 4. ExpenseDialog argument order
           # ==========================================================
 
-          start_marker = "    fun persistPhoto("
-          end_marker = "\n    fun addLabour"
+          expense_old = '''if(add)ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),edit!=null){add=false;edit=null}'''
 
-          start = source.find(start_marker)
-          end = source.find(end_marker, start)
+          expense_new = '''if(add)ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),{add=false;edit=null},edit!=null)'''
 
-          if start < 0 or end < 0:
+          replace_once(
+              expense_old,
+              expense_new,
+              "ExpenseDialog argument order"
+          )
+
+
+          # ==========================================================
+          # 5. SaleDialog argument order
+          # ==========================================================
+
+          sale_old = '''if(add)SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),edit!=null){add=false;edit=null}'''
+
+          sale_new = '''if(add)SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),{add=false;edit=null},edit!=null)'''
+
+          replace_once(
+              sale_old,
+              sale_new,
+              "SaleDialog argument order"
+          )
+
+
+          # ==========================================================
+          # 6. LabourDetail PaymentDialog argument order
+          # ==========================================================
+
+          replace_once(
+              'if(payment)PaymentDialog(store,id,null,""){payment=false}',
+
+              'if(payment)PaymentDialog(store,id,null,null){payment=false}',
+
+              'LabourDetail PaymentDialog arguments'
+          )
+
+
+          # ==========================================================
+          # 7. persistPhoto()
+          # ==========================================================
+
+          persist_start = source.find(
+              '    fun persistPhoto('
+          )
+
+          persist_end = source.find(
+              '    fun addLabour(',
+              persist_start
+          )
+
+          if persist_start < 0 or persist_end < 0:
               raise SystemExit(
-                  "ERROR: persistPhoto() boundaries not found."
+                  'ERROR: persistPhoto boundaries not found'
               )
 
-          persist_photo = '''    fun persistPhoto(
-              uriString: String,
-              owner: String
-          ): String {
+          persist_photo = '''    fun persistPhoto(uriString:String,owner:String):String{
+              if(uriString.isBlank()||uriString.startsWith("file://")) return uriString
 
-              if (
-                  uriString.isBlank() ||
-                  uriString.startsWith("file://")
-              ) {
-                  return uriString
-              }
+              return try{
+                  val uri:Uri=Uri.parse(uriString)
 
-              return try {
-
-                  val uri: Uri = Uri.parse(uriString)
-
-                  val dir: File =
-                      File(context.filesDir, "photos").apply {
+                  val dir:File=
+                      File(context.filesDir,"photos").apply{
                           mkdirs()
                       }
 
-                  val file: File =
+                  val file:File=
                       File(
                           dir,
                           "${owner}_${UUID.randomUUID()}.jpg"
                       )
 
-                  val input: java.io.InputStream =
+                  val input:java.io.InputStream=
                       context.contentResolver
                           .openInputStream(uri)
-                          ?: return ""
+                          ?:return ""
 
-                  input.use { inputStream: java.io.InputStream ->
+                  input.use{
+                      inputStream:java.io.InputStream->
 
-                      FileOutputStream(file).use {
-                          outputStream: FileOutputStream ->
+                      FileOutputStream(file).use{
+                          outputStream:FileOutputStream->
 
                           inputStream.copyTo(
                               outputStream
@@ -788,104 +461,60 @@ jobs:
 
                   file.absolutePath
 
-              } catch (_: Exception) {
-
+              }catch(_:Exception){
                   ""
               }
           }
+
 '''
 
-          source = source[:start] + persist_photo + source[end:]
-
-          print("FIX APPLIED: persistPhoto()")
-
-          # ==========================================================
-          # 7. BottomBar Icon()
-          # ==========================================================
-
-          old_icon = (
-              "Icon(ic,null,tint=if(current==k)Green else Color.Gray,Modifier.size(22.dp))"
+          source = (
+              source[:persist_start]
+              + persist_photo
+              + source[persist_end:]
           )
 
-          new_icon = (
-              "Icon("
-              "imageVector=ic,"
-              "contentDescription=null,"
-              "modifier=Modifier.size(22.dp),"
-              "tint=if(current==k)Green else Color.Gray"
-              ")"
-          )
+          print("FIX APPLIED: persistPhoto")
 
-          if old_icon in source:
-              source = source.replace(
-                  old_icon,
-                  new_icon,
-                  1
-              )
-              print("FIX APPLIED: BottomBar Icon()")
-          elif new_icon in source:
-              print("ALREADY FIXED: BottomBar Icon()")
-          else:
-              raise SystemExit(
-                  "ERROR: BottomBar Icon() pattern not found."
-              )
 
           # ==========================================================
-          # 8. TopBar Image()
+          # 8. BottomBar Icon
           # ==========================================================
 
-          old_top_image = (
-              "Image("
-              "painterResource(R.drawable.majdoor_logo_small),"
-              "null,"
-              "Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),"
-              "contentScale=ContentScale.Crop"
-              ")"
+          replace_once(
+              'Icon(ic,null,tint=if(current==k)Green else Color.Gray,Modifier.size(22.dp))',
+
+              'Icon(imageVector=ic,contentDescription=null,modifier=Modifier.size(22.dp),tint=if(current==k)Green else Color.Gray)',
+
+              'BottomBar Icon'
           )
 
-          new_top_image = '''Image(
-              painter = painterResource(R.drawable.majdoor_logo_small),
-              contentDescription = null,
-              modifier = Modifier
-                  .size(42.dp)
-                  .clip(RoundedCornerShape(10.dp)),
-              contentScale = ContentScale.Crop
-          )'''
-
-          replace_if_needed(
-              old_top_image,
-              new_top_image,
-              "TopBar Image()"
-          )
 
           # ==========================================================
-          # 9. Dashboard Image()
+          # 9. TopBar Image
           # ==========================================================
 
-          old_dashboard_image = (
-              "Image("
-              "painterResource(R.drawable.majdoor_logo),"
-              "null,"
-              "Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),"
-              "ContentScale.Fit"
-              ")"
+          replace_once(
+              'Image(painterResource(R.drawable.majdoor_logo_small),null,Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)',
+
+              'Image(painter=painterResource(R.drawable.majdoor_logo_small),contentDescription=null,modifier=Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)',
+
+              'TopBar Image'
           )
 
-          new_dashboard_image = '''Image(
-              painter = painterResource(R.drawable.majdoor_logo),
-              contentDescription = null,
-              modifier = Modifier
-                  .fillMaxWidth()
-                  .height(135.dp)
-                  .clip(RoundedCornerShape(24.dp)),
-              contentScale = ContentScale.Fit
-          )'''
 
-          replace_if_needed(
-              old_dashboard_image,
-              new_dashboard_image,
-              "Dashboard Image()"
+          # ==========================================================
+          # 10. Dashboard Image
+          # ==========================================================
+
+          replace_once(
+              'Image(painterResource(R.drawable.majdoor_logo),null,Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),ContentScale.Fit)',
+
+              'Image(painter=painterResource(R.drawable.majdoor_logo),contentDescription=null,modifier=Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),contentScale=ContentScale.Fit)',
+
+              'Dashboard Image'
           )
+
 
           path.write_text(
               source,
@@ -893,51 +522,31 @@ jobs:
           )
 
           print("")
-          print("==============================================")
-          print("ALL 9 KOTLIN SOURCE FIXES APPLIED.")
-          print("==============================================")
+          print("ALL SOURCE FIXES WRITTEN.")
           PY
 
-          echo ""
-          echo "=============================================="
+
           echo "SOURCE VERIFICATION"
-          echo "=============================================="
 
           grep -n \
-            "import androidx.activity.compose.setContent" \
+            'import androidx.activity.compose.setContent' \
             "$MAIN_FILE"
 
           grep -n \
-            "fun persistPhoto" \
+            'private class Store' \
+            "$MAIN_FILE" |
+            head -1
+
+          grep -n \
+            'fun persistPhoto' \
             "$MAIN_FILE"
 
           grep -n \
-            "mapList" \
-            "$MAIN_FILE" | head -3
-
-          grep -n \
-            "ExpenseDialog(store,edit" \
+            'private fun LabourDetail' \
             "$MAIN_FILE"
 
-          grep -n \
-            "SaleDialog(store,edit" \
-            "$MAIN_FILE"
 
-          grep -n \
-            "private fun LabourDetail" \
-            "$MAIN_FILE"
-
-          grep -n \
-            "private fun PaymentDialog" \
-            "$MAIN_FILE"
-
-          echo ""
-          echo "SOURCE REPAIR VERIFIED."
-
-          echo ""
-          echo "=============================================="
           echo "STARTING ACTUAL KOTLIN COMPILER"
-          echo "=============================================="
 
           gradle \
             --no-daemon \
@@ -946,15 +555,8 @@ jobs:
             --rerun-tasks \
             :app:compileReleaseKotlin
 
-          echo ""
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN PASSED"
-          echo "=============================================="
+          echo "COMPILE RELEASE KOTLIN PASSED."
 
-
-      # ============================================================
-      # 19. SET FINAL RELEASE IDENTITY
-      # ============================================================
 
       - name: Set Final Release Identity
         working-directory: ${{ env.PROJECT_DIR }}
@@ -962,19 +564,18 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "SET FINAL RELEASE IDENTITY"
-          echo "=============================================="
-
-          if [ -f "app/build.gradle.kts" ]; then
+          if [ -f app/build.gradle.kts ]; then
 
             python3 - <<'PY'
           from pathlib import Path
 
           p = Path("app/build.gradle.kts")
-          s = p.read_text(encoding="utf-8")
 
-          replacements = [
+          s = p.read_text(
+              encoding="utf-8"
+          )
+
+          pairs = [
               (
                   'applicationId = "com.majdoor.hisaabpro"',
                   'applicationId = "com.majdoor.hisaab"'
@@ -989,21 +590,31 @@ jobs:
               )
           ]
 
-          for old, new in replacements:
+          for old, new in pairs:
+
               if old in s:
-                  s = s.replace(old, new, 1)
-              elif new in s:
-                  pass
-              else:
-                  raise SystemExit(
-                      f"ERROR: Gradle identity line not found: {old}"
+                  s = s.replace(
+                      old,
+                      new,
+                      1
                   )
 
-          p.write_text(s, encoding="utf-8")
-          print("Final release identity applied.")
+              elif new in s:
+                  pass
+
+              else:
+                  raise SystemExit(
+                      "Missing Gradle identity: " + old
+                  )
+
+          p.write_text(
+              s,
+              encoding="utf-8"
+          )
+
           PY
 
-          elif [ -f "app/build.gradle" ]; then
+          elif [ -f app/build.gradle ]; then
 
             sed -i \
               's/applicationId[[:space:]]*["'\'']com\.majdoor\.hisaabpro["'\'']/applicationId "com.majdoor.hisaab"/' \
@@ -1022,31 +633,19 @@ jobs:
             exit 1
           fi
 
-          echo ""
-          echo "FINAL RELEASE CONFIGURATION:"
-
           grep -E \
-            "applicationId|versionCode|versionName" \
+            'applicationId|versionCode|versionName' \
             app/build.gradle* \
             || true
 
-          echo ""
-          echo "RELEASE IDENTITY PASSED."
+          echo "FINAL RELEASE IDENTITY PASSED."
 
-
-      # ============================================================
-      # 20. ASSEMBLE RELEASE APK
-      # ============================================================
 
       - name: Assemble Release APK
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "ASSEMBLE RELEASE APK"
-          echo "=============================================="
 
           gradle \
             --no-daemon \
@@ -1055,103 +654,61 @@ jobs:
             --rerun-tasks \
             :app:assembleRelease
 
-          echo ""
-          echo "=============================================="
-          echo "ASSEMBLE RELEASE APK PASSED"
-          echo "=============================================="
+          echo "ASSEMBLE RELEASE APK PASSED."
 
-
-      # ============================================================
-      # 21. LOCATE RELEASE APK
-      # ============================================================
 
       - name: Locate Release APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -name "*release*.apk" \
-            -print \
-            | sort \
-            | head -1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: Release APK not found."
-
-            find "$PROJECT_DIR/app/build/outputs" \
+          APK=$(
+            find "$PROJECT_DIR/app/build/outputs/apk" \
               -type f \
-              -print \
-              2>/dev/null || true
+              -name '*release*.apk' \
+              -print |
+              sort |
+              head -1
+          )
 
-            exit 1
-          fi
+          test -n "$APK"
+          test -f "$APK"
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
-          echo "RELEASE APK:"
           ls -lh "$APK"
 
-
-      # ============================================================
-      # 22. VERIFY APK PACKAGE AND VERSION
-      # ============================================================
 
       - name: Verify APK Package
         shell: bash
         run: |
           set -e
 
-          APK="$APK_PATH"
-
-          test -f "$APK"
-
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging "$APK"
+              dump badging \
+              "$APK_PATH"
           )
 
-          echo ""
-          echo "APK BADGING:"
+          echo "$BADGING" |
+            grep -E \
+              'package:|versionCode|versionName' |
+            head -10
 
-          echo "$BADGING" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
+          echo "$BADGING" |
+            grep -q \
+              "name='$PACKAGE_NAME'"
 
-          if ! echo "$BADGING" | grep -q \
-            "name='$PACKAGE_NAME'"; then
+          echo "$BADGING" |
+            grep -q \
+              "versionCode='$VERSION_CODE'"
 
-            echo "ERROR: Package name mismatch."
-            echo "Expected: $PACKAGE_NAME"
-            exit 1
-          fi
+          echo "$BADGING" |
+            grep -q \
+              "versionName='$VERSION_NAME'"
 
-          if ! echo "$BADGING" | grep -q \
-            "versionCode='$VERSION_CODE'"; then
+          echo "PACKAGE/VERSION VERIFIED."
 
-            echo "ERROR: Version code mismatch."
-            echo "Expected: $VERSION_CODE"
-            exit 1
-          fi
-
-          if ! echo "$BADGING" | grep -q \
-            "versionName='$VERSION_NAME'"; then
-
-            echo "ERROR: Version name mismatch."
-            echo "Expected: $VERSION_NAME"
-            exit 1
-          fi
-
-          echo "PACKAGE NAME VERIFIED."
-          echo "VERSION CODE VERIFIED."
-          echo "VERSION NAME VERIFIED."
-
-
-      # ============================================================
-      # 23. PREPARE RELEASE SIGNING
-      # ============================================================
 
       - name: Prepare Release Signing
         shell: bash
@@ -1165,18 +722,14 @@ jobs:
 
           KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
 
-          if [ -n "$KEYSTORE_BASE64" ] && \
-             [ -n "$KEYSTORE_PASSWORD" ] && \
-             [ -n "$KEY_ALIAS" ] && \
+          if [ -n "$KEYSTORE_BASE64" ] &&
+             [ -n "$KEYSTORE_PASSWORD" ] &&
+             [ -n "$KEY_ALIAS" ] &&
              [ -n "$KEY_PASSWORD" ]; then
 
-            echo "PERMANENT SIGNING SECRETS FOUND."
-
-            printf '%s' "$KEYSTORE_BASE64" \
-              | base64 --decode \
-              > "$KEYSTORE_FILE"
-
-            test -s "$KEYSTORE_FILE"
+            printf '%s' "$KEYSTORE_BASE64" |
+              base64 --decode >
+              "$KEYSTORE_FILE"
 
             keytool \
               -list \
@@ -1191,17 +744,10 @@ jobs:
             echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-            echo "PERMANENT KEYSTORE VERIFIED."
-
           else
-
-            echo "Permanent signing secrets not configured."
-            echo "Creating temporary JKS."
 
             TEMP_PASSWORD="$(openssl rand -hex 32)"
             TEMP_ALIAS="majdoor-hisaab-v82"
-
-            rm -f "$KEYSTORE_FILE"
 
             keytool \
               -genkeypair \
@@ -1216,12 +762,9 @@ jobs:
               -validity 10000 \
               -dname "CN=Majdoor Hisaab PRO, OU=Android, O=Majdoor Hisaab, L=India, ST=Uttar Pradesh, C=IN"
 
-            test -s "$KEYSTORE_FILE"
-
             keytool \
               -list \
               -keystore "$KEYSTORE_FILE" \
-              -storetype JKS \
               -storepass "$TEMP_PASSWORD" \
               -alias "$TEMP_ALIAS" \
               >/dev/null
@@ -1232,26 +775,15 @@ jobs:
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
-            echo "TEMPORARY KEYSTORE VERIFIED."
-
           fi
 
-
-      # ============================================================
-      # 24. VERIFY SIGNING
-      # ============================================================
 
       - name: Verify Signing Environment
         shell: bash
         run: |
           set -e
 
-          test -n "${RELEASE_KEYSTORE:-}"
           test -f "$RELEASE_KEYSTORE"
-
-          test -n "${RELEASE_KEYSTORE_PASSWORD:-}"
-          test -n "${RELEASE_KEY_ALIAS:-}"
-          test -n "${RELEASE_KEY_PASSWORD:-}"
 
           keytool \
             -list \
@@ -1261,31 +793,22 @@ jobs:
             >/dev/null
 
           echo "SIGNING ENVIRONMENT VERIFIED."
-          echo "SIGNING MODE: ${RELEASE_SIGNING_MODE}"
+          echo "SIGNING MODE: $RELEASE_SIGNING_MODE"
 
-
-      # ============================================================
-      # 25. ZIPALIGN
-      # ============================================================
 
       - name: Zipalign Release APK
         shell: bash
         run: |
           set -e
 
-          INPUT_APK="$APK_PATH"
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
-
-          rm -f "$ALIGNED_APK"
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -f \
             -p \
             4 \
-            "$INPUT_APK" \
+            "$APK_PATH" \
             "$ALIGNED_APK"
-
-          test -f "$ALIGNED_APK"
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -c \
@@ -1298,10 +821,6 @@ jobs:
           echo "ZIPALIGN PASSED."
 
 
-      # ============================================================
-      # 26. SIGN RELEASE APK
-      # ============================================================
-
       - name: Sign Release APK
         shell: bash
         run: |
@@ -1311,7 +830,8 @@ jobs:
 
           rm -f "$SIGNED_APK"
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            sign \
             --ks "$RELEASE_KEYSTORE" \
             --ks-type JKS \
             --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
@@ -1322,35 +842,21 @@ jobs:
 
           test -f "$SIGNED_APK"
 
-          echo ""
-          echo "SIGNED APK CREATED:"
           ls -lh "$SIGNED_APK"
 
-
-      # ============================================================
-      # 27. VERIFY APK SIGNATURE
-      # ============================================================
 
       - name: Verify APK Signature
         shell: bash
         run: |
           set -e
 
-          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
-
-          test -f "$APK"
-
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
             verify \
             --verbose \
-            "$APK"
+            "$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           echo "APK SIGNATURE VERIFIED."
 
-
-      # ============================================================
-      # 28. FINAL APK VALIDATION
-      # ============================================================
 
       - name: Final APK Validation
         shell: bash
@@ -1359,11 +865,7 @@ jobs:
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
-          test -f "$APK"
-
           SIZE=$(stat -c%s "$APK")
-
-          echo "APK SIZE: $SIZE bytes"
 
           if [ "$SIZE" -lt 100000 ]; then
             echo "ERROR: APK size unexpectedly small."
@@ -1372,48 +874,27 @@ jobs:
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging "$APK"
+              dump badging \
+              "$APK"
           )
 
-          echo "$BADGING" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
+          echo "$BADGING" |
+            grep -q \
+              "name='$PACKAGE_NAME'"
 
-          if ! echo "$BADGING" | grep -q \
-            "name='$PACKAGE_NAME'"; then
+          echo "$BADGING" |
+            grep -q \
+              "versionCode='$VERSION_CODE'"
 
-            echo "ERROR: Final APK package mismatch."
-            exit 1
-          fi
+          echo "$BADGING" |
+            grep -q \
+              "versionName='$VERSION_NAME'"
 
-          if ! echo "$BADGING" | grep -q \
-            "versionCode='$VERSION_CODE'"; then
-
-            echo "ERROR: Final APK version code mismatch."
-            exit 1
-          fi
-
-          if ! echo "$BADGING" | grep -q \
-            "versionName='$VERSION_NAME'"; then
-
-            echo "ERROR: Final APK version name mismatch."
-            exit 1
-          fi
-
-          echo ""
           echo "SHA256:"
           sha256sum "$APK"
 
-          echo ""
-          echo "=============================================="
-          echo "FINAL APK VALIDATION PASSED"
-          echo "=============================================="
+          echo "FINAL APK VALIDATION PASSED."
 
-
-      # ============================================================
-      # 29. UPLOAD FINAL SIGNED APK
-      # ============================================================
 
       - name: Upload Final Signed APK
         uses: actions/upload-artifact@v4
@@ -1423,10 +904,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-
-      # ============================================================
-      # 30. UPLOAD BUILD REPORTS
-      # ============================================================
 
       - name: Upload Build Reports
         if: always()
