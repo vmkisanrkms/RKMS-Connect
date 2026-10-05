@@ -144,7 +144,7 @@ jobs:
 
 
       # ============================================================
-      # 6. LICENSES
+      # 6. ANDROID LICENSES
       # ============================================================
 
       - name: Accept Android SDK licenses
@@ -158,7 +158,7 @@ jobs:
 
 
       # ============================================================
-      # 7. ANDROID API 36
+      # 7. ANDROID API 36 + BUILD TOOLS
       # ============================================================
 
       - name: Install Android API 36 and Build Tools
@@ -237,7 +237,7 @@ jobs:
 
 
       # ============================================================
-      # 11. REPOSITORY
+      # 11. SHOW REPOSITORY
       # ============================================================
 
       - name: Show repository files
@@ -258,7 +258,7 @@ jobs:
 
 
       # ============================================================
-      # 12. FIND ZIP
+      # 12. FIND MAJDOOR HISAAB ZIP
       # ============================================================
 
       - name: Locate Majdoor Hisaab ZIP
@@ -292,7 +292,7 @@ jobs:
 
 
       # ============================================================
-      # 13. BUILD DIRECTORY
+      # 13. PREPARE BUILD DIRECTORY
       # ============================================================
 
       - name: Prepare temporary build directory
@@ -308,7 +308,7 @@ jobs:
 
 
       # ============================================================
-      # 14. EXTRACT ZIP
+      # 14. EXTRACT PROJECT ZIP
       # ============================================================
 
       - name: Extract project ZIP
@@ -329,7 +329,7 @@ jobs:
 
 
       # ============================================================
-      # 15. FIND GRADLE ROOT
+      # 15. FIND GRADLE PROJECT ROOT
       # ============================================================
 
       - name: Locate Gradle project root
@@ -364,7 +364,7 @@ jobs:
 
 
       # ============================================================
-      # 16. VERIFY PROJECT
+      # 16. VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -389,7 +389,113 @@ jobs:
 
 
       # ============================================================
-      # 17. SOURCE CHECK
+      # 17. FIX MAINACTIVITY KOTLIN BRACES
+      # ============================================================
+
+      - name: Fix MainActivity Kotlin brace errors
+        shell: bash
+        run: |
+          set -e
+
+          MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
+
+          if [ ! -f "$MAIN" ]; then
+            echo "::error::MainActivity.kt not found."
+            exit 1
+          fi
+
+          python3 - "$MAIN" <<'PY'
+          import sys
+          from pathlib import Path
+
+          main = Path(sys.argv[1])
+
+          lines = main.read_text(
+              encoding="utf-8"
+          ).splitlines()
+
+          print("MainActivity.kt lines:", len(lines))
+
+          if len(lines) < 572:
+              raise SystemExit(
+                  "ERROR: MainActivity.kt is shorter than expected."
+              )
+
+          # ========================================================
+          # LINE 287
+          # One closing brace was missing.
+          # ========================================================
+
+          line287 = lines[286]
+
+          if (
+              line287.count("{") == 14
+              and line287.count("}") == 13
+          ):
+              lines[286] = line287 + "}"
+              print("FIXED line 287: added one }")
+          else:
+              raise SystemExit(
+                  "ERROR: Line 287 does not match expected V82 source."
+              )
+
+          # ========================================================
+          # LINE 572
+          # One extra closing brace was present.
+          # ========================================================
+
+          line572 = lines[571]
+
+          if (
+              line572.count("{") == 41
+              and line572.count("}") == 42
+          ):
+              lines[571] = line572[:-1]
+              print("FIXED line 572: removed one }")
+          else:
+              raise SystemExit(
+                  "ERROR: Line 572 does not match expected V82 source."
+              )
+
+          main.write_text(
+              "\n".join(lines) + "\n",
+              encoding="utf-8"
+          )
+
+          # ========================================================
+          # FINAL BRACE CHECK
+          # ========================================================
+
+          if (
+              lines[286].count("{")
+              !=
+              lines[286].count("}")
+          ):
+              raise SystemExit(
+                  "ERROR: Line 287 brace balance failed."
+              )
+
+          if (
+              lines[571].count("{")
+              !=
+              lines[571].count("}")
+          ):
+              raise SystemExit(
+                  "ERROR: Line 572 brace balance failed."
+              )
+
+          print("")
+          print("==============================================")
+          print("MAINACTIVITY KOTLIN BRACE FIX PASSED")
+          print("==============================================")
+          print("Line 287 : + one }")
+          print("Line 572 : - one }")
+          print("==============================================")
+          PY
+
+
+      # ============================================================
+      # 18. VERIFY KOTLIN SOURCE
       # ============================================================
 
       - name: Verify Kotlin source
@@ -411,7 +517,7 @@ jobs:
 
 
       # ============================================================
-      # 18. PAYMENT/CROP CHECK
+      # 19. PAYMENT / CROP CHECK
       # ============================================================
 
       - name: Verify payment and crop cleanup
@@ -441,7 +547,7 @@ jobs:
 
 
       # ============================================================
-      # 19. PACKAGE/VERSION
+      # 20. PACKAGE / VERSION
       # ============================================================
 
       - name: Verify package and version
@@ -479,7 +585,7 @@ jobs:
 
 
       # ============================================================
-      # 20. SDK FOR GRADLE
+      # 21. CONFIGURE ANDROID SDK
       # ============================================================
 
       - name: Configure Android SDK for Gradle
@@ -494,7 +600,7 @@ jobs:
 
 
       # ============================================================
-      # 21. GRADLE CLEAN
+      # 22. GRADLE CLEAN
       # ============================================================
 
       - name: Gradle clean
@@ -509,7 +615,7 @@ jobs:
 
 
       # ============================================================
-      # 22. PRINT KOTLIN SOURCE INFO
+      # 23. KOTLIN SOURCE DIAGNOSTICS
       # ============================================================
 
       - name: Print Kotlin source diagnostics
@@ -542,15 +648,11 @@ jobs:
             -print
 
           echo
-          echo "Compose imports:"
-          grep '^import androidx.compose' "$MAIN" || true
-
-          echo
           echo "=============================================="
 
 
       # ============================================================
-      # 23. BUILD RELEASE APK
+      # 24. BUILD RELEASE APK
       # ============================================================
 
       - name: Build Release APK
@@ -609,7 +711,7 @@ jobs:
 
 
       # ============================================================
-      # 24. LOCATE APK
+      # 25. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -637,7 +739,7 @@ jobs:
 
 
       # ============================================================
-      # 25. PREPARE APK
+      # 26. PREPARE APK
       # ============================================================
 
       - name: Prepare APK directory
@@ -656,7 +758,7 @@ jobs:
 
 
       # ============================================================
-      # 26. TEMP SIGNING KEY
+      # 27. GENERATE TEMPORARY SIGNING KEY
       # ============================================================
 
       - name: Generate temporary signing keystore
@@ -684,7 +786,7 @@ jobs:
 
 
       # ============================================================
-      # 27. ALIGN
+      # 28. ZIPALIGN
       # ============================================================
 
       - name: Align APK
@@ -705,7 +807,7 @@ jobs:
 
 
       # ============================================================
-      # 28. SIGN
+      # 29. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -733,7 +835,7 @@ jobs:
 
 
       # ============================================================
-      # 29. VERIFY SIGNATURE
+      # 30. VERIFY SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -752,7 +854,7 @@ jobs:
 
 
       # ============================================================
-      # 30. VERIFY ALIGNMENT
+      # 31. VERIFY ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -772,7 +874,7 @@ jobs:
 
 
       # ============================================================
-      # 31. VERIFY APK PACKAGE
+      # 32. VERIFY APK PACKAGE + VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -806,7 +908,7 @@ jobs:
 
 
       # ============================================================
-      # 32. BUILD REPORT
+      # 33. BUILD REPORT
       # ============================================================
 
       - name: Create build report
@@ -840,7 +942,7 @@ jobs:
 
 
       # ============================================================
-      # 33. UPLOAD APK
+      # 34. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -855,7 +957,7 @@ jobs:
 
 
       # ============================================================
-      # 34. FINAL SUMMARY
+      # 35. FINAL SUMMARY
       # ============================================================
 
       - name: Final build summary
@@ -884,7 +986,7 @@ jobs:
 
 
       # ============================================================
-      # 35. CLEANUP
+      # 36. CLEANUP
       # ============================================================
 
       - name: Cleanup signing material
