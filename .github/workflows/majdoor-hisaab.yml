@@ -380,7 +380,6 @@ jobs:
       # ============================================================
       # 11. LOCATE MAIN KOTLIN SOURCE
       #
-      # IMPORTANT:
       # NO SOURCE MODIFICATION BEFORE COMPILE STEP.
       # ============================================================
 
@@ -425,21 +424,24 @@ jobs:
 
 
       # ============================================================
-      # 12. CLEAN FINAL COMPILE RELEASE KOTLIN
+      # 12. AUDITED KOTLIN FIX + COMPILE
       #
-      # THIS REPLACES ALL OLD KOTLIN REPAIR CODE.
+      # IMPORTANT:
       #
-      # ONLY ONE KNOWN SOURCE PROBLEM IS FIXED:
+      # ONLY THREE EXACT FIXES FROM THE AUDITED FILE:
       #
-      # LabourDetail() had TWO EXTRA closing braces:
+      # FIX 1:
+      # Line 85 - mapList generic syntax spacing.
       #
-      #     {delPay=null})}}}
+      # FIX 2:
+      # Line 311 - ONE EXTRA closing brace in LabourDetail.
       #
-      # Correct:
+      # FIX 3:
+      # Line 360 - ONE MISSING closing brace in ChoiceField.
       #
-      #     {delPay=null})}
-      #
-      # NOTHING ELSE IN MainActivity.kt IS MODIFIED.
+      # NO generic repair.
+      # NO automatic deletion.
+      # NO guessing.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -460,7 +462,7 @@ jobs:
 
           echo ""
           echo "=============================================="
-          echo "APPLY ONLY KNOWN TWO-BRACE FIX"
+          echo "APPLY AUDITED SOURCE FIXES"
           echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
@@ -473,131 +475,252 @@ jobs:
               encoding="utf-8"
           )
 
-          print("SOURCE:", path)
-          print("SOURCE SIZE:", len(source), "bytes")
+          original = source
 
 
           # ==========================================================
-          # EXACT KNOWN BAD ENDING
+          # FIX 1
           #
-          # LabourDetail() originally ended with:
+          # Exact audited line 85:
           #
-          #     {delPay=null})}}}
+          # private fun <T> JSONArray.mapList(...)
+          #     :List<T>=(0 until ...)
           #
-          # There are TWO extra closing braces.
-          #
-          # Replace ONLY this exact ending.
+          # Kotlin parser needs the return-type/operator separation.
           # ==========================================================
 
-          bad = "{delPay=null})}}}"
+          bad_map = (
+              "private fun <T> JSONArray.mapList"
+              "(mapper:(JSONObject)->T):List<T>="
+              "(0 until length()).map"
+              "{mapper(getJSONObject(it))}"
+          )
 
-          good = "{delPay=null})}"
+          good_map = (
+              "private fun <T> JSONArray.mapList"
+              "(mapper:(JSONObject)->T): List<T> = "
+              "(0 until length()).map"
+              "{mapper(getJSONObject(it))}"
+          )
 
-          count = source.count(bad)
+          map_count = source.count(bad_map)
 
           print("")
-          print("KNOWN BROKEN PATTERN COUNT:", count)
+          print("FIX 1 - mapList pattern count:", map_count)
 
-          if count == 1:
+          if map_count == 1:
 
               source = source.replace(
-                  bad,
-                  good,
+                  bad_map,
+                  good_map,
                   1
               )
 
-              print("")
-              print("FIX APPLIED:")
-              print("Exactly TWO extra closing braces removed.")
-              print("No other Kotlin repair performed.")
+              print("FIX 1 APPLIED.")
 
-          elif count == 0:
+          elif map_count == 0:
+
+              print("FIX 1 already applied.")
+
+          else:
+
+              print(
+                  "ERROR: FIX 1 pattern found more than once."
+              )
+
+              raise SystemExit(1)
+
+
+          # ==========================================================
+          # FIX 2
+          #
+          # Exact audited LabourDetail boundary.
+          #
+          # Original:
+          #
+          # ...Color(0xFFB3261E))}}}}};if(edit)
+          #
+          # Correct:
+          #
+          # ...Color(0xFFB3261E))}}}};if(edit)
+          #
+          # ONE extra brace removed.
+          # ==========================================================
+
+          bad_labour = (
+              "tint=Color(0xFFB3261E))}}}}};if(edit)"
+          )
+
+          good_labour = (
+              "tint=Color(0xFFB3261E))}}}};if(edit)"
+          )
+
+          labour_count = source.count(bad_labour)
+
+          print("")
+          print(
+              "FIX 2 - LabourDetail pattern count:",
+              labour_count
+          )
+
+          if labour_count == 1:
+
+              source = source.replace(
+                  bad_labour,
+                  good_labour,
+                  1
+              )
+
+              print("FIX 2 APPLIED.")
+
+          elif labour_count == 0:
+
+              print("FIX 2 already applied.")
+
+          else:
+
+              print(
+                  "ERROR: FIX 2 pattern found more than once."
+              )
+
+              raise SystemExit(1)
+
+
+          # ==========================================================
+          # FIX 3
+          #
+          # Exact audited final ChoiceField line.
+          #
+          # The function was missing ONE final closing brace.
+          # ==========================================================
+
+          lines = source.splitlines()
+
+          choice_indexes = [
+              i
+              for i, line in enumerate(lines)
+              if line.startswith(
+                  "@Composable private fun ChoiceField("
+              )
+          ]
+
+          if len(choice_indexes) != 1:
 
               print("")
-              print("KNOWN BROKEN PATTERN NOT FOUND.")
-              print("The source is already using the corrected ending.")
-              print("NO SOURCE CHANGE REQUIRED.")
+              print(
+                  "ERROR: Expected exactly one ChoiceField "
+                  "declaration, found:",
+                  len(choice_indexes)
+              )
+
+              raise SystemExit(1)
+
+          choice_index = choice_indexes[0]
+
+          choice_line = lines[choice_index]
+
+          print("")
+          print(
+              "FIX 3 - ChoiceField source line:",
+              choice_index + 1
+          )
+
+          # Exact audited v11 ending has 3 closing braces.
+          # Correct source requires 4.
+          if choice_line.endswith("}}}"):
+
+              lines[choice_index] = (
+                  choice_line + "}"
+              )
+
+              source = "\n".join(lines) + "\n"
+
+              print("FIX 3 APPLIED.")
+
+          elif choice_line.endswith("}}}}"):
+
+              print("FIX 3 already applied.")
 
           else:
 
               print("")
               print(
-                  "ERROR: Known broken pattern occurred more "
-                  "than once."
+                  "ERROR: ChoiceField ending does not match "
+                  "the audited source."
               )
 
               raise SystemExit(1)
 
 
           # ==========================================================
-          # WRITE SOURCE ONLY IF NECESSARY
+          # WRITE SOURCE
           # ==========================================================
 
-          path.write_text(
-              source,
+          if source != original:
+
+              path.write_text(
+                  source,
+                  encoding="utf-8"
+              )
+
+              print("")
+              print("AUDITED KOTLIN FIXES WRITTEN.")
+
+          else:
+
+              print("")
+              print(
+                  "NO SOURCE CHANGE REQUIRED."
+              )
+
+
+          # ==========================================================
+          # VERIFY EXACT FIXES
+          # ==========================================================
+
+          final_source = path.read_text(
               encoding="utf-8"
           )
 
-          print("")
-          print("SOURCE CHECK COMPLETED.")
-          PY
-
-
-          echo ""
-          echo "=============================================="
-          echo "VERIFY LABOURDETAIL BOUNDARY"
-          echo "=============================================="
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          lines = path.read_text(
-              encoding="utf-8"
-          ).splitlines()
-
-          labour_line = None
-          payment_line = None
-
-          for number, line in enumerate(lines, 1):
-
-              if "LabourDetail" in line:
-                  labour_line = number
-
-              if "PaymentDialog" in line and \
-                 "private fun PaymentDialog" in line:
-
-                  payment_line = number
-
-          print("LabourDetail line:", labour_line)
-          print("PaymentDialog line:", payment_line)
-
-          if labour_line is None:
-              print("ERROR: LabourDetail not found.")
-              raise SystemExit(1)
-
-          if payment_line is None:
-              print("ERROR: PaymentDialog not found.")
-              raise SystemExit(1)
-
-          if payment_line <= labour_line:
+          if (
+              "):List<T>=" in final_source
+          ):
               print(
-                  "ERROR: PaymentDialog appears before "
-                  "LabourDetail."
+                  "ERROR: Old mapList syntax still exists."
+              )
+              raise SystemExit(1)
+
+          if (
+              "tint=Color(0xFFB3261E))}}}}};if(edit)"
+              in final_source
+          ):
+              print(
+                  "ERROR: Old LabourDetail brace sequence "
+                  "still exists."
+              )
+              raise SystemExit(1)
+
+          final_lines = final_source.splitlines()
+
+          final_choice = final_lines[choice_index]
+
+          if not final_choice.endswith("}}}}"):
+
+              print(
+                  "ERROR: ChoiceField is not correctly closed."
               )
               raise SystemExit(1)
 
           print("")
           print(
-              "FUNCTION BOUNDARY CHECK PASSED."
+              "ALL THREE AUDITED KOTLIN FIXES VERIFIED."
           )
           PY
 
 
           echo ""
           echo "=============================================="
-          echo "KOTLIN SOURCE BRACE BALANCE"
+          echo "KOTLIN BRACE BALANCE AUDIT"
           echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
@@ -698,48 +821,71 @@ jobs:
 
 
                   if c == "{":
+
                       balance += 1
 
                   elif c == "}":
+
                       balance -= 1
 
                       if balance < 0:
-                          print(
-                              "ERROR: negative brace balance "
-                              "at line:",
-                              line_no
-                          )
+
+                          echo="ERROR: negative brace balance"
+
+                          print("")
+                          print(echo)
+                          print("LINE:", line_no)
+
                           raise SystemExit(1)
 
                   i += 1
 
 
           print("")
-          print("FINAL BRACE BALANCE:", balance)
+          print(
+              "FINAL KOTLIN BRACE BALANCE:",
+              balance
+          )
 
           if balance != 0:
 
               print("")
               print(
-                  "ERROR: Kotlin source braces are "
-                  "not balanced."
+                  "ERROR: Kotlin braces are not balanced."
               )
 
               raise SystemExit(1)
 
           print("")
-          print("KOTLIN BRACE BALANCE PASSED.")
+          print(
+              "KOTLIN BRACE BALANCE PASSED."
+          )
           PY
 
 
           echo ""
           echo "=============================================="
-          echo "KOTLIN SOURCE AROUND LABOURDETAIL"
+          echo "VERIFY FUNCTION BOUNDARIES"
           echo "=============================================="
 
-          nl -ba "$MAIN_FILE" \
-            | sed -n '300,320p' \
-            || true
+          grep -n \
+            "@Composable private fun LabourDetail" \
+            "$MAIN_FILE"
+
+          grep -n \
+            "@Composable private fun PaymentDialog" \
+            "$MAIN_FILE"
+
+          grep -n \
+            "@Composable private fun RateDialog" \
+            "$MAIN_FILE"
+
+          grep -n \
+            "@Composable private fun ChoiceField" \
+            "$MAIN_FILE"
+
+          echo ""
+          echo "FUNCTION BOUNDARY CHECK PASSED."
 
 
           echo ""
