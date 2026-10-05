@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
@@ -23,10 +24,11 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor-Hisaab-PRO-Professional-UI-V82-KOTLIN-COMPILE-FIXED.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_v11_KOTLIN_FIXED.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
+
 
 jobs:
 
@@ -128,6 +130,14 @@ jobs:
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
+          echo ""
+          echo "ANDROID SDK:"
+          echo "$SDK_ROOT"
+
+          echo ""
+          echo "SDKMANAGER:"
+          echo "$SDKMANAGER"
+
           "$SDKMANAGER" --version
 
 
@@ -151,6 +161,7 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+          echo ""
           echo "ANDROID SDK INSTALLATION PASSED."
 
 
@@ -163,6 +174,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY ANDROID SDK"
+          echo "=============================================="
+
           test -d "$ANDROID_HOME/platform-tools"
           test -d "$ANDROID_HOME/platforms/android-36"
           test -d "$ANDROID_HOME/build-tools/36.0.0"
@@ -172,6 +187,7 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
+          echo ""
           echo "ANDROID SDK VERIFICATION PASSED."
 
 
@@ -184,22 +200,14 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "FIND MAJDOOR HISAAB PROJECT ZIP"
+          echo "=============================================="
+
           FOUND_ZIP=""
 
           if [ -f "$ZIP_NAME" ]; then
             FOUND_ZIP="$ZIP_NAME"
-          fi
-
-          if [ -z "$FOUND_ZIP" ]; then
-            FOUND_ZIP=$(
-              find . \
-                -type f \
-                -name "Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_*.zip" \
-                -not -path "./.git/*" \
-                -print \
-                | sort \
-                | tail -1
-            )
           fi
 
           if [ -z "$FOUND_ZIP" ]; then
@@ -215,24 +223,35 @@ jobs:
           fi
 
           if [ -z "$FOUND_ZIP" ] || [ ! -f "$FOUND_ZIP" ]; then
+
+            echo ""
             echo "ERROR: Majdoor Hisaab project ZIP NOT FOUND."
+
+            echo ""
+            echo "AVAILABLE ZIP FILES:"
+
             find . \
               -type f \
               -name "*.zip" \
               -not -path "./.git/*" \
               -print \
               | sort
+
             exit 1
           fi
 
           FOUND_ZIP="${FOUND_ZIP#./}"
 
+          echo ""
           echo "PROJECT ZIP FOUND:"
           echo "$FOUND_ZIP"
 
           ls -lh "$FOUND_ZIP"
 
           echo "ZIP_NAME=$FOUND_ZIP" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "ZIP DETECTION PASSED."
 
 
       # ============================================================
@@ -243,6 +262,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "EXTRACT PROJECT"
+          echo "=============================================="
 
           rm -rf build_source
           mkdir -p build_source
@@ -260,6 +283,8 @@ jobs:
             -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
+
+            echo ""
             echo "ERROR: Gradle settings file not found."
 
             find build_source \
@@ -276,6 +301,7 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo ""
           echo "PROJECT DIRECTORY:"
           echo "$PROJECT_DIR"
 
@@ -290,16 +316,22 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY ANDROID PROJECT"
+          echo "=============================================="
+
           pwd
 
           test -d "app"
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
+
             echo "ERROR: app Gradle file not found."
             exit 1
           fi
 
+          echo ""
           echo "ANDROID PROJECT VERIFIED."
 
 
@@ -313,7 +345,13 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "GRADLE ENVIRONMENT"
+          echo "=============================================="
+
           java -version
+
+          echo ""
           gradle --version
 
           DETECTED=$(
@@ -321,14 +359,21 @@ jobs:
             awk '/^Gradle / {print $2; exit}'
           )
 
-          echo "EXPECTED GRADLE: $GRADLE_VERSION"
-          echo "DETECTED GRADLE: $DETECTED"
+          echo ""
+          echo "EXPECTED GRADLE:"
+          echo "$GRADLE_VERSION"
+
+          echo ""
+          echo "DETECTED GRADLE:"
+          echo "$DETECTED"
 
           if [ "$DETECTED" != "$GRADLE_VERSION" ]; then
+            echo ""
             echo "ERROR: Gradle version mismatch."
             exit 1
           fi
 
+          echo ""
           echo "GRADLE ENVIRONMENT PASSED."
 
 
@@ -336,7 +381,7 @@ jobs:
       # 11. LOCATE MAIN KOTLIN SOURCE
       #
       # IMPORTANT:
-      # NO SOURCE MODIFICATION BEFORE COMPILE RELEASE KOTLIN.
+      # NO SOURCE MODIFICATION BEFORE COMPILE STEP.
       # ============================================================
 
       - name: Locate Main Kotlin Source
@@ -344,6 +389,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "LOCATE MAIN KOTLIN SOURCE"
+          echo "=============================================="
 
           MAIN_FILES=$(find app/src/main \
             -type f \
@@ -355,11 +404,13 @@ jobs:
           COUNT=$(echo "$MAIN_FILES" | sed '/^$/d' | wc -l)
 
           if [ "$COUNT" -eq 0 ]; then
+            echo ""
             echo "ERROR: MainActivity.kt not found."
             exit 1
           fi
 
           if [ "$COUNT" -gt 1 ]; then
+            echo ""
             echo "ERROR: Multiple MainActivity.kt files found."
             exit 1
           fi
@@ -368,16 +419,27 @@ jobs:
 
           echo "MAIN_FILE=$MAIN_FILE" >> "$GITHUB_ENV"
 
+          echo ""
           echo "MAIN FILE:"
           echo "$MAIN_FILE"
 
 
       # ============================================================
-      # 12. COMPILE RELEASE KOTLIN
+      # 12. CLEAN FINAL COMPILE RELEASE KOTLIN
       #
-      # ALL SOURCE REPAIR IS INSIDE THIS STEP.
+      # THIS REPLACES ALL OLD KOTLIN REPAIR CODE.
       #
-      # NOTHING BEFORE THIS STEP MODIFIES MainActivity.kt.
+      # ONLY ONE KNOWN SOURCE PROBLEM IS FIXED:
+      #
+      # LabourDetail() had TWO EXTRA closing braces:
+      #
+      #     {delPay=null})}}}
+      #
+      # Correct:
+      #
+      #     {delPay=null})}
+      #
+      # NOTHING ELSE IN MainActivity.kt IS MODIFIED.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -392,18 +454,16 @@ jobs:
 
           test -f "$MAIN_FILE"
 
+          echo ""
           echo "MAIN FILE:"
           echo "$MAIN_FILE"
 
-          cp "$MAIN_FILE" "$RUNNER_TEMP/MainActivity.before-repair.kt"
-
           echo ""
           echo "=============================================="
-          echo "REPAIR KOTLIN SOURCE INSIDE COMPILE STEP"
+          echo "APPLY ONLY KNOWN TWO-BRACE FIX"
           echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
-          import re
           import sys
           from pathlib import Path
 
@@ -418,371 +478,172 @@ jobs:
 
 
           # ==========================================================
-          # BOM
-          # ==========================================================
-
-          if source.startswith("\ufeff"):
-              source = source[1:]
-              print("FIX: UTF-8 BOM removed")
-
-
-          # ==========================================================
-          # setContent import
-          # ==========================================================
-
-          if "import androidx.activity.compose.setContent" not in source:
-
-              match = re.search(
-                  r"^package[^\n]+\n",
-                  source,
-                  re.MULTILINE
-              )
-
-              if match:
-                  source = (
-                      source[:match.end()]
-                      + "\n"
-                      + "import androidx.activity.compose.setContent\n"
-                      + source[match.end():]
-                  )
-
-                  print("FIX: setContent import added")
-
-
-          # ==========================================================
-          # Store context
-          # ==========================================================
-
-          source = source.replace(
-              "private class Store(context:Context){",
-              "private class Store(private val context:Context){",
-              1
-          )
-
-
-          # ==========================================================
-          # JSONArray.mapList
-          # ==========================================================
-
-          map_pattern = re.compile(
-              r"private fun <T> JSONArray\.mapList"
-              r"\(mapper:\(JSONObject\)->T\):List<T>"
-              r"=[^\n]+"
-          )
-
-          map_match = map_pattern.search(source)
-
-          if map_match:
-
-              replacement = """private fun <T> JSONArray.mapList(
-              mapper: (JSONObject) -> T
-          ): List<T> = (0 until length()).map {
-              mapper(getJSONObject(it))
-          }"""
-
-              source = (
-                  source[:map_match.start()]
-                  + replacement
-                  + source[map_match.end():]
-              )
-
-              print("FIX: JSONArray.mapList")
-
-
-          # ==========================================================
-          # Generic function replacement
-          # ==========================================================
-
-          def replace_function(text, function_name, replacement):
-
-              pattern = re.compile(
-                  r"(?m)^[ \t]*"
-                  r"(?:@Composable[ \t]*\n[ \t]*)?"
-                  r"(?:private[ \t]+|public[ \t]+|internal[ \t]+)?"
-                  r"fun[ \t]+"
-                  + re.escape(function_name)
-                  + r"[ \t]*\("
-              )
-
-              match = pattern.search(text)
-
-              if not match:
-                  return text, False
-
-              open_brace = text.find(
-                  "{",
-                  match.end()
-              )
-
-              if open_brace == -1:
-                  return text, False
-
-              depth = 0
-              in_string = False
-              in_char = False
-              escape = False
-              line_comment = False
-              block_comment = False
-
-              i = open_brace
-
-              while i < len(text):
-
-                  c = text[i]
-
-                  n = (
-                      text[i + 1]
-                      if i + 1 < len(text)
-                      else ""
-                  )
-
-                  if line_comment:
-
-                      if c == "\n":
-                          line_comment = False
-
-                  elif block_comment:
-
-                      if c == "*" and n == "/":
-                          block_comment = False
-                          i += 1
-
-                  elif in_string:
-
-                      if escape:
-                          escape = False
-
-                      elif c == "\\":
-                          escape = True
-
-                      elif c == '"':
-                          in_string = False
-
-                  elif in_char:
-
-                      if escape:
-                          escape = False
-
-                      elif c == "\\":
-                          escape = True
-
-                      elif c == "'":
-                          in_char = False
-
-                  else:
-
-                      if c == "/" and n == "/":
-                          line_comment = True
-                          i += 1
-
-                      elif c == "/" and n == "*":
-                          block_comment = True
-                          i += 1
-
-                      elif c == '"':
-                          in_string = True
-
-                      elif c == "'":
-                          in_char = True
-
-                      elif c == "{":
-                          depth += 1
-
-                      elif c == "}":
-
-                          depth -= 1
-
-                          if depth == 0:
-
-                              return (
-                                  text[:match.start()]
-                                  + replacement
-                                  + text[i + 1:],
-                                  True
-                              )
-
-                  i += 1
-
-              return text, False
-
-
-          # ==========================================================
-          # persistPhoto
-          # ==========================================================
-
-          persist_photo = """    fun persistPhoto(
-              uriString: String,
-              owner: String
-          ): String {
-              if (
-                  uriString.isBlank() ||
-                  uriString.startsWith("file://")
-              ) {
-                  return uriString
-              }
-
-              return try {
-                  val uri: Uri = Uri.parse(uriString)
-
-                  val dir = File(
-                      context.filesDir,
-                      "photos"
-                  ).apply {
-                      mkdirs()
-                  }
-
-                  val file = File(
-                      dir,
-                      "${owner}_${UUID.randomUUID()}.jpg"
-                  )
-
-                  val input =
-                      context.contentResolver
-                          .openInputStream(uri)
-                      ?: return ""
-
-                  input.use { inputStream ->
-                      FileOutputStream(file).use { outputStream ->
-                          inputStream.copyTo(outputStream)
-                      }
-                  }
-
-                  file.absolutePath
-
-              } catch (_: Exception) {
-                  ""
-              }
-          }
-          """
-
-          if "fun persistPhoto" in source:
-
-              source, changed = replace_function(
-                  source,
-                  "persistPhoto",
-                  persist_photo
-              )
-
-              if changed:
-                  print("FIX: persistPhoto")
-
-
-          # ==========================================================
-          # PaymentDialog
-          # ==========================================================
-
-          source = source.replace(
-              'PaymentDialog(store,id,null,""){payment=false}',
-              'PaymentDialog(store,id,null,null){payment=false}',
-              1
-          )
-
-
-          # ==========================================================
-          # BottomBar Icon
-          # ==========================================================
-
-          source = source.replace(
-              "Icon(ic,null,"
-              "tint=if(current==k)Green else Color.Gray,"
-              "Modifier.size(22.dp))",
-
-              "Icon("
-              "imageVector=ic,"
-              "contentDescription=null,"
-              "modifier=Modifier.size(22.dp),"
-              "tint=if(current==k)Green else Color.Gray"
-              ")",
-
-              1
-          )
-
-
-          # ==========================================================
-          # TopBar Image
-          # ==========================================================
-
-          source = source.replace(
-              "Image("
-              "painterResource(R.drawable.majdoor_logo_small),"
-              "null,"
-              "Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),"
-              "contentScale=ContentScale.Crop"
-              ")",
-
-              "Image("
-              "painter=painterResource(R.drawable.majdoor_logo_small),"
-              "contentDescription=null,"
-              "modifier=Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),"
-              "contentScale=ContentScale.Crop"
-              ")",
-
-              1
-          )
-
-
-          # ==========================================================
-          # Dashboard Image
-          # ==========================================================
-
-          source = source.replace(
-              "Image("
-              "painterResource(R.drawable.majdoor_logo),"
-              "null,"
-              "Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),"
-              "ContentScale.Fit"
-              ")",
-
-              "Image("
-              "painter=painterResource(R.drawable.majdoor_logo),"
-              "contentDescription=null,"
-              "modifier=Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),"
-              "contentScale=ContentScale.Fit"
-              ")",
-
-              1
-          )
-
-
-          # ==========================================================
-          # IMPORTANT STRUCTURE REPAIR
+          # EXACT KNOWN BAD ENDING
           #
-          # Remove ONLY standalone closing braces that cause the
-          # Kotlin brace depth to become negative.
+          # LabourDetail() originally ended with:
           #
-          # Do NOT blindly delete the last braces.
+          #     {delPay=null})}}}
+          #
+          # There are TWO extra closing braces.
+          #
+          # Replace ONLY this exact ending.
           # ==========================================================
 
-          lines = source.splitlines()
+          bad = "{delPay=null})}}}"
 
-          def brace_delta(line, state):
+          good = "{delPay=null})}"
 
-              in_string = state["string"]
-              in_char = state["char"]
-              escape = state["escape"]
-              block = state["block"]
+          count = source.count(bad)
 
-              delta = 0
+          print("")
+          print("KNOWN BROKEN PATTERN COUNT:", count)
+
+          if count == 1:
+
+              source = source.replace(
+                  bad,
+                  good,
+                  1
+              )
+
+              print("")
+              print("FIX APPLIED:")
+              print("Exactly TWO extra closing braces removed.")
+              print("No other Kotlin repair performed.")
+
+          elif count == 0:
+
+              print("")
+              print("KNOWN BROKEN PATTERN NOT FOUND.")
+              print("The source is already using the corrected ending.")
+              print("NO SOURCE CHANGE REQUIRED.")
+
+          else:
+
+              print("")
+              print(
+                  "ERROR: Known broken pattern occurred more "
+                  "than once."
+              )
+
+              raise SystemExit(1)
+
+
+          # ==========================================================
+          # WRITE SOURCE ONLY IF NECESSARY
+          # ==========================================================
+
+          path.write_text(
+              source,
+              encoding="utf-8"
+          )
+
+          print("")
+          print("SOURCE CHECK COMPLETED.")
+          PY
+
+
+          echo ""
+          echo "=============================================="
+          echo "VERIFY LABOURDETAIL BOUNDARY"
+          echo "=============================================="
+
+          python3 - "$MAIN_FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          lines = path.read_text(
+              encoding="utf-8"
+          ).splitlines()
+
+          labour_line = None
+          payment_line = None
+
+          for number, line in enumerate(lines, 1):
+
+              if "LabourDetail" in line:
+                  labour_line = number
+
+              if "PaymentDialog" in line and \
+                 "private fun PaymentDialog" in line:
+
+                  payment_line = number
+
+          print("LabourDetail line:", labour_line)
+          print("PaymentDialog line:", payment_line)
+
+          if labour_line is None:
+              print("ERROR: LabourDetail not found.")
+              raise SystemExit(1)
+
+          if payment_line is None:
+              print("ERROR: PaymentDialog not found.")
+              raise SystemExit(1)
+
+          if payment_line <= labour_line:
+              print(
+                  "ERROR: PaymentDialog appears before "
+                  "LabourDetail."
+              )
+              raise SystemExit(1)
+
+          print("")
+          print(
+              "FUNCTION BOUNDARY CHECK PASSED."
+          )
+          PY
+
+
+          echo ""
+          echo "=============================================="
+          echo "KOTLIN SOURCE BRACE BALANCE"
+          echo "=============================================="
+
+          python3 - "$MAIN_FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+
+          source = path.read_text(
+              encoding="utf-8"
+          )
+
+          balance = 0
+
+          in_string = False
+          in_char = False
+          escape = False
+          block_comment = False
+
+          for line_no, line in enumerate(
+              source.splitlines(),
+              1
+          ):
+
               i = 0
 
               while i < len(line):
 
                   c = line[i]
+
                   n = (
                       line[i + 1]
                       if i + 1 < len(line)
                       else ""
                   )
 
-                  if block:
+                  if block_comment:
 
                       if c == "*" and n == "/":
-                          block = False
+                          block_comment = False
                           i += 2
                           continue
 
                       i += 1
                       continue
+
 
                   if in_string:
 
@@ -798,6 +659,7 @@ jobs:
                       i += 1
                       continue
 
+
                   if in_char:
 
                       if escape:
@@ -812,113 +674,73 @@ jobs:
                       i += 1
                       continue
 
+
                   if c == "/" and n == "/":
                       break
 
+
                   if c == "/" and n == "*":
-                      block = True
+                      block_comment = True
                       i += 2
                       continue
+
 
                   if c == '"':
                       in_string = True
                       i += 1
                       continue
 
+
                   if c == "'":
                       in_char = True
                       i += 1
                       continue
 
+
                   if c == "{":
-                      delta += 1
+                      balance += 1
 
                   elif c == "}":
-                      delta -= 1
+                      balance -= 1
+
+                      if balance < 0:
+                          print(
+                              "ERROR: negative brace balance "
+                              "at line:",
+                              line_no
+                          )
+                          raise SystemExit(1)
 
                   i += 1
 
-              state["string"] = in_string
-              state["char"] = in_char
-              state["escape"] = escape
-              state["block"] = block
-
-              return delta
-
-
-          balance = 0
-
-          state = {
-              "string": False,
-              "char": False,
-              "escape": False,
-              "block": False
-          }
-
-          cleaned = []
-
-          for number, line in enumerate(lines, 1):
-
-              stripped = line.strip()
-
-              delta = brace_delta(
-                  line,
-                  state
-              )
-
-              new_balance = balance + delta
-
-              if (
-                  stripped == "}"
-                  and
-                  new_balance < 0
-              ):
-
-                  print(
-                      "FIX: removed extra closing brace at line",
-                      number
-                  )
-
-                  continue
-
-              cleaned.append(line)
-
-              balance = new_balance
-
-
-          source = "\n".join(cleaned) + "\n"
-
-
-          # ==========================================================
-          # WRITE REPAIRED SOURCE
-          # ==========================================================
-
-          path.write_text(
-              source,
-              encoding="utf-8"
-          )
 
           print("")
           print("FINAL BRACE BALANCE:", balance)
 
+          if balance != 0:
+
+              print("")
+              print(
+                  "ERROR: Kotlin source braces are "
+                  "not balanced."
+              )
+
+              raise SystemExit(1)
+
           print("")
-          print("KOTLIN REPAIR COMPLETED")
+          print("KOTLIN BRACE BALANCE PASSED.")
           PY
 
 
           echo ""
           echo "=============================================="
-          echo "KOTLIN SOURCE CHECK"
+          echo "KOTLIN SOURCE AROUND LABOURDETAIL"
           echo "=============================================="
 
-          test -f "$MAIN_FILE"
-
-          echo ""
-          echo "LINES AROUND PREVIOUS FAILURE AREA:"
-
           nl -ba "$MAIN_FILE" \
-            | sed -n '730,790p' \
+            | sed -n '300,320p' \
             || true
+
 
           echo ""
           echo "=============================================="
@@ -992,15 +814,15 @@ jobs:
           fi
 
           echo ""
-          echo "APPLICATION ID:"
+          echo "FINAL APPLICATION ID:"
           grep "applicationId" "$GRADLE_FILE" || true
 
           echo ""
-          echo "VERSION CODE:"
+          echo "FINAL VERSION CODE:"
           grep "versionCode" "$GRADLE_FILE" || true
 
           echo ""
-          echo "VERSION NAME:"
+          echo "FINAL VERSION NAME:"
           grep "versionName" "$GRADLE_FILE" || true
 
 
@@ -1040,6 +862,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "LOCATE RELEASE APK"
+          echo "=============================================="
+
           APK=$(
             find "$PROJECT_DIR/app/build/outputs/apk" \
               -type f \
@@ -1051,6 +877,7 @@ jobs:
 
           if [ -z "$APK" ] || [ ! -f "$APK" ]; then
 
+            echo ""
             echo "ERROR: Release APK not found."
 
             find "$PROJECT_DIR/app/build/outputs" \
@@ -1064,6 +891,7 @@ jobs:
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
+          echo ""
           echo "RELEASE APK:"
           ls -lh "$APK"
 
@@ -1076,6 +904,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY APK PACKAGE"
+          echo "=============================================="
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
@@ -1090,22 +922,26 @@ jobs:
 
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
+
             echo "ERROR: Package name mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionCode='$VERSION_CODE'"; then
+
             echo "ERROR: Version code mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionName='$VERSION_NAME'"; then
+
             echo "ERROR: Version name mismatch."
             exit 1
           fi
 
+          echo ""
           echo "PACKAGE AND VERSION VERIFIED."
 
 
@@ -1123,6 +959,10 @@ jobs:
 
         run: |
           set -e
+
+          echo "=============================================="
+          echo "PREPARE RELEASE SIGNING"
+          echo "=============================================="
 
           KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
 
@@ -1193,6 +1033,7 @@ jobs:
 
           fi
 
+          echo ""
           echo "RELEASE SIGNING PREPARED."
 
 
@@ -1204,6 +1045,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY SIGNING ENVIRONMENT"
+          echo "=============================================="
 
           test -n "${RELEASE_KEYSTORE:-}"
           test -f "$RELEASE_KEYSTORE"
@@ -1219,6 +1064,7 @@ jobs:
             -alias "$RELEASE_KEY_ALIAS" \
             >/dev/null
 
+          echo ""
           echo "SIGNING ENVIRONMENT VERIFIED."
           echo "SIGNING MODE: ${RELEASE_SIGNING_MODE}"
 
@@ -1231,6 +1077,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "ZIPALIGN RELEASE APK"
+          echo "=============================================="
 
           INPUT_APK="$APK_PATH"
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
@@ -1254,6 +1104,7 @@ jobs:
 
           echo "ALIGNED_APK=$ALIGNED_APK" >> "$GITHUB_ENV"
 
+          echo ""
           echo "ZIPALIGN PASSED."
 
 
@@ -1265,6 +1116,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "SIGN RELEASE APK"
+          echo "=============================================="
 
           SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
@@ -1281,6 +1136,7 @@ jobs:
 
           test -f "$SIGNED_APK"
 
+          echo ""
           echo "SIGNED APK CREATED:"
           ls -lh "$SIGNED_APK"
 
@@ -1294,6 +1150,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY APK SIGNATURE"
+          echo "=============================================="
+
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           test -f "$APK"
@@ -1303,6 +1163,7 @@ jobs:
             --verbose \
             "$APK"
 
+          echo ""
           echo "APK SIGNATURE VERIFIED."
 
 
@@ -1315,12 +1176,17 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "FINAL APK VALIDATION"
+          echo "=============================================="
+
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
           test -f "$APK"
 
           SIZE=$(stat -c%s "$APK")
 
+          echo ""
           echo "APK SIZE:"
           echo "$SIZE bytes"
 
@@ -1335,6 +1201,9 @@ jobs:
               "$APK"
           )
 
+          echo ""
+          echo "APK INFORMATION:"
+
           echo "$BADGING" \
             | grep -E \
               "package:|versionCode|versionName" \
@@ -1342,18 +1211,21 @@ jobs:
 
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
+
             echo "ERROR: Final APK package mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionCode='$VERSION_CODE'"; then
+
             echo "ERROR: Final APK version code mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionName='$VERSION_NAME'"; then
+
             echo "ERROR: Final APK version name mismatch."
             exit 1
           fi
