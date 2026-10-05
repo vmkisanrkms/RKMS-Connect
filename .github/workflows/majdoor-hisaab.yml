@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -433,10 +432,7 @@ jobs:
       # ============================================================
       # 18. COMPILE RELEASE KOTLIN
       #
-      # IMPORTANT:
-      # ALL Kotlin/source repairs are performed ONLY here.
-      #
-      # NOTHING ABOVE THIS STEP modifies Kotlin source.
+      # SOURCE FIXES ARE DONE HERE BEFORE COMPILER.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -449,12 +445,17 @@ jobs:
           echo "COMPILE RELEASE KOTLIN"
           echo "=============================================="
 
+          echo ""
+          echo "MAIN SOURCE:"
+          echo "$MAIN_FILE"
+
           test -f "$MAIN_FILE"
 
-          cp "$MAIN_FILE" "$RUNNER_TEMP/MainActivity.kt.before_compile"
+          echo ""
+          echo "APPLYING AUDITED KOTLIN FIXES..."
 
           python3 - "$MAIN_FILE" <<'PY'
-          import re
+          import base64
           import sys
           from pathlib import Path
 
@@ -473,497 +474,188 @@ jobs:
 
               else:
                   raise SystemExit(
-                      "ERROR: required pattern not found: " + label
+                      "ERROR: pattern not found: " + label
                   )
 
 
-          # ==========================================================
-          # 1. setContent import
-          # ==========================================================
-
-          if "import androidx.activity.compose.setContent" not in source:
-
-              package_match = re.search(
-                  r"^package[^\n]+\n",
-                  source,
-                  re.MULTILINE
-              )
-
-              if not package_match:
-                  raise SystemExit(
-                      "ERROR: package declaration not found"
-                  )
-
-              source = (
-                  source[:package_match.end()]
-                  + "\nimport androidx.activity.compose.setContent\n"
-                  + source[package_match.end():]
-              )
-
-              print("FIX APPLIED: setContent import")
-
-          else:
-              print("ALREADY FIXED: setContent import")
-
-
-          # ==========================================================
-          # 2. Store Context
-          # ==========================================================
+          # ----------------------------------------------------------
+          # 1. Store context
+          # ----------------------------------------------------------
 
           replace_once(
               "private class Store(context:Context){",
-
               "private class Store(private val context:Context){",
-
               "Store context"
           )
 
 
-          # ==========================================================
-          # 3. JSONArray.mapList()
-          # ==========================================================
+          # ----------------------------------------------------------
+          # 2. JSONArray.mapList()
+          # ----------------------------------------------------------
 
           replace_once(
               "private fun <T> JSONArray.mapList(mapper:(JSONObject)->T):List<T>=(0 until length()).map{mapper(getJSONObject(it))}",
-
               """private fun <T> JSONArray.mapList(
               mapper: (JSONObject) -> T
           ): List<T> = (0 until length()).map {
               mapper(getJSONObject(it))
           }""",
-
               "JSONArray.mapList"
           )
 
 
-          # ==========================================================
-          # 4. persistPhoto()
-          # ==========================================================
+          # ----------------------------------------------------------
+          # 3. setContent import
+          # ----------------------------------------------------------
 
-          persist_old = """fun persistPhoto(uriString:String,owner:String):String{
-              if(uriString.isBlank()||uriString.startsWith("file://"))return uriString
-              return try{
-                  val uri=Uri.parse(uriString)
-                  val dir=File(context.filesDir,"photos").apply{mkdirs()}
-                  val file=File(dir,"${owner}_${UUID.randomUUID()}.jpg")
-                  val input=context.contentResolver.openInputStream(uri)?:return ""
-                  input.use{ins->FileOutputStream(file).use{outs->ins.copyTo(outs)}}
-                  file.absolutePath
-              }catch(_:Exception){""}
-          }"""
-
-          persist_new = """fun persistPhoto(uriString: String, owner: String): String {
-              if (uriString.isBlank() || uriString.startsWith("file://")) return uriString
-              return try {
-                  val uri: Uri = Uri.parse(uriString)
-                  val dir: File = File(context.filesDir, "photos").apply { mkdirs() }
-                  val file: File = File(dir, "${owner}_${UUID.randomUUID()}.jpg")
-
-                  val input: java.io.InputStream =
-                      context.contentResolver.openInputStream(uri) ?: return ""
-
-                  input.use { inputStream: java.io.InputStream ->
-                      FileOutputStream(file).use { outputStream: FileOutputStream ->
-                          inputStream.copyTo(outputStream)
-                      }
-                  }
-
-                  file.absolutePath
-              } catch (_: Exception) {
-                  ""
-              }
-          }"""
-
-          if persist_old in source:
-
-              source = source.replace(
-                  persist_old,
-                  persist_new,
-                  1
-              )
-
-              print("FIX APPLIED: persistPhoto")
-
-          elif "fun persistPhoto(uriString: String, owner: String): String" in source:
-
-              print("ALREADY FIXED: persistPhoto")
-
-          else:
-
-              raise SystemExit(
-                  "ERROR: persistPhoto function not found"
+          if "import androidx.activity.compose.setContent" not in source:
+              replace_once(
+                  "import androidx.activity.ComponentActivity\n",
+                  "import androidx.activity.ComponentActivity\nimport androidx.activity.compose.setContent\n",
+                  "setContent import"
               )
 
 
-          # ==========================================================
-          # 5. LabourDetail()
-          # ==========================================================
+          # ----------------------------------------------------------
+          # 4. ExpenseDialog arguments
+          # ----------------------------------------------------------
 
-          labour_match = re.search(
-              r"(?m)^@Composable\s+private fun LabourDetail\s*\(",
-              source
+          replace_once(
+              'ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),edit!=null){add=false;edit=null}',
+              'ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),{add=false;edit=null},edit!=null)',
+              "ExpenseDialog arguments"
           )
 
-          payment_match = re.search(
-              r"(?m)^@Composable\s+private fun PaymentDialog\s*\(",
-              source
+
+          # ----------------------------------------------------------
+          # 5. SaleDialog arguments
+          # ----------------------------------------------------------
+
+          replace_once(
+              'SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),edit!=null){add=false;edit=null}',
+              'SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),{add=false;edit=null},edit!=null)',
+              "SaleDialog arguments"
           )
 
-          if (
-              not labour_match
-              or not payment_match
-              or payment_match.start() <= labour_match.start()
-          ):
+
+          # ----------------------------------------------------------
+          # 6. LabourDetail PaymentDialog arguments
+          # ----------------------------------------------------------
+
+          replace_once(
+              'if(payment)PaymentDialog(store,id,null,""){payment=false}',
+              'if(payment)PaymentDialog(store,id,null,null){payment=false}',
+              "LabourDetail PaymentDialog arguments"
+          )
+
+
+          # ----------------------------------------------------------
+          # 7. Replace LabourDetail()
+          # ----------------------------------------------------------
+
+          labour_start = source.find(
+              "@Composable private fun LabourDetail"
+          )
+
+          labour_end = source.find(
+              "@Composable private fun PaymentDialog",
+              labour_start
+          )
+
+          if labour_start < 0 or labour_end < 0:
               raise SystemExit(
                   "ERROR: LabourDetail/PaymentDialog boundaries not found"
               )
 
 
-          labour_detail = r'''@Composable
-          private fun LabourDetail(
-              store: Store,
-              id: String,
-              onBack: () -> Unit
-          ) {
-              val l = store.labours.firstOrNull { it.id == id } ?: return
+          labour_detail = base64.b64decode(
+              "QENvbXBvc2FibGUKcHJpdmF0ZSBmdW4gTGFib3VyRGV0YWlsKAogICAgc3RvcmU6IFN0b3JlLAogICAgaWQ6IFN0cmluZywKICAgIG9uQmFjazogKCkgLT4gVW5pdAopIHsKICAgIHZhbCBsID0gc3RvcmUubGFib3Vycy5maXJzdE9yTnVsbCB7IGl0LmlkID09IGlkIH0gPzogcmV0dXJuCiAgICB2YXIgZWRpdCBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CiAgICB2YXIgcGF5bWVudCBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CiAgICB2YXIgcmF0ZSBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CiAgICB2YXIgZGVsUGF5IGJ5IHJlbWVtYmVyIHsgbXV0YWJsZVN0YXRlT2Y8UGF5bWVudD8+KG51bGwpIH0KICAgIHZhbCB3YWdlID0gc3RvcmUuYXR0ZW5kYW5jZXMuZmlsdGVyIHsgaXQubGFib3VySWQgPT0gaWQgfS5zdW1PZiB7IGl0LmZyYWN0aW9uICogaXQucmF0ZSB9CiAgICB2YWwgcGFpZCA9IHN0b3JlLnBheW1lbnRzLmZpbHRlciB7IGl0LmxhYm91cklkID09IGlkIH0uc3VtT2YgeyBpdC5hbW91bnQgfQogICAgQ29sdW1uKE1vZGlmaWVyLmZpbGxNYXhTaXplKCkpIHsKICAgICAgICBEZXRhaWxUb3BCYXIoIvCfkbcgJHtsLm5hbWUuaWZCbGFuayB7ICLgpK7gpJzgpKbgpYLgpLAiIH19Iiwgb25CYWNrKQogICAgICAgIExhenlDb2x1bW4oTW9kaWZpZXIucGFkZGluZygxNi5kcCksIHZlcnRpY2FsQXJyYW5nZW1lbnQgPSBBcnJhbmdlbWVudC5zcGFjZWRCeSgxMC5kcCkpIHsKICAgICAgICAgICAgaXRlbSB7CiAgICAgICAgICAgICAgICBSb3coTW9kaWZpZXIuZmlsbE1heFdpZHRoKCksIGhvcml6b250YWxBcnJhbmdlbWVudCA9IEFycmFuZ2VtZW50LnNwYWNlZEJ5KDguZHApKSB7CiAgICAgICAgICAgICAgICAgICAgQm94KE1vZGlmaWVyLndlaWdodCgxZikpIHsgU3RhdCgi4KSu4KSc4KSm4KWC4KSw4KWAIiwgd2FnZSkgfQogICAgICAgICAgICAgICAgICAgIEJveChNb2RpZmllci53ZWlnaHQoMWYpKSB7IFN0YXQoIuCkreClgeCkl+CkpOCkvuCkqCIsIHBhaWQpIH0KICAgICAgICAgICAgICAgICAgICBCb3goTW9kaWZpZXIud2VpZ2h0KDFmKSkgeyBTdGF0KCLgpKzgpL7gpJXgpYAiLCB3YWdlIC0gcGFpZCkgfQogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgICAgIGl0ZW0geyBCdXR0b24ob25DbGljayA9IHsgcGF5bWVudCA9IHRydWUgfSwgbW9kaWZpZXIgPSBNb2RpZmllci5maWxsTWF4V2lkdGgoKSkgeyBUZXh0KCLigrkgQ2FzaCsg4KSt4KWB4KSX4KSk4KS+4KSoIOCknOCli+CkoeCkvOClh+CkgiIpIH0gfQogICAgICAgICAgICBpdGVtIHsKICAgICAgICAgICAgICAgIEJ1dHRvbihvbkNsaWNrID0geyByYXRlID0gdHJ1ZSB9LCBtb2RpZmllciA9IE1vZGlmaWVyLmZpbGxNYXhXaWR0aCgpLCBjb2xvcnMgPSBCdXR0b25EZWZhdWx0cy5idXR0b25Db2xvcnMoY29udGFpbmVyQ29sb3IgPSBHcmVlbkRhcmspKSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgi4KSm4KS/4KS54KS+4KSh4KS84KWAIOCkrOCkpuCksuClh+CkgiIpCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaXRlbSB7IFRleHQoIuCkteCksOCljeCkpOCkruCkvuCkqCDgpKbgpL/gpLngpL7gpKHgpLzgpYA6IOKCuSR7bW9uZXkoc3RvcmUucmF0ZUZvcihpZCwgdG9kYXkoKSkpfS/gpKbgpL/gpKgiLCBmb250V2VpZ2h0ID0gRm9udFdlaWdodC5Cb2xkLCBjb2xvciA9IEdyZWVuKSB9CiAgICAgICAgICAgIGl0ZW0geyBUZXh0KCLgpKbgpL/gpLngpL7gpKHgpLzgpYAg4KSH4KSk4KS/4KS54KS+4KS4IiwgZm9udFdlaWdodCA9IEZvbnRXZWlnaHQuQm9sZCwgZm9udFNpemUgPSAxNi5zcCkgfQogICAgICAgICAgICBpdGVtcyhzdG9yZS5yYXRlSGlzdG9yeUZvcihpZCksIGtleSA9IHsgaXQuaWQgfSkgeyByIC0+CiAgICAgICAgICAgICAgICBUZXh0KCIke2Rpc3BsYXlEYXRlKHIuZWZmZWN0aXZlRGF0ZSl9IOCkuOClhyDigrkke21vbmV5KHIucmF0ZSl9L+CkpuCkv+CkqCIsIG1vZGlmaWVyID0gTW9kaWZpZXIuZmlsbE1heFdpZHRoKCkucGFkZGluZyh2ZXJ0aWNhbCA9IDMuZHApLCBmb250U2l6ZSA9IDEyLnNwLCBjb2xvciA9IENvbG9yLkdyYXkpCiAgICAgICAgICAgIH0KICAgICAgICAgICAgaXRlbSB7IFRleHQoIuCkueCkvuCknOCkv+CksOClgCIsIGZvbnRXZWlnaHQgPSBGb250V2VpZ2h0LkJvbGQsIGZvbnRTaXplID0gMTYuc3ApIH0KICAgICAgICAgICAgaXRlbXMoc3RvcmUuYXR0ZW5kYW5jZXMuZmlsdGVyIHsgaXQubGFib3VySWQgPT0gaWQgfS5zb3J0ZWRCeURlc2NlbmRpbmcgeyBpdC5kYXRlIH0sIGtleSA9IHsgaXQuaWQgfSkgeyBhIC0+CiAgICAgICAgICAgICAgICB2YWwgZiA9IHN0b3JlLmZpZWxkcy5maXJzdE9yTnVsbCB7IGl0LmlkID09IGEuZmllbGRJZCB9CiAgICAgICAgICAgICAgICBDYXJkKE1vZGlmaWVyLmZpbGxNYXhXaWR0aCgpKSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgIiR7ZGlzcGxheURhdGUoYS5kYXRlKX0g4oCiICR7Zj8ubmFtZSA/OiAi4KSW4KWH4KSkIn0g4oCiICIgKwogICAgICAgICAgICAgICAgICAgICAgICAgICAgIiR7c3RvcmUuY3JvcHMuZmlyc3RPck51bGwgeyBpdC5pZCA9PSBhLmNyb3BJZCB9Py5uYW1lPy5sZXQgeyAiJGl0IOKAoiAiIH0gPzogIiJ9IiArCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAiJHtpZiAoYS5mcmFjdGlvbiA9PSAxLjApICJGdWxsIiBlbHNlICJIYWxmIn0g4oCiIOKCuSR7bW9uZXkoYS5mcmFjdGlvbiAqIGEucmF0ZSl9IiwKICAgICAgICAgICAgICAgICAgICAgICAgTW9kaWZpZXIucGFkZGluZygxMi5kcCkKICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaXRlbSB7IFRleHQoIuCkreClgeCkl+CkpOCkvuCkqCIsIGZvbnRXZWlnaHQgPSBGb250V2VpZ2h0LkJvbGQsIGZvbnRTaXplID0gMTYuc3ApIH0KICAgICAgICAgICAgaXRlbXMoc3RvcmUucGF5bWVudHMuZmlsdGVyIHsgaXQubGFib3VySWQgPT0gaWQgfS5zb3J0ZWRCeURlc2NlbmRpbmcgeyBpdC5kYXRlIH0sIGtleSA9IHsgaXQuaWQgfSkgeyBwIC0+CiAgICAgICAgICAgICAgICB2YWwgZiA9IHN0b3JlLmZpZWxkcy5maXJzdE9yTnVsbCB7IGl0LmlkID09IHAuZmllbGRJZCB9CiAgICAgICAgICAgICAgICBSb3coTW9kaWZpZXIuZmlsbE1heFdpZHRoKCkucGFkZGluZyh2ZXJ0aWNhbCA9IDUuZHApLCB2ZXJ0aWNhbEFsaWdubWVudCA9IEFsaWdubWVudC5DZW50ZXJWZXJ0aWNhbGx5KSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgIiR7ZGlzcGxheURhdGUocC5kYXRlKX0g4oCiICR7Zj8ubmFtZSA/OiAi4KS44KS+4KSu4KS+4KSo4KWN4KSvIn0iICsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICIke3N0b3JlLmNyb3BzLmZpcnN0T3JOdWxsIHsgaXQuaWQgPT0gcC5jcm9wSWQgfT8ubmFtZT8ubGV0IHsgIiDigKIgJGl0IiB9ID86ICIifSIgKwogICAgICAgICAgICAgICAgICAgICAgICAgICAgIiDigKIg4oK5JHttb25leShwLmFtb3VudCl9IiwKICAgICAgICAgICAgICAgICAgICAgICAgbW9kaWZpZXIuIHdlaWdodCgxZikKICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgIEljb25CdXR0b24ob25DbGljayA9IHsgZGVsUGF5ID0gcCB9KSB7CiAgICAgICAgICAgICAgICAgICAgICAgIEljb24oaW1hZ2VWZWN0b3IgPSBJY29ucy5EZWZhdWx0LkRlbGV0ZSwgY29udGVudERlc2NyaXB0aW9uID0gbnVsbCwgdGludCA9IENvbG9yKDB4RkZCMzI2MUUpKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBpZiAoZWRpdCkgTGFib3VyRGlhbG9nKHN0b3JlLCBsKSB7IGVkaXQgPSBmYWxzZSB9CiAgICAgICAgaWYgKHBheW1lbnQpIFBheW1lbnREaWFsb2coc3RvcmUsIGlkLCBudWxsLCBudWxsKSB7IHBheW1lbnQgPSBmYWxzZSB9CiAgICAgICAgaWYgKHJhdGUpIFJhdGVEaWFsb2coc3RvcmUsIGlkKSB7IHJhdGUgPSBmYWxzZSB9CiAgICAgICAgZGVsUGF5Py5sZXQgeyBwIC0+CiAgICAgICAgICAgIENvbmZpcm1EaWFsb2coIuCkreClgeCkl+CkpOCkvuCkqCDgpLngpJ/gpL7gpI/gpIE/IiwgIuCkr+CkuSBwYXltZW50IHJlY29yZCDgpLngpJ8g4KSc4KS+4KSP4KSX4KS+4KWkIiwgeyBzdG9yZS5kZWxldGVQYXltZW50KHAuaWQpOyBkZWxQYXkgPSBudWxsIH0sIHsgZGVsUGF5ID0gbnVsbCB9KQogICAgICAgIH0KICAgIH0KfQo="
+          ).decode("utf-8")
 
-              var edit by remember { mutableStateOf(false) }
-              var payment by remember { mutableStateOf(false) }
-              var rate by remember { mutableStateOf(false) }
-              var delPay by remember { mutableStateOf<Payment?>(null) }
+          source = (
+              source[:labour_start]
+              + labour_detail
+              + source[labour_end:]
+          )
 
-              val wage = store.attendances
-                  .filter { it.labourId == id }
-                  .sumOf { it.fraction * it.rate }
 
-              val paid = store.payments
-                  .filter { it.labourId == id }
-                  .sumOf { it.amount }
+          # ----------------------------------------------------------
+          # 8. persistPhoto()
+          # ----------------------------------------------------------
 
-              Column(Modifier.fillMaxSize()) {
+          persist_start = source.find(
+              "    fun persistPhoto("
+          )
 
-                  DetailTopBar(
-                      "👷 ${l.name.ifBlank { "मजदूर" }}",
-                      onBack
-                  )
+          persist_end = source.find(
+              "    fun addLabour(",
+              persist_start
+          )
 
-                  LazyColumn(
-                      Modifier.padding(16.dp),
-                      verticalArrangement = Arrangement.spacedBy(10.dp)
-                  ) {
+          if persist_start < 0 or persist_end < 0:
+              raise SystemExit(
+                  "ERROR: persistPhoto boundaries not found"
+              )
 
-                      item {
-                          Row(
-                              Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
-                          ) {
-                              Box(Modifier.weight(1f)) {
-                                  Stat("मजदूरी", wage)
-                              }
-
-                              Box(Modifier.weight(1f)) {
-                                  Stat("भुगतान", paid)
-                              }
-
-                              Box(Modifier.weight(1f)) {
-                                  Stat("बाकी", wage - paid)
-                              }
-                          }
-                      }
-
-                      item {
-                          Button(
-                              onClick = { payment = true },
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Text("₹ Cash+ भुगतान जोड़ें")
-                          }
-                      }
-
-                      item {
-                          Button(
-                              onClick = { rate = true },
-                              modifier = Modifier.fillMaxWidth(),
-                              colors = ButtonDefaults.buttonColors(
-                                  containerColor = GreenDark
-                              )
-                          ) {
-                              Text("दिहाड़ी बदलें")
-                          }
-                      }
-
-                      item {
-                          Text(
-                              "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
-                              fontWeight = FontWeight.Bold,
-                              color = Green
-                          )
-                      }
-
-                      item {
-                          Text(
-                              "दिहाड़ी इतिहास",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          store.rateHistoryFor(id),
-                          key = { it.id }
-                      ) { r ->
-
-                          Text(
-                              "${displayDate(r.effectiveDate)} से ₹${money(r.rate)}/दिन",
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 3.dp),
-                              fontSize = 12.sp,
-                              color = Color.Gray
-                          )
-                      }
-
-                      item {
-                          Text(
-                              "हाजिरी",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          store.attendances
-                              .filter { it.labourId == id }
-                              .sortedByDescending { it.date },
-                          key = { it.id }
-                      ) { a ->
-
-                          val f = store.fields
-                              .firstOrNull { it.id == a.fieldId }
-
-                          Card(
-                              Modifier.fillMaxWidth()
-                          ) {
-                              Text(
-                                  "${displayDate(a.date)} • ${f?.name ?: "खेत"} • " +
-                                      "${store.crops.firstOrNull { it.id == a.cropId }?.name?.let { "$it • " } ?: ""}" +
-                                      "${if (a.fraction == 1.0) "Full" else "Half"} • " +
-                                      "₹${money(a.fraction * a.rate)}",
-                                  Modifier.padding(12.dp)
-                              )
-                          }
-                      }
-
-                      item {
-                          Text(
-                              "भुगतान",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-                      items(
-                          store.payments
-                              .filter { it.labourId == id }
-                              .sortedByDescending { it.date },
-                          key = { it.id }
-                      ) { p ->
-
-                          val f = store.fields
-                              .firstOrNull { it.id == p.fieldId }
-
-                          Row(
-                              Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 5.dp),
-                              verticalAlignment = Alignment.CenterVertically
-                          ) {
-
-                              Text(
-                                  "${displayDate(p.date)} • ${f?.name ?: "सामान्य"}" +
-                                      "${store.crops.firstOrNull { it.id == p.cropId }?.name?.let { " • $it" } ?: ""}" +
-                                      " • ₹${money(p.amount)}",
-                                  modifier = Modifier.weight(1f)
-                              )
-
-                              IconButton(
-                                  onClick = { delPay = p }
-                              ) {
-                                  Icon(
-                                      imageVector = Icons.Default.Delete,
-                                      contentDescription = null,
-                                      tint = Color(0xFFB3261E)
-                                  )
-                              }
-                          }
+          persist_photo = """    fun persistPhoto(uriString: String, owner: String): String {
+              if (uriString.isBlank() || uriString.startsWith("file://")) return uriString
+              return try {
+                  val uri: Uri = Uri.parse(uriString)
+                  val dir: File = File(context.filesDir, "photos").apply { mkdirs() }
+                  val file: File = File(dir, "${owner}_${UUID.randomUUID()}.jpg")
+                  val input: java.io.InputStream =
+                      context.contentResolver.openInputStream(uri) ?: return ""
+                  input.use { inputStream: java.io.InputStream ->
+                      FileOutputStream(file).use { outputStream: FileOutputStream ->
+                          inputStream.copyTo(outputStream)
                       }
                   }
-
-                  if (edit) {
-                      LabourDialog(
-                          store,
-                          l
-                      ) {
-                          edit = false
-                      }
-                  }
-
-                  if (payment) {
-                      PaymentDialog(
-                          store,
-                          id,
-                          null,
-                          null
-                      ) {
-                          payment = false
-                      }
-                  }
-
-                  if (rate) {
-                      RateDialog(
-                          store,
-                          id
-                      ) {
-                          rate = false
-                      }
-                  }
-
-                  delPay?.let { p ->
-
-                      ConfirmDialog(
-                          "भुगतान हटाएँ?",
-                          "यह payment record हट जाएगा.",
-                          {
-                              store.deletePayment(p.id)
-                              delPay = null
-                          },
-                          {
-                              delPay = null
-                          }
-                      )
-                  }
+                  file.absolutePath
+              } catch (_: Exception) {
+                  ""
               }
           }
 
-          '''
+          """
 
           source = (
-              source[:labour_match.start()]
-              + labour_detail
-              + source[payment_match.start():]
+              source[:persist_start]
+              + persist_photo
+              + source[persist_end:]
           )
 
-          print("FIX APPLIED: LabourDetail balanced function")
 
+          # ----------------------------------------------------------
+          # 9. BottomBar Icon()
+          # ----------------------------------------------------------
 
-          # ==========================================================
-          # 6. ExpenseDialog / SaleDialog calls
-          # ==========================================================
-
-          source = source.replace(
-              "ExpenseDialog(store,edit,{add=false;edit=null},edit!=null)",
-              "ExpenseDialog(store,edit,{add=false;edit=null},edit!=null)"
-          )
-
-          source = source.replace(
-              "ExpenseDialog(store, edit, {add=false;edit=null}, edit!=null)",
-              "ExpenseDialog(store, edit, {add=false;edit=null}, edit!=null)"
-          )
-
-          source = source.replace(
-              "SaleDialog(store,edit,{add=false;edit=null},edit!=null)",
-              "SaleDialog(store,edit,{add=false;edit=null},edit!=null)"
-          )
-
-          source = source.replace(
-              "SaleDialog(store, edit, {add=false;edit=null}, edit!=null)",
-              "SaleDialog(store, edit, {add=false;edit=null}, edit!=null)"
-          )
-
-          print("CHECKED: ExpenseDialog/SaleDialog calls")
-
-
-          # ==========================================================
-          # 7. PaymentDialog nullable arguments
-          # ==========================================================
-
-          source = source.replace(
-              'PaymentDialog(store,id,null,""){payment=false}',
-              'PaymentDialog(store,id,null,null){payment=false}'
-          )
-
-          source = source.replace(
-              'PaymentDialog(store, id, null, "") { payment = false }',
-              'PaymentDialog(store, id, null, null) { payment = false }'
-          )
-
-          print("CHECKED: PaymentDialog arguments")
-
-
-          # ==========================================================
-          # 8. BottomBar Icon
-          # ==========================================================
-
-          source = source.replace(
+          replace_once(
+              "Icon(ic,null,tint=if(current==k)Green else Color.Gray,Modifier.size(22.dp))",
               "Icon(imageVector=ic,contentDescription=null,modifier=Modifier.size(22.dp),tint=if(current==k)Green else Color.Gray)",
-              """Icon(
-              imageVector = ic,
-              contentDescription = null,
-              modifier = Modifier.size(22.dp),
-              tint = if (current == k) Green else Color.Gray
-          )"""
+              "BottomBar Icon"
           )
 
-          print("CHECKED: BottomBar Icon")
 
+          # ----------------------------------------------------------
+          # 10. TopBar Image()
+          # ----------------------------------------------------------
 
-          # ==========================================================
-          # 9. TopBar Image
-          # ==========================================================
-
-          source = source.replace(
-              """Image(
-              painterResource(R.drawable.majdoor_logo_small),
-              null,
-              Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),
-              contentScale = ContentScale.Crop
-          )""",
-              """Image(
-              painter = painterResource(R.drawable.majdoor_logo_small),
-              contentDescription = null,
-              modifier = Modifier
-                  .size(42.dp)
-                  .clip(RoundedCornerShape(10.dp)),
-              contentScale = ContentScale.Crop
-          )"""
+          replace_once(
+              "Image(painterResource(R.drawable.majdoor_logo_small),null,Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)",
+              "Image(painter=painterResource(R.drawable.majdoor_logo_small),contentDescription=null,modifier=Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)",
+              "TopBar Image"
           )
 
-          print("CHECKED: TopBar Image")
 
+          # ----------------------------------------------------------
+          # 11. Dashboard Image()
+          # ----------------------------------------------------------
 
-          # ==========================================================
-          # 10. Dashboard Image
-          # ==========================================================
-
-          source = source.replace(
-              """Image(
-              painterResource(R.drawable.majdoor_logo),
-              null,
-              Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),
-              contentScale = ContentScale.Fit
-          )""",
-              """Image(
-              painter = painterResource(R.drawable.majdoor_logo),
-              contentDescription = null,
-              modifier = Modifier
-                  .fillMaxWidth()
-                  .height(135.dp)
-                  .clip(RoundedCornerShape(24.dp)),
-              contentScale = ContentScale.Fit
-          )"""
+          replace_once(
+              "Image(painterResource(R.drawable.majdoor_logo),null,Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),ContentScale.Fit)",
+              "Image(painter=painterResource(R.drawable.majdoor_logo),contentDescription=null,modifier=Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),contentScale=ContentScale.Fit)",
+              "Dashboard Image"
           )
-
-          print("CHECKED: Dashboard Image")
 
 
           path.write_text(
@@ -972,43 +664,32 @@ jobs:
           )
 
           print("")
-          print("ALL SOURCE FIXES COMPLETED INSIDE COMPILE STEP.")
+          print("ALL AUDITED SOURCE FIXES WRITTEN.")
           PY
 
-
-          # ==========================================================
-          # APK ID / VERSION
-          # ==========================================================
-
-          echo "=============================================="
-          echo "NORMALIZE APK ID / VERSION"
-          echo "=============================================="
-
-          GRADLE_FILE="app/build.gradle.kts"
-
-          test -f "$GRADLE_FILE"
-
-          sed -i \
-            's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
-            "$GRADLE_FILE"
-
-          sed -i \
-            's/versionCode = [0-9][0-9]*/versionCode = 77/' \
-            "$GRADLE_FILE"
-
-          sed -i \
-            's/versionName = "[^"]*"/versionName = "1.77.0"/' \
-            "$GRADLE_FILE"
-
           echo ""
-          grep "applicationId" "$GRADLE_FILE"
-          grep "versionCode" "$GRADLE_FILE"
-          grep "versionName" "$GRADLE_FILE"
+          echo "=============================================="
+          echo "SOURCE VERIFICATION"
+          echo "=============================================="
 
+          grep -n \
+            "import androidx.activity.compose.setContent" \
+            "$MAIN_FILE"
 
-          # ==========================================================
-          # ACTUAL KOTLIN COMPILER
-          # ==========================================================
+          grep -n \
+            "private class Store" \
+            "$MAIN_FILE" \
+            | head -1
+
+          grep -n \
+            "fun persistPhoto" \
+            "$MAIN_FILE" \
+            | head -1
+
+          grep -n \
+            "private fun LabourDetail" \
+            "$MAIN_FILE" \
+            | head -1
 
           echo ""
           echo "=============================================="
@@ -1029,7 +710,90 @@ jobs:
 
 
       # ============================================================
-      # 19. ASSEMBLE RELEASE APK
+      # 19. SET FINAL RELEASE IDENTITY
+      # ============================================================
+
+      - name: Set Final Release Identity
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "SET FINAL RELEASE IDENTITY"
+          echo "=============================================="
+
+          if [ -f app/build.gradle.kts ]; then
+
+            python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text(encoding="utf-8")
+
+          pairs = [
+              (
+                  'applicationId = "com.majdoor.hisaabpro"',
+                  'applicationId = "com.majdoor.hisaab"'
+              ),
+              (
+                  'versionCode = 1',
+                  'versionCode = 77'
+              ),
+              (
+                  'versionName = "1.0.0"',
+                  'versionName = "1.77.0"'
+              )
+          ]
+
+          for old, new in pairs:
+              if old in s:
+                  s = s.replace(old, new, 1)
+              elif new in s:
+                  pass
+              else:
+                  raise SystemExit(
+                      "Missing Gradle identity: " + old
+                  )
+
+          p.write_text(
+              s,
+              encoding="utf-8"
+          )
+
+          print("FINAL RELEASE IDENTITY SET.")
+          PY
+
+          elif [ -f app/build.gradle ]; then
+
+            sed -i \
+              's/applicationId[[:space:]]*["'"'"']com\.majdoor\.hisaabpro["'"'"']/applicationId "com.majdoor.hisaab"/' \
+              app/build.gradle
+
+            sed -i \
+              's/versionCode[[:space:]]*[0-9][0-9]*/versionCode 77/' \
+              app/build.gradle
+
+            sed -i \
+              's/versionName[[:space:]]*["'"'"'][^"'"'"']*["'"'"']/versionName "1.77.0"/' \
+              app/build.gradle
+
+          else
+            echo "ERROR: app Gradle file not found."
+            exit 1
+          fi
+
+          echo ""
+          echo "FINAL GRADLE IDENTITY:"
+
+          grep -E \
+            'applicationId|versionCode|versionName' \
+            app/build.gradle* \
+            || true
+
+
+      # ============================================================
+      # 20. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1038,17 +802,25 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "ASSEMBLE RELEASE APK"
+          echo "=============================================="
+
           gradle \
             --no-daemon \
             --stacktrace \
+            --info \
             --rerun-tasks \
             :app:assembleRelease
 
-          echo "ASSEMBLE RELEASE APK PASSED."
+          echo ""
+          echo "=============================================="
+          echo "ASSEMBLE RELEASE APK PASSED"
+          echo "=============================================="
 
 
       # ============================================================
-      # 20. LOCATE RELEASE APK
+      # 21. LOCATE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -1056,19 +828,29 @@ jobs:
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -name "*release*.apk" \
-            -print \
-            -quit)
+          echo "=============================================="
+          echo "LOCATE RELEASE APK"
+          echo "=============================================="
 
-          if [ -z "$APK" ]; then
+          APK=$(
+            find "$PROJECT_DIR/app/build/outputs/apk" \
+              -type f \
+              -name "*release*.apk" \
+              -print \
+              | sort \
+              | head -1
+          )
+
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+
+            echo ""
             echo "ERROR: Release APK not found."
 
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
               -print \
-              2>/dev/null || true
+              2>/dev/null \
+              || true
 
             exit 1
           fi
@@ -1081,7 +863,7 @@ jobs:
 
 
       # ============================================================
-      # 21. VERIFY APK PACKAGE
+      # 22. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -1089,11 +871,14 @@ jobs:
         run: |
           set -e
 
-          APK="$APK_PATH"
+          echo "=============================================="
+          echo "VERIFY APK PACKAGE"
+          echo "=============================================="
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging "$APK"
+              dump badging \
+              "$APK_PATH"
           )
 
           echo "$BADGING" \
@@ -1104,29 +889,37 @@ jobs:
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
 
+            echo ""
             echo "ERROR: Package name mismatch."
+            echo "Expected: $PACKAGE_NAME"
+
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionCode='$VERSION_CODE'"; then
 
+            echo ""
             echo "ERROR: Version code mismatch."
+
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionName='$VERSION_NAME'"; then
 
+            echo ""
             echo "ERROR: Version name mismatch."
+
             exit 1
           fi
 
-          echo "PACKAGE AND VERSION VERIFIED."
+          echo ""
+          echo "PACKAGE/VERSION VERIFIED."
 
 
       # ============================================================
-      # 22. PREPARE RELEASE SIGNING
+      # 23. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -1140,6 +933,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "PREPARE RELEASE SIGNING"
+          echo "=============================================="
+
           KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
 
           if [ -n "$KEYSTORE_BASE64" ] && \
@@ -1147,6 +944,7 @@ jobs:
              [ -n "$KEY_ALIAS" ] && \
              [ -n "$KEY_PASSWORD" ]; then
 
+            echo ""
             echo "PERMANENT SIGNING SECRETS FOUND."
 
             printf '%s' "$KEYSTORE_BASE64" \
@@ -1168,8 +966,12 @@ jobs:
             echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
+            echo ""
+            echo "PERMANENT KEYSTORE VERIFIED."
+
           else
 
+            echo ""
             echo "Permanent signing secrets not configured."
             echo "Creating temporary JKS."
 
@@ -1193,25 +995,38 @@ jobs:
 
             test -s "$KEYSTORE_FILE"
 
+            keytool \
+              -list \
+              -keystore "$KEYSTORE_FILE" \
+              -storetype JKS \
+              -storepass "$TEMP_PASSWORD" \
+              -alias "$TEMP_ALIAS" \
+              >/dev/null
+
             echo "RELEASE_SIGNING_MODE=TEMPORARY" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD"
+            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
+            echo ""
             echo "TEMPORARY KEYSTORE VERIFIED."
 
           fi
 
 
       # ============================================================
-      # 23. VERIFY SIGNING
+      # 24. VERIFY SIGNING
       # ============================================================
 
       - name: Verify Signing Environment
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY SIGNING ENVIRONMENT"
+          echo "=============================================="
 
           test -n "${RELEASE_KEYSTORE:-}"
           test -f "$RELEASE_KEYSTORE"
@@ -1233,13 +1048,17 @@ jobs:
 
 
       # ============================================================
-      # 24. ZIPALIGN
+      # 25. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "ZIPALIGN RELEASE APK"
+          echo "=============================================="
 
           INPUT_APK="$APK_PATH"
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
@@ -1268,13 +1087,17 @@ jobs:
 
 
       # ============================================================
-      # 25. SIGN APK
+      # 26. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "SIGN RELEASE APK"
+          echo "=============================================="
 
           SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
@@ -1297,7 +1120,7 @@ jobs:
 
 
       # ============================================================
-      # 26. VERIFY APK SIGNATURE
+      # 27. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1319,13 +1142,17 @@ jobs:
 
 
       # ============================================================
-      # 27. FINAL APK VALIDATION
+      # 28. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "FINAL APK VALIDATION"
+          echo "=============================================="
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
@@ -1338,13 +1165,15 @@ jobs:
           echo "$SIZE bytes"
 
           if [ "$SIZE" -lt 100000 ]; then
+            echo ""
             echo "ERROR: APK size unexpectedly small."
             exit 1
           fi
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging "$APK"
+              dump badging \
+              "$APK"
           )
 
           echo ""
@@ -1358,6 +1187,7 @@ jobs:
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
 
+            echo ""
             echo "ERROR: Final APK package mismatch."
             exit 1
           fi
@@ -1365,14 +1195,16 @@ jobs:
           if ! echo "$BADGING" | grep -q \
             "versionCode='$VERSION_CODE'"; then
 
-            echo "ERROR: Final APK version code mismatch."
+            echo ""
+            echo "ERROR: Final APK versionCode mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionName='$VERSION_NAME'"; then
 
-            echo "ERROR: Final APK version name mismatch."
+            echo ""
+            echo "ERROR: Final APK versionName mismatch."
             exit 1
           fi
 
@@ -1387,7 +1219,7 @@ jobs:
 
 
       # ============================================================
-      # 28. UPLOAD FINAL SIGNED APK
+      # 29. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1400,7 +1232,7 @@ jobs:
 
 
       # ============================================================
-      # 29. UPLOAD BUILD REPORTS
+      # 30. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
