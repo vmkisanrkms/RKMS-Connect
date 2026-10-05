@@ -24,7 +24,7 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_READY_TO_BUILD_AUDITED_V11.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_KOTLIN_FIXED.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -46,9 +46,6 @@ jobs:
 
       # ============================================================
       # 2. JAVA 17
-      # IMPORTANT:
-      # No Gradle cache here because the Android project is inside ZIP
-      # and is extracted later.
       # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -103,7 +100,6 @@ jobs:
 
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
           if [ -d "$SDK/cmdline-tools/latest/bin" ]; then
@@ -191,43 +187,21 @@ jobs:
 
           ZIP_PATH=""
 
-          # Exact expected ZIP
           if [ -f "./${ZIP_NAME}" ]; then
             ZIP_PATH="./${ZIP_NAME}"
           fi
 
-          # Exact known repository ZIP
-          if [ -z "$ZIP_PATH" ] && \
-             [ -f "./Majdoor_Hisaab_PRO_READY_TO_BUILD_AUDITED_V11.zip" ]; then
-            ZIP_PATH="./Majdoor_Hisaab_PRO_READY_TO_BUILD_AUDITED_V11.zip"
-          fi
-
-          # Fallback search
           if [ -z "$ZIP_PATH" ]; then
-            ZIP_PATH="$(
-              find . \
-                -maxdepth 4 \
-                -type f \
-                -iname "*Majdoor*Hisaab*.zip" \
-                -print \
-                | grep -Ei \
-                  "AUDITED_V11|READY_TO_BUILD|FIXED_v10" \
-                | head -n 1 || true
-            )"
-          fi
-
-          if [ -z "$ZIP_PATH" ] || [ ! -f "$ZIP_PATH" ]; then
-            echo "::error::Majdoor Hisaab Android project ZIP was not found."
-
+            echo "::error::Expected ZIP not found:"
+            echo "${ZIP_NAME}"
             echo ""
-            echo "All ZIP files:"
+            echo "Available ZIP files:"
             find . \
               -maxdepth 6 \
               -type f \
               -iname "*.zip" \
               -print \
               | sort || true
-
             exit 1
           fi
 
@@ -262,8 +236,6 @@ jobs:
           echo ""
           echo "Extraction completed."
 
-          echo ""
-          echo "Important project files:"
           find "$EXTRACT_DIR" \
             -type f \
             \( \
@@ -287,7 +259,6 @@ jobs:
 
           PROJECT_ROOT=""
 
-          # Prefer settings.gradle.kts
           SETTINGS_KTS="$(
             find "$BASE" \
               -type f \
@@ -300,7 +271,6 @@ jobs:
             PROJECT_ROOT="$(dirname "$SETTINGS_KTS")"
           fi
 
-          # Fallback settings.gradle
           if [ -z "$PROJECT_ROOT" ]; then
             SETTINGS_GRADLE="$(
               find "$BASE" \
@@ -317,16 +287,12 @@ jobs:
 
           if [ -z "$PROJECT_ROOT" ]; then
             echo "::error::Android Gradle project root was not found."
-
-            echo ""
-            echo "Extracted project structure:"
             find "$BASE" \
               -maxdepth 6 \
               -type f \
               -print \
               | sort \
               | head -n 500
-
             exit 1
           fi
 
@@ -470,10 +436,6 @@ jobs:
 
       # ============================================================
       # 15. COMPILE + BUILD RELEASE APK
-      #
-      # IMPORTANT:
-      # No guessed Kotlin source repair is applied here.
-      # This lets the actual project report the real compiler error.
       # ============================================================
       - name: Compile Release Kotlin and Build APK
         shell: bash
@@ -482,11 +444,36 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          chmod +x gradlew
+          MAIN_KT="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
+          if [ ! -f "$MAIN_KT" ]; then
+            echo "::error::MainActivity.kt not found:"
+            echo "$MAIN_KT"
+            exit 1
+          fi
+
+          echo "=========================================="
+          echo "VERIFYING FINAL KOTLIN SOURCE"
+          echo "=========================================="
+
+          grep -n \
+            'private class Store(private val context:Context)' \
+            "$MAIN_KT"
+
+          grep -n \
+            'Icon(imageVector=ic,contentDescription=null,modifier=' \
+            "$MAIN_KT"
+
+          grep -n \
+            'Image(painter=painterResource(R.drawable.majdoor_logo)' \
+            "$MAIN_KT"
+
+          echo ""
           echo "=========================================="
           echo "BUILDING RELEASE APK"
           echo "=========================================="
+
+          chmod +x gradlew
 
           ./gradlew assembleRelease \
             --no-daemon \
