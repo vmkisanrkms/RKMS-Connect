@@ -100,6 +100,7 @@ jobs:
 
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
           if [ -d "$SDK/cmdline-tools/latest/bin" ]; then
@@ -194,14 +195,17 @@ jobs:
           if [ -z "$ZIP_PATH" ]; then
             echo "::error::Expected ZIP not found:"
             echo "${ZIP_NAME}"
+
             echo ""
             echo "Available ZIP files:"
+
             find . \
               -maxdepth 6 \
               -type f \
               -iname "*.zip" \
               -print \
               | sort || true
+
             exit 1
           fi
 
@@ -235,6 +239,9 @@ jobs:
 
           echo ""
           echo "Extraction completed."
+
+          echo ""
+          echo "Important project files:"
 
           find "$EXTRACT_DIR" \
             -type f \
@@ -287,12 +294,17 @@ jobs:
 
           if [ -z "$PROJECT_ROOT" ]; then
             echo "::error::Android Gradle project root was not found."
+
+            echo ""
+            echo "Extracted project structure:"
+
             find "$BASE" \
               -maxdepth 6 \
               -type f \
               -print \
               | sort \
               | head -n 500
+
             exit 1
           fi
 
@@ -482,6 +494,13 @@ jobs:
 
       # ============================================================
       # 16. LOCATE RELEASE APK
+      #
+      # IMPORTANT:
+      # assembleRelease creates:
+      # app-release-unsigned.apk
+      #
+      # This unsigned APK is intentionally used as the input for
+      # zipalign and apksigner below.
       # ============================================================
       - name: Locate Release APK
         shell: bash
@@ -500,38 +519,114 @@ jobs:
             -print \
             | sort
 
+          echo ""
+          echo "=========================================="
+          echo "SEARCHING RELEASE APK"
+          echo "=========================================="
+
+          APK_PATH=""
+
+          # --------------------------------------------------------
+          # 1. Preferred standard Gradle release APK
+          # --------------------------------------------------------
           APK_PATH="$(
             find . \
               -type f \
-              -path "*/build/outputs/apk/release/*.apk" \
-              ! -name "*-unsigned.apk" \
+              -path "*/build/outputs/apk/release/*-release-unsigned.apk" \
               -print \
               | head -n 1 || true
           )"
 
+          # --------------------------------------------------------
+          # 2. Exact standard filename fallback
+          # --------------------------------------------------------
           if [ -z "$APK_PATH" ]; then
             APK_PATH="$(
               find . \
                 -type f \
-                -name "*.apk" \
-                ! -name "*-unsigned.apk" \
+                -name "app-release-unsigned.apk" \
                 -print \
                 | head -n 1 || true
             )"
           fi
 
+          # --------------------------------------------------------
+          # 3. Any APK inside release output
+          # --------------------------------------------------------
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH="$(
+              find . \
+                -type f \
+                -path "*/build/outputs/apk/release/*.apk" \
+                -print \
+                | head -n 1 || true
+            )"
+          fi
+
+          # --------------------------------------------------------
+          # 4. Final fallback: any APK
+          # --------------------------------------------------------
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH="$(
+              find . \
+                -type f \
+                -name "*.apk" \
+                -print \
+                | head -n 1 || true
+            )"
+          fi
+
+          # --------------------------------------------------------
+          # 5. Fail only if absolutely no APK exists
+          # --------------------------------------------------------
           if [ -z "$APK_PATH" ]; then
             echo "::error::Release APK was not found."
+
+            echo ""
+            echo "Complete APK search result:"
+
+            find . \
+              -type f \
+              -name "*.apk" \
+              -print \
+              | sort || true
+
+            echo ""
+            echo "Release output directories:"
+
+            find . \
+              -type d \
+              -path "*/build/outputs/apk/release" \
+              -print \
+              | sort || true
+
             exit 1
           fi
 
           APK_PATH="$(realpath "$APK_PATH")"
 
           echo ""
-          echo "Release APK:"
+          echo "=========================================="
+          echo "RELEASE APK FOUND"
+          echo "=========================================="
+
+          echo "APK PATH:"
           echo "$APK_PATH"
 
+          echo ""
+          echo "APK SIZE:"
+          ls -lh "$APK_PATH"
+
+          # --------------------------------------------------------
+          # Copy to stable temporary location
+          # --------------------------------------------------------
           cp "$APK_PATH" "$RUNNER_TEMP/release-original.apk"
+
+          test -f "$RUNNER_TEMP/release-original.apk"
+
+          echo ""
+          echo "Original APK copied to:"
+          echo "$RUNNER_TEMP/release-original.apk"
 
           echo "ORIGINAL_APK=$RUNNER_TEMP/release-original.apk" >> "$GITHUB_ENV"
 
@@ -555,16 +650,19 @@ jobs:
 
           echo ""
           echo "Application ID:"
+
           "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
             manifest application-id "$APK" || true
 
           echo ""
           echo "Version Name:"
+
           "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
             manifest version-name "$APK" || true
 
           echo ""
           echo "Version Code:"
+
           "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
             manifest version-code "$APK" || true
 
@@ -876,11 +974,12 @@ jobs:
           echo "2. Gradle ${GRADLE_VERSION}"
           echo "3. Android API ${ANDROID_API}"
           echo "4. Release compilation"
-          echo "5. APK alignment"
-          echo "6. APK signing"
-          echo "7. Signature verification"
-          echo "8. Package/version verification"
-          echo "9. Final artifact upload"
+          echo "5. APK detection"
+          echo "6. APK alignment"
+          echo "7. APK signing"
+          echo "8. Signature verification"
+          echo "9. Package/version verification"
+          echo "10. Final artifact upload"
           echo ""
           echo "======================================================"
           echo "                BUILD SUCCESSFUL"
