@@ -24,7 +24,7 @@ env:
   VERSION_NAME: "1.0.0"
   VERSION_CODE: "1"
 
-  ZIP_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-FIXED.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_FINAL_FIXED_SIGNED_DASHBOARD.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -813,6 +813,11 @@ jobs:
 
       # ============================================================
       # 22. VERIFY FINAL APK IDENTITY
+      #
+      # FIXED:
+      # Package  = com.majdoor.hisaabpro
+      # Version  = 1.0.0
+      # Code     = 1
       # ============================================================
       - name: Verify Final APK Identity
         shell: bash
