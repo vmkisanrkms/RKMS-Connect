@@ -20,9 +20,9 @@ env:
   ANDROID_API: "36"
   BUILD_TOOLS: "36.0.0"
 
-  PACKAGE_NAME: "com.majdoor.hisaab"
-  VERSION_NAME: "1.77.0"
-  VERSION_CODE: "77"
+  PACKAGE_NAME: "com.majdoor.hisaabpro"
+  VERSION_NAME: "1.0.0"
+  VERSION_CODE: "1"
 
   ZIP_NAME: "Majdoor_Hisaab_PRO_FINAL_KOTLIN_FIXED.zip"
 
@@ -600,24 +600,6 @@ jobs:
 
           ls -lh "$APK"
 
-          echo ""
-          echo "Application ID:"
-
-          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
-            manifest application-id "$APK" || true
-
-          echo ""
-          echo "Version Name:"
-
-          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
-            manifest version-name "$APK" || true
-
-          echo ""
-          echo "Version Code:"
-
-          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
-            manifest version-code "$APK" || true
-
 
       # ============================================================
       # 18. PREPARE PKCS12 SIGNING KEYSTORE
@@ -832,9 +814,10 @@ jobs:
       # ============================================================
       # 22. VERIFY FINAL APK IDENTITY
       #
-      # FIXED ONLY THIS FAILED PART:
-      # apkanalyzer was not available at build-tools/36.0.0.
-      # Now aapt2 is used.
+      # FIXED:
+      # Package  = com.majdoor.hisaabpro
+      # Version  = 1.0.0
+      # Code     = 1
       # ============================================================
       - name: Verify Final APK Identity
         shell: bash
@@ -864,10 +847,6 @@ jobs:
           BADGING="$RUNNER_TEMP/final-apk-badging.txt"
 
           "$AAPT2" dump badging "$APK" > "$BADGING"
-
-          echo ""
-          echo "APK BADGING:"
-          cat "$BADGING"
 
           ACTUAL_PACKAGE="$(
             sed -n \
@@ -946,7 +925,7 @@ jobs:
             "$SIGNED_APK"
 
           echo ""
-          echo "Final APK alignment verification successful."
+          echo "FINAL APK ALIGNMENT VERIFICATION SUCCESSFUL."
 
 
       # ============================================================
