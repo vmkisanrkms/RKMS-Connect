@@ -21,8 +21,8 @@ env:
   BUILD_TOOLS: "36.0.0"
 
   PACKAGE_NAME: "com.majdoor.hisaabpro"
-  VERSION_NAME: "1.0.0"
-  VERSION_CODE: "1"
+  VERSION_NAME: "1.82.0"
+  VERSION_CODE: "82"
 
   ZIP_NAME: "Majdoor_Hisaab_PRO_V82_FINAL_FIXED_SIGNED_DASHBOARD_FIXED.zip"
 
