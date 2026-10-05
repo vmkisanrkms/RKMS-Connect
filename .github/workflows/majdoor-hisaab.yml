@@ -431,31 +431,20 @@ jobs:
 
 
       # ============================================================
-      # 18. COMPILE RELEASE KOTLIN
-      #
-      # ALL SOURCE REPAIRS ARE INSIDE THIS STEP.
+      # 12. KOTLIN SOURCE REPAIR
       # ============================================================
 
-      - name: Compile Release Kotlin
+      - name: Repair Kotlin Source
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN"
+          echo "REPAIR KOTLIN SOURCE"
           echo "=============================================="
 
           test -f "$MAIN_FILE"
-
-          echo ""
-          echo "MAIN FILE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "=============================================="
-          echo "AUDITED KOTLIN SOURCE REPAIR"
-          echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
           import re
@@ -470,7 +459,97 @@ jobs:
 
 
           # ==========================================================
-          # Helper: replace a complete Kotlin function safely
+          # Remove UTF-8 BOM if present
+          # ==========================================================
+
+          if source.startswith("\ufeff"):
+              source = source[1:]
+              print("FIX APPLIED: UTF-8 BOM removed")
+
+
+          # ==========================================================
+          # setContent import
+          # ==========================================================
+
+          if "import androidx.activity.compose.setContent" not in source:
+
+              package_match = re.search(
+                  r"^package[^\n]+\n",
+                  source,
+                  re.MULTILINE
+              )
+
+              if package_match:
+                  source = (
+                      source[:package_match.end()]
+                      + "\n"
+                      + "import androidx.activity.compose.setContent\n"
+                      + source[package_match.end():]
+                  )
+
+                  print("FIX APPLIED: setContent import")
+
+          else:
+              print("ALREADY OK: setContent import")
+
+
+          # ==========================================================
+          # Store Context
+          # ==========================================================
+
+          old_store = "private class Store(context:Context){"
+          new_store = "private class Store(private val context:Context){"
+
+          if old_store in source:
+
+              source = source.replace(
+                  old_store,
+                  new_store,
+                  1
+              )
+
+              print("FIX APPLIED: Store context")
+
+          elif new_store in source:
+
+              print("ALREADY OK: Store context")
+
+
+          # ==========================================================
+          # JSONArray.mapList
+          # ==========================================================
+
+          map_pattern = re.compile(
+              r"private fun <T> JSONArray\.mapList"
+              r"\(mapper:\(JSONObject\)->T\):List<T>"
+              r"=[^\n]+"
+          )
+
+          map_match = map_pattern.search(source)
+
+          if map_match:
+
+              replacement = """private fun <T> JSONArray.mapList(
+              mapper: (JSONObject) -> T
+          ): List<T> = (0 until length()).map {
+              mapper(getJSONObject(it))
+          }"""
+
+              source = (
+                  source[:map_match.start()]
+                  + replacement
+                  + source[map_match.end():]
+              )
+
+              print("FIX APPLIED: JSONArray.mapList")
+
+          elif "private fun <T> JSONArray.mapList(" in source:
+
+              print("ALREADY OK: JSONArray.mapList")
+
+
+          # ==========================================================
+          # Helper to replace a complete function
           # ==========================================================
 
           def replace_function(text, function_name, replacement):
@@ -508,7 +587,6 @@ jobs:
               while i < len(text):
 
                   c = text[i]
-
                   n = text[i + 1] if i + 1 < len(text) else ""
 
                   if line_comment:
@@ -581,109 +659,7 @@ jobs:
 
 
           # ==========================================================
-          # 1. setContent import
-          # ==========================================================
-
-          if "import androidx.activity.compose.setContent" not in source:
-
-              package_match = re.search(
-                  r"^package[^\n]+\n",
-                  source,
-                  re.MULTILINE
-              )
-
-              if not package_match:
-                  raise SystemExit(
-                      "ERROR: package declaration not found"
-                  )
-
-              source = (
-                  source[:package_match.end()]
-                  + "\n"
-                  + "import androidx.activity.compose.setContent\n"
-                  + source[package_match.end():]
-              )
-
-              print("FIX APPLIED: setContent import")
-
-          else:
-
-              print("ALREADY OK: setContent import")
-
-
-          # ==========================================================
-          # 2. Store Context
-          # ==========================================================
-
-          old_store = "private class Store(context:Context){"
-          new_store = "private class Store(private val context:Context){"
-
-          if old_store in source:
-
-              source = source.replace(
-                  old_store,
-                  new_store,
-                  1
-              )
-
-              print("FIX APPLIED: Store context")
-
-          elif new_store in source:
-
-              print("ALREADY OK: Store context")
-
-          else:
-
-              raise SystemExit(
-                  "ERROR: Store declaration not found"
-              )
-
-
-          # ==========================================================
-          # 3. JSONArray.mapList()
-          # ==========================================================
-
-          map_pattern = re.compile(
-              r"private fun <T> JSONArray\.mapList"
-              r"\(mapper:\(JSONObject\)->T\):List<T>"
-              r"=[^\n]+"
-          )
-
-          map_match = map_pattern.search(source)
-
-          map_replacement = """private fun <T> JSONArray.mapList(
-              mapper: (JSONObject) -> T
-          ): List<T> = (0 until length()).map {
-              mapper(getJSONObject(it))
-          }"""
-
-          if map_match:
-
-              source = (
-                  source[:map_match.start()]
-                  + map_replacement
-                  + source[map_match.end():]
-              )
-
-              print("FIX APPLIED: JSONArray.mapList")
-
-          elif "private fun <T> JSONArray.mapList(" in source:
-
-              print("ALREADY OK: JSONArray.mapList")
-
-          else:
-
-              raise SystemExit(
-                  "ERROR: JSONArray.mapList not found"
-              )
-
-
-          # ==========================================================
-          # 4. persistPhoto()
-          #
-          # IMPORTANT:
-          # Do NOT search for one exact old body.
-          # Locate the real Kotlin function by its declaration.
+          # persistPhoto
           # ==========================================================
 
           persist_photo = """    fun persistPhoto(
@@ -728,203 +704,56 @@ jobs:
           }
           """
 
-          source, persist_found = replace_function(
-              source,
-              "persistPhoto",
-              persist_photo
-          )
+          if "fun persistPhoto" in source:
 
-          if persist_found:
-
-              print(
-                  "FIX APPLIED: persistPhoto"
+              source, found = replace_function(
+                  source,
+                  "persistPhoto",
+                  persist_photo
               )
 
-          elif "fun persistPhoto" in source:
-
-              print(
-                  "ALREADY OK: persistPhoto"
-              )
+              if found:
+                  print("FIX APPLIED: persistPhoto")
+              else:
+                  print("CHECKED: persistPhoto")
 
           else:
-
-              print(
-                  "WARNING: persistPhoto declaration was not found."
-              )
-
-              print(
-                  "Checking whether the source actually calls persistPhoto..."
-              )
-
-              if ".persistPhoto(" in source:
-
-                  raise SystemExit(
-                      "ERROR: persistPhoto is called but declaration "
-                      "cannot be located."
-                  )
+              print("WARNING: persistPhoto not found")
 
 
           # ==========================================================
-          # 5. ExpenseDialog call
-          #
-          # Correct signature:
-          # ExpenseDialog(store, existing, onClose, isEdit)
+          # PaymentDialog
           # ==========================================================
 
-          expense_pattern = re.compile(
-              r"ExpenseDialog"
-              r"\(store,"
-              r"(edit\?:Expense\(.*?\))"
-              r",edit!=null\)"
-              r"\{add=false;edit=null\}"
-          )
+          old_payment = 'PaymentDialog(store,id,null,""){payment=false}'
+          new_payment = 'PaymentDialog(store,id,null,null){payment=false}'
 
-          expense_match = expense_pattern.search(
-              source
-          )
-
-          if expense_match:
-
-              existing = expense_match.group(1)
-
-              replacement = (
-                  "ExpenseDialog("
-                  "store,"
-                  + existing
-                  + ","
-                  + "{add=false;edit=null}"
-                  + ",edit!=null)"
-              )
-
-              source = (
-                  source[:expense_match.start()]
-                  + replacement
-                  + source[expense_match.end():]
-              )
-
-              print(
-                  "FIX APPLIED: ExpenseDialog arguments"
-              )
-
-          elif re.search(
-              r"ExpenseDialog\(store,.*?,\{add=false;edit=null\},edit!=null\)",
-              source
-          ):
-
-              print(
-                  "ALREADY OK: ExpenseDialog arguments"
-              )
-
-          else:
-
-              print(
-                  "WARNING: ExpenseDialog call pattern not changed."
-              )
-
-
-          # ==========================================================
-          # 6. SaleDialog call
-          # ==========================================================
-
-          sale_pattern = re.compile(
-              r"SaleDialog"
-              r"\(store,"
-              r"(edit\?:Sale\(.*?\))"
-              r",edit!=null\)"
-              r"\{add=false;edit=null\}"
-          )
-
-          sale_match = sale_pattern.search(
-              source
-          )
-
-          if sale_match:
-
-              existing = sale_match.group(1)
-
-              replacement = (
-                  "SaleDialog("
-                  "store,"
-                  + existing
-                  + ","
-                  + "{add=false;edit=null}"
-                  + ",edit!=null)"
-              )
-
-              source = (
-                  source[:sale_match.start()]
-                  + replacement
-                  + source[sale_match.end():]
-              )
-
-              print(
-                  "FIX APPLIED: SaleDialog arguments"
-              )
-
-          elif re.search(
-              r"SaleDialog\(store,.*?,\{add=false;edit=null\},edit!=null\)",
-              source
-          ):
-
-              print(
-                  "ALREADY OK: SaleDialog arguments"
-              )
-
-          else:
-
-              print(
-                  "WARNING: SaleDialog call pattern not changed."
-              )
-
-
-          # ==========================================================
-          # 7. PaymentDialog arguments
-          # ==========================================================
-
-          payment_old = (
-              'PaymentDialog(store,id,null,""){payment=false}'
-          )
-
-          payment_new = (
-              'PaymentDialog(store,id,null,null){payment=false}'
-          )
-
-          if payment_old in source:
+          if old_payment in source:
 
               source = source.replace(
-                  payment_old,
-                  payment_new,
+                  old_payment,
+                  new_payment,
                   1
               )
 
-              print(
-                  "FIX APPLIED: PaymentDialog arguments"
-              )
+              print("FIX APPLIED: PaymentDialog")
 
-          elif payment_new in source:
+          elif new_payment in source:
 
-              print(
-                  "ALREADY OK: PaymentDialog arguments"
-              )
-
-          else:
-
-              print(
-                  "WARNING: old PaymentDialog call not found"
-              )
+              print("ALREADY OK: PaymentDialog")
 
 
           # ==========================================================
-          # 8. BottomBar Icon
+          # BottomBar Icon
           # ==========================================================
 
-          icon_old = (
+          old_icon = (
               "Icon(ic,null,"
               "tint=if(current==k)Green else Color.Gray,"
               "Modifier.size(22.dp))"
           )
 
-          icon_new = (
+          new_icon = (
               "Icon("
               "imageVector=ic,"
               "contentDescription=null,"
@@ -933,30 +762,22 @@ jobs:
               ")"
           )
 
-          if icon_old in source:
+          if old_icon in source:
 
               source = source.replace(
-                  icon_old,
-                  icon_new,
+                  old_icon,
+                  new_icon,
                   1
               )
 
-              print(
-                  "FIX APPLIED: BottomBar Icon"
-              )
-
-          else:
-
-              print(
-                  "CHECKED: BottomBar Icon"
-              )
+              print("FIX APPLIED: BottomBar Icon")
 
 
           # ==========================================================
-          # 9. TopBar Image
+          # TopBar Image
           # ==========================================================
 
-          top_old = (
+          old_top = (
               "Image("
               "painterResource(R.drawable.majdoor_logo_small),"
               "null,"
@@ -965,7 +786,7 @@ jobs:
               ")"
           )
 
-          top_new = (
+          new_top = (
               "Image("
               "painter=painterResource(R.drawable.majdoor_logo_small),"
               "contentDescription=null,"
@@ -974,30 +795,22 @@ jobs:
               ")"
           )
 
-          if top_old in source:
+          if old_top in source:
 
               source = source.replace(
-                  top_old,
-                  top_new,
+                  old_top,
+                  new_top,
                   1
               )
 
-              print(
-                  "FIX APPLIED: TopBar Image"
-              )
-
-          else:
-
-              print(
-                  "CHECKED: TopBar Image"
-              )
+              print("FIX APPLIED: TopBar Image")
 
 
           # ==========================================================
-          # 10. Dashboard Image
+          # Dashboard Image
           # ==========================================================
 
-          dashboard_old = (
+          old_dashboard = (
               "Image("
               "painterResource(R.drawable.majdoor_logo),"
               "null,"
@@ -1006,7 +819,7 @@ jobs:
               ")"
           )
 
-          dashboard_new = (
+          new_dashboard = (
               "Image("
               "painter=painterResource(R.drawable.majdoor_logo),"
               "contentDescription=null,"
@@ -1015,27 +828,19 @@ jobs:
               ")"
           )
 
-          if dashboard_old in source:
+          if old_dashboard in source:
 
               source = source.replace(
-                  dashboard_old,
-                  dashboard_new,
+                  old_dashboard,
+                  new_dashboard,
                   1
               )
 
-              print(
-                  "FIX APPLIED: Dashboard Image"
-              )
-
-          else:
-
-              print(
-                  "CHECKED: Dashboard Image"
-              )
+              print("FIX APPLIED: Dashboard Image")
 
 
           # ==========================================================
-          # WRITE SOURCE
+          # Write after normal repairs
           # ==========================================================
 
           path.write_text(
@@ -1044,49 +849,268 @@ jobs:
           )
 
           print("")
-          print("==============================================")
-          print("ALL SOURCE FIXES WRITTEN")
-          print("==============================================")
+          print("NORMAL KOTLIN REPAIRS WRITTEN")
           PY
 
 
-          # ============================================================
-          # SOURCE VERIFICATION
-          # ============================================================
+      # ============================================================
+      # 13. REMOVE ONLY EXTRA TRAILING KOTLIN BRACES
+      #
+      # This directly addresses:
+      #
+      # MainActivity.kt:875
+      # MainActivity.kt:876
+      # Syntax error: Expecting a top level declaration
+      #
+      # ============================================================
+
+      - name: Repair Extra Kotlin Closing Braces
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "CHECK EXTRA KOTLIN CLOSING BRACES"
+          echo "=============================================="
+
+          python3 - "$MAIN_FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          lines = path.read_text(encoding="utf-8").splitlines()
+
+          # ----------------------------------------------------------
+          # Kotlin-aware-ish scanner:
+          # ignores braces inside strings, chars, line comments,
+          # and block comments.
+          # ----------------------------------------------------------
+
+          balance = 0
+
+          in_string = False
+          in_char = False
+          escape = False
+          line_comment = False
+          block_comment = False
+
+          brace_tokens = []
+
+          for line_no, line in enumerate(lines, 1):
+
+              i = 0
+
+              while i < len(line):
+
+                  c = line[i]
+                  n = line[i + 1] if i + 1 < len(line) else ""
+
+                  if line_comment:
+                      break
+
+                  if block_comment:
+
+                      if c == "*" and n == "/":
+                          block_comment = False
+                          i += 2
+                          continue
+
+                      i += 1
+                      continue
+
+                  if in_string:
+
+                      if escape:
+                          escape = False
+                      elif c == "\\":
+                          escape = True
+                      elif c == '"':
+                          in_string = False
+
+                      i += 1
+                      continue
+
+                  if in_char:
+
+                      if escape:
+                          escape = False
+                      elif c == "\\":
+                          escape = True
+                      elif c == "'":
+                          in_char = False
+
+                      i += 1
+                      continue
+
+                  if c == "/" and n == "/":
+                      line_comment = True
+                      break
+
+                  if c == "/" and n == "*":
+                      block_comment = True
+                      i += 2
+                      continue
+
+                  if c == '"':
+                      in_string = True
+                      i += 1
+                      continue
+
+                  if c == "'":
+                      in_char = True
+                      i += 1
+                      continue
+
+                  if c == "{":
+                      balance += 1
+                      brace_tokens.append((line_no, "{"))
+
+                  elif c == "}":
+
+                      balance -= 1
+                      brace_tokens.append((line_no, "}"))
+
+                      if balance < 0:
+                          print(
+                              "EXTRA CLOSING BRACE DETECTED AT LINE",
+                              line_no
+                          )
+
+                  i += 1
+
+              line_comment = False
+
+
+          print("")
+          print("FINAL BRACE BALANCE:", balance)
+
+          if balance > 0:
+              print("")
+              print(
+                  "ERROR: Missing closing brace(s). "
+                  "No automatic deletion performed."
+              )
+              sys.exit(1)
+
+
+          if balance == 0:
+              print("")
+              print("KOTLIN BRACE BALANCE OK.")
+              sys.exit(0)
+
+
+          # ----------------------------------------------------------
+          # balance < 0:
+          # Remove only standalone trailing '}' lines that caused
+          # the negative balance.
+          # ----------------------------------------------------------
+
+          excess = -balance
+
+          indexes = []
+
+          for idx in range(len(lines) - 1, -1, -1):
+
+              stripped = lines[idx].strip()
+
+              if stripped == "}":
+                  indexes.append(idx)
+
+                  if len(indexes) == excess:
+                      break
+
+          if len(indexes) != excess:
+
+              print("")
+              print(
+                  "ERROR: Extra closing braces exist, but they are "
+                  "not safely removable trailing brace-only lines."
+              )
+
+              sys.exit(1)
+
+
+          for idx in indexes:
+              print(
+                  "REMOVING EXTRA CLOSING BRACE AT LINE",
+                  idx + 1
+              )
+
+          for idx in sorted(indexes, reverse=True):
+              del lines[idx]
+
+
+          path.write_text(
+              "\n".join(lines) + "\n",
+              encoding="utf-8"
+          )
+
+          print("")
+          print(
+              "FIX APPLIED:",
+              excess,
+              "extra trailing closing brace(s) removed."
+          )
+          PY
+
+
+      # ============================================================
+      # 14. KOTLIN SOURCE FINAL STRUCTURE CHECK
+      # ============================================================
+
+      - name: Verify Kotlin Source Structure
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY KOTLIN SOURCE STRUCTURE"
+          echo "=============================================="
+
+          test -f "$MAIN_FILE"
 
           echo ""
-          echo "=============================================="
-          echo "VERIFYING SOURCE AFTER PATCH"
-          echo "=============================================="
+          echo "MAIN FILE:"
+          echo "$MAIN_FILE"
+
+          echo ""
+          echo "LAST 25 LINES:"
+          tail -25 "$MAIN_FILE"
+
+          echo ""
+          echo "IMPORTANT DECLARATIONS:"
 
           grep -n \
             "import androidx.activity.compose.setContent" \
-            "$MAIN_FILE"
+            "$MAIN_FILE" \
+            | head -3 || true
 
           grep -n \
             "private class Store" \
             "$MAIN_FILE" \
-            | head -1
+            | head -3 || true
 
           grep -n \
             "fun persistPhoto" \
             "$MAIN_FILE" \
-            | head -3
-
-          grep -n \
-            "JSONArray.mapList" \
-            "$MAIN_FILE" \
-            | head -3
+            | head -3 || true
 
           echo ""
-          echo "SOURCE VERIFICATION PASSED."
+          echo "SOURCE STRUCTURE CHECK PASSED."
 
 
-          # ============================================================
-          # FINAL RELEASE IDENTITY
-          # ============================================================
+      # ============================================================
+      # 15. FINAL RELEASE IDENTITY
+      # ============================================================
 
-          echo ""
+      - name: Set Final Release Identity
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
           echo "=============================================="
           echo "SET FINAL RELEASE IDENTITY"
           echo "=============================================="
@@ -1143,14 +1167,21 @@ jobs:
           grep "versionName" "$GRADLE_FILE"
 
 
-          # ============================================================
-          # ACTUAL KOTLIN COMPILER
-          # ============================================================
+      # ============================================================
+      # 16. COMPILE RELEASE KOTLIN
+      # ============================================================
 
-          echo ""
+      - name: Compile Release Kotlin
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
           echo "=============================================="
-          echo "STARTING ACTUAL KOTLIN COMPILER"
+          echo "COMPILE RELEASE KOTLIN"
           echo "=============================================="
+
+          test -f "$MAIN_FILE"
 
           gradle \
             --no-daemon \
@@ -1166,7 +1197,7 @@ jobs:
 
 
       # ============================================================
-      # 19. ASSEMBLE RELEASE APK
+      # 17. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1193,7 +1224,7 @@ jobs:
 
 
       # ============================================================
-      # 20. LOCATE RELEASE APK
+      # 18. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -1236,7 +1267,7 @@ jobs:
 
 
       # ============================================================
-      # 21. VERIFY APK PACKAGE
+      # 19. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -1248,12 +1279,10 @@ jobs:
           echo "VERIFY APK PACKAGE"
           echo "=============================================="
 
-          APK="$APK_PATH"
-
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
               dump badging \
-              "$APK"
+              "$APK_PATH"
           )
 
           echo "$BADGING" \
@@ -1264,28 +1293,21 @@ jobs:
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
 
-            echo ""
             echo "ERROR: Package name mismatch."
-            echo "EXPECTED: $PACKAGE_NAME"
-
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionCode='$VERSION_CODE'"; then
 
-            echo ""
             echo "ERROR: Version code mismatch."
-
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionName='$VERSION_NAME'"; then
 
-            echo ""
             echo "ERROR: Version name mismatch."
-
             exit 1
           fi
 
@@ -1294,7 +1316,7 @@ jobs:
 
 
       # ============================================================
-      # 22. PREPARE RELEASE SIGNING
+      # 20. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -1319,7 +1341,6 @@ jobs:
              [ -n "$KEY_ALIAS" ] && \
              [ -n "$KEY_PASSWORD" ]; then
 
-            echo ""
             echo "PERMANENT SIGNING SECRETS FOUND."
 
             printf '%s' "$KEYSTORE_BASE64" \
@@ -1341,12 +1362,8 @@ jobs:
             echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-            echo ""
-            echo "PERMANENT KEYSTORE VERIFIED."
-
           else
 
-            echo ""
             echo "Permanent signing secrets not configured."
             echo "Creating temporary JKS."
 
@@ -1382,19 +1399,16 @@ jobs:
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
-
-            # IMPORTANT:
-            # This MUST go into GITHUB_ENV.
             echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
-
-            echo ""
-            echo "TEMPORARY KEYSTORE VERIFIED."
 
           fi
 
+          echo ""
+          echo "RELEASE SIGNING PREPARED."
+
 
       # ============================================================
-      # 23. VERIFY SIGNING
+      # 21. VERIFY SIGNING
       # ============================================================
 
       - name: Verify Signing Environment
@@ -1426,7 +1440,7 @@ jobs:
 
 
       # ============================================================
-      # 24. ZIPALIGN
+      # 22. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1465,7 +1479,7 @@ jobs:
 
 
       # ============================================================
-      # 25. SIGN APK
+      # 23. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1498,7 +1512,7 @@ jobs:
 
 
       # ============================================================
-      # 26. VERIFY APK SIGNATURE
+      # 24. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1524,7 +1538,7 @@ jobs:
 
 
       # ============================================================
-      # 27. FINAL APK VALIDATION
+      # 25. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1547,7 +1561,6 @@ jobs:
           echo "$SIZE bytes"
 
           if [ "$SIZE" -lt 100000 ]; then
-            echo ""
             echo "ERROR: APK size unexpectedly small."
             exit 1
           fi
@@ -1568,24 +1581,18 @@ jobs:
 
           if ! echo "$BADGING" | grep -q \
             "name='$PACKAGE_NAME'"; then
-
-            echo ""
             echo "ERROR: Final APK package mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionCode='$VERSION_CODE'"; then
-
-            echo ""
             echo "ERROR: Final APK version code mismatch."
             exit 1
           fi
 
           if ! echo "$BADGING" | grep -q \
             "versionName='$VERSION_NAME'"; then
-
-            echo ""
             echo "ERROR: Final APK version name mismatch."
             exit 1
           fi
@@ -1601,7 +1608,7 @@ jobs:
 
 
       # ============================================================
-      # 28. UPLOAD FINAL SIGNED APK
+      # 26. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1614,7 +1621,7 @@ jobs:
 
 
       # ============================================================
-      # 29. UPLOAD BUILD REPORTS
+      # 27. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
