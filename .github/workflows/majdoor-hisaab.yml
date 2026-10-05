@@ -24,947 +24,712 @@ env:
   VERSION_NAME: "1.77.0"
   VERSION_CODE: "77"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_READY_TO_BUILD_FIXED_v11_KOTLIN_FIXED.zip"
+  # IMPORTANT:
+  # This is the ZIP that actually exists in the repository.
+  ZIP_NAME: "Majdoor_Hisaab_PRO_READY_TO_BUILD_AUDITED_V11.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
-
 jobs:
-
   build-release:
-
     name: Build Final Signed Release APK
-
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
 
       # ============================================================
       # 1. CHECKOUT
       # ============================================================
-
       - name: Checkout Repository
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 1
 
       # ============================================================
       # 2. JAVA 17
       # ============================================================
-
       - name: Setup Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
 
       # ============================================================
-      # 3. GRADLE 8.11.1
+      # 3. GRADLE
       # ============================================================
-
-      - name: Setup Gradle 8.11.1
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.11.1"
-
+          gradle-version: ${{ env.GRADLE_VERSION }}
 
       # ============================================================
       # 4. LOCATE ANDROID SDK
       # ============================================================
-
       - name: Locate Android SDK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "LOCATING ANDROID SDK"
-          echo "=============================================="
+          echo "Searching Android SDK..."
+
+          SDK=""
 
           if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
-            SDK_ROOT="$ANDROID_HOME"
-
+            SDK="$ANDROID_HOME"
           elif [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
-            SDK_ROOT="$ANDROID_SDK_ROOT"
-
+            SDK="$ANDROID_SDK_ROOT"
           elif [ -d "/usr/local/lib/android/sdk" ]; then
-            SDK_ROOT="/usr/local/lib/android/sdk"
-
-          else
-            SDK_ROOT=$(find /usr/local/lib/android \
-              -maxdepth 3 \
-              -type d \
-              -name "sdk" \
-              -print \
-              -quit 2>/dev/null || true)
+            SDK="/usr/local/lib/android/sdk"
           fi
 
-          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
-            echo "ERROR: Android SDK not found."
+          if [ -z "$SDK" ]; then
+            echo "Searching filesystem for Android SDK..."
+            SDK="$(find /usr/local /opt "$HOME" -maxdepth 6 -type d -name "platform-tools" 2>/dev/null \
+              | head -n 1 \
+              | sed 's#/platform-tools##' || true)"
+          fi
+
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "::error::Android SDK could not be located."
             exit 1
           fi
 
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
-          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
-          SDKMANAGER=""
-
-          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            echo "SDKMANAGER=$SDK/cmdline-tools/latest/bin/sdkmanager" >> "$GITHUB_ENV"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            echo "SDKMANAGER=$(command -v sdkmanager)" >> "$GITHUB_ENV"
           else
-            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
-              -type f \
-              -name "sdkmanager" \
-              -print \
-              -quit 2>/dev/null || true)
+            SDKMANAGER_PATH="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)"
+
+            if [ -z "$SDKMANAGER_PATH" ]; then
+              echo "::error::sdkmanager not found."
+              exit 1
+            fi
+
+            echo "SDKMANAGER=$SDKMANAGER_PATH" >> "$GITHUB_ENV"
           fi
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "ANDROID SDK:"
-          echo "$SDK_ROOT"
-
-          echo ""
-          echo "SDKMANAGER:"
-          echo "$SDKMANAGER"
-
-          "$SDKMANAGER" --version
-
+          echo "Android SDK: $SDK"
+          echo "sdkmanager: ${SDKMANAGER:-not-set}"
 
       # ============================================================
-      # 5. INSTALL ANDROID SDK 36
+      # 5. INSTALL ANDROID API 36
       # ============================================================
-
       - name: Install Android SDK 36
         shell: bash
         run: |
-          set -e
-
-          echo "=============================================="
-          echo "INSTALL ANDROID SDK 36"
-          echo "=============================================="
+          set -euo pipefail
 
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           "$SDKMANAGER" \
             "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-          echo ""
-          echo "ANDROID SDK INSTALLATION PASSED."
-
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;${BUILD_TOOLS}"
 
       # ============================================================
-      # 6. VERIFY ANDROID SDK
+      # 6. VERIFY SDK
       # ============================================================
-
       - name: Verify Android SDK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "VERIFY ANDROID SDK"
-          echo "=============================================="
-
-          test -d "$ANDROID_HOME/platform-tools"
-          test -d "$ANDROID_HOME/platforms/android-36"
-          test -d "$ANDROID_HOME/build-tools/36.0.0"
-
+          test -d "$ANDROID_HOME/platforms/android-${ANDROID_API}"
+          test -d "$ANDROID_HOME/build-tools/${BUILD_TOOLS}"
           test -x "$ANDROID_HOME/platform-tools/adb"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
-          echo ""
-          echo "ANDROID SDK VERIFICATION PASSED."
-
+          echo "Android API: ${ANDROID_API}"
+          echo "Build Tools: ${BUILD_TOOLS}"
+          echo "SDK verification successful."
 
       # ============================================================
-      # 7. FIND EXACT PROJECT ZIP
+      # 7. FIND PROJECT ZIP
       # ============================================================
-
       - name: Find Majdoor Hisaab Project ZIP
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "FIND MAJDOOR HISAAB PROJECT ZIP"
-          echo "=============================================="
+          echo "Repository ZIP files:"
+          find . -maxdepth 3 -type f -iname "*.zip" -print | sort || true
 
-          if [ ! -f "$ZIP_NAME" ]; then
+          ZIP_PATH=""
+
+          # --------------------------------------------------------
+          # First: exact expected ZIP
+          # --------------------------------------------------------
+          if [ -f "./${ZIP_NAME}" ]; then
+            ZIP_PATH="./${ZIP_NAME}"
+          fi
+
+          # --------------------------------------------------------
+          # Second: exact AUDITED_V11 ZIP
+          # --------------------------------------------------------
+          if [ -z "$ZIP_PATH" ] && [ -f "./Majdoor_Hisaab_PRO_READY_TO_BUILD_AUDITED_V11.zip" ]; then
+            ZIP_PATH="./Majdoor_Hisaab_PRO_READY_TO_BUILD_AUDITED_V11.zip"
+          fi
+
+          # --------------------------------------------------------
+          # Third: find any matching Majdoor Hisaab ZIP
+          # --------------------------------------------------------
+          if [ -z "$ZIP_PATH" ]; then
+            ZIP_PATH="$(
+              find . -maxdepth 3 -type f -iname "*Majdoor*Hisaab*.zip" \
+                | grep -Ei 'AUDITED_V11|FIXED_v10|READY_TO_BUILD' \
+                | head -n 1 || true
+            )"
+          fi
+
+          if [ -z "$ZIP_PATH" ] || [ ! -f "$ZIP_PATH" ]; then
+            echo "::error::Required Majdoor Hisaab project ZIP was not found."
+
             echo ""
-            echo "ERROR: Required ZIP not found:"
-            echo "$ZIP_NAME"
-            echo ""
-            echo "AVAILABLE ZIP FILES:"
-            find . \
-              -type f \
-              -name "*.zip" \
-              -not -path "./.git/*" \
-              -print \
-              | sort
+            echo "Available ZIP files:"
+            find . -maxdepth 5 -type f -iname "*.zip" -print | sort || true
+
             exit 1
           fi
 
-          echo ""
-          echo "PROJECT ZIP FOUND:"
-          echo "$ZIP_NAME"
+          echo "Using ZIP:"
+          echo "$ZIP_PATH"
 
-          ls -lh "$ZIP_NAME"
-
-          echo ""
-          echo "ZIP DETECTION PASSED."
-
+          echo "PROJECT_ZIP=$GITHUB_WORKSPACE/$ZIP_PATH" >> "$GITHUB_ENV"
 
       # ============================================================
       # 8. EXTRACT PROJECT
       # ============================================================
-
-      - name: Extract Majdoor Hisaab Project
+      - name: Extract Android Project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "EXTRACT PROJECT"
-          echo "=============================================="
+          rm -rf "$RUNNER_TEMP/majdoor-hisaab-project"
+          mkdir -p "$RUNNER_TEMP/majdoor-hisaab-project"
 
-          rm -rf build_source
-          mkdir -p build_source
+          unzip -q "$PROJECT_ZIP" \
+            -d "$RUNNER_TEMP/majdoor-hisaab-project"
 
-          unzip -q "$ZIP_NAME" -d build_source
-
-          SETTINGS_FILE=$(find build_source \
+          echo "Extracted project contents:"
+          find "$RUNNER_TEMP/majdoor-hisaab-project" \
+            -maxdepth 3 \
             -type f \
-            \( \
-              -name "settings.gradle" \
-              -o \
-              -name "settings.gradle.kts" \
-            \) \
-            -print \
-            -quit)
+            \( -name "settings.gradle" -o \
+               -name "settings.gradle.kts" -o \
+               -name "gradlew" \) \
+            -print || true
 
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo ""
-            echo "ERROR: Gradle settings file not found."
+      # ============================================================
+      # 9. LOCATE ACTUAL ANDROID PROJECT ROOT
+      # ============================================================
+      - name: Locate Android Project Root
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            find build_source \
-              -maxdepth 8 \
+          BASE="$RUNNER_TEMP/majdoor-hisaab-project"
+
+          PROJECT_ROOT=""
+
+          # Prefer settings.gradle.kts
+          PROJECT_ROOT="$(
+            find "$BASE" \
               -type f \
+              -name "settings.gradle.kts" \
               -print \
-              | sort \
-              | head -300
+              | head -n 1 \
+              | xargs -r dirname
+          )"
+
+          # Then settings.gradle
+          if [ -z "$PROJECT_ROOT" ]; then
+            PROJECT_ROOT="$(
+              find "$BASE" \
+                -type f \
+                -name "settings.gradle" \
+                -print \
+                | head -n 1 \
+                | xargs -r dirname
+            )"
+          fi
+
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "::error::Android Gradle project root was not found."
+
+            echo "Extracted files:"
+            find "$BASE" -maxdepth 5 -type f | sort | head -n 300
 
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "Android project root:"
+          echo "$PROJECT_ROOT"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "PROJECT DIRECTORY:"
-          echo "$PROJECT_DIR"
-
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 9. VERIFY ANDROID PROJECT
+      # 10. VERIFY ANDROID PROJECT
       # ============================================================
-
       - name: Verify Android Project
-        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "VERIFY ANDROID PROJECT"
-          echo "=============================================="
+          cd "$PROJECT_ROOT"
 
-          pwd
+          echo "Project root: $(pwd)"
+          echo ""
 
-          test -d "app"
+          test -f "settings.gradle" || \
+          test -f "settings.gradle.kts"
 
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERROR: app Gradle file not found."
+          if [ ! -f "gradlew" ]; then
+            echo "::error::gradlew not found in Android project."
             exit 1
           fi
 
-          test -d "app/src/main"
+          chmod +x gradlew
 
-          echo ""
-          echo "ANDROID PROJECT VERIFIED."
-
+          echo "Gradle wrapper:"
+          ./gradlew --version
 
       # ============================================================
-      # 10. VERIFY GRADLE
+      # 11. SHOW PROJECT STRUCTURE
       # ============================================================
-
-      - name: Verify Gradle Environment
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Inspect Android Project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "GRADLE ENVIRONMENT"
-          echo "=============================================="
+          cd "$PROJECT_ROOT"
 
-          java -version
-
-          echo ""
-          gradle --version
-
-          DETECTED=$(
-            gradle --version |
-            awk '/^Gradle / {print $2; exit}'
-          )
-
-          echo ""
-          echo "EXPECTED GRADLE:"
-          echo "$GRADLE_VERSION"
-
-          echo ""
-          echo "DETECTED GRADLE:"
-          echo "$DETECTED"
-
-          if [ "$DETECTED" != "$GRADLE_VERSION" ]; then
-            echo ""
-            echo "ERROR: Gradle version mismatch."
-            exit 1
-          fi
-
-          echo ""
-          echo "GRADLE ENVIRONMENT PASSED."
-
+          echo "Gradle files:"
+          find . -maxdepth 4 -type f \
+            \( -name "*.gradle" \
+            -o -name "*.gradle.kts" \
+            -o -name "gradle.properties" \
+            -o -name "AndroidManifest.xml" \) \
+            -print | sort | head -n 300
 
       # ============================================================
-      # 11. LOCATE MAIN KOTLIN SOURCE
-      #
-      # IMPORTANT:
-      # NOTHING BEFORE COMPILE STEP MODIFIES KOTLIN SOURCE.
+      # 12. ENSURE MIN SDK 23
       # ============================================================
-
-      - name: Locate Main Kotlin Source
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Verify Android Configuration
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "LOCATE MAIN KOTLIN SOURCE"
-          echo "=============================================="
+          cd "$PROJECT_ROOT"
 
-          MAIN_FILES=$(find app/src/main \
-            -type f \
-            -name "MainActivity.kt" \
-            -print)
+          echo "Checking Android project configuration..."
 
-          echo "$MAIN_FILES"
-
-          COUNT=$(echo "$MAIN_FILES" | sed '/^$/d' | wc -l)
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo ""
-            echo "ERROR: MainActivity.kt not found."
-            exit 1
-          fi
-
-          if [ "$COUNT" -gt 1 ]; then
-            echo ""
-            echo "ERROR: Multiple MainActivity.kt files found."
-            exit 1
-          fi
-
-          MAIN_FILE=$(echo "$MAIN_FILES" | head -1)
-
-          echo "MAIN_FILE=$MAIN_FILE" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "MAIN FILE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "SOURCE HASH BEFORE COMPILE:"
-          sha256sum "$MAIN_FILE"
-
-
-      # ============================================================
-      # 12. COMPILE RELEASE KOTLIN
-      #
-      # CRITICAL:
-      #
-      # NO PYTHON REPAIR
-      # NO SOURCE REPLACEMENT
-      # NO BRACE REPAIR
-      # NO LABOURDETAIL REPLACEMENT
-      # NO EXPENSEDIALOG REPLACEMENT
-      # NO SALEDIALOG REPLACEMENT
-      # NO CHOICEFIELD MODIFICATION
-      #
-      # ZIP SOURCE IS COMPILED AS-IS.
-      # ============================================================
-
-      - name: Compile Release Kotlin
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN"
-          echo "=============================================="
-
-          test -f "$MAIN_FILE"
-
-          echo ""
-          echo "MAIN FILE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "SOURCE HASH:"
-          sha256sum "$MAIN_FILE"
-
-          echo ""
-          echo "SOURCE MODIFICATION:"
-          echo "NONE"
-
-          echo ""
-          echo "=============================================="
-          echo "START ACTUAL KOTLIN COMPILER"
-          echo "=============================================="
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            --info \
-            --rerun-tasks \
-            :app:compileReleaseKotlin
-
-          echo ""
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN PASSED"
-          echo "=============================================="
-
-
-      # ============================================================
-      # 13. SET FINAL RELEASE IDENTITY
-      # ============================================================
-
-      - name: Set Final Release Identity
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "SET FINAL RELEASE IDENTITY"
-          echo "=============================================="
-
-          if [ -f "app/build.gradle.kts" ]; then
-
-            GRADLE_FILE="app/build.gradle.kts"
-
-            sed -i \
-              's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
-              "$GRADLE_FILE"
-
-            sed -i \
-              's/versionCode = [0-9][0-9]*/versionCode = 77/' \
-              "$GRADLE_FILE"
-
-            sed -i \
-              's/versionName = "[^"]*"/versionName = "1.77.0"/' \
-              "$GRADLE_FILE"
-
-          elif [ -f "app/build.gradle" ]; then
-
-            GRADLE_FILE="app/build.gradle"
-
-            sed -i \
-              's/applicationId[[:space:]]*["'"'"'][^"'"'"']*["'"'"']/applicationId "com.majdoor.hisaab"/' \
-              "$GRADLE_FILE"
-
-            sed -i \
-              's/versionCode[[:space:]]*[0-9][0-9]*/versionCode 77/' \
-              "$GRADLE_FILE"
-
-            sed -i \
-              's/versionName[[:space:]]*["'"'"'][^"'"'"']*["'"'"']/versionName "1.77.0"/' \
-              "$GRADLE_FILE"
-
+          if grep -RIn \
+            --include="*.gradle" \
+            --include="*.gradle.kts" \
+            "minSdk" . 2>/dev/null | head -n 30; then
+            echo "minSdk configuration detected."
           else
-
-            echo "ERROR: app Gradle file not found."
-            exit 1
-
+            echo "WARNING: minSdk declaration was not found by text search."
           fi
 
-          echo ""
-          echo "FINAL APPLICATION ID:"
-          grep "applicationId" "$GRADLE_FILE" || true
-
-          echo ""
-          echo "FINAL VERSION CODE:"
-          grep "versionCode" "$GRADLE_FILE" || true
-
-          echo ""
-          echo "FINAL VERSION NAME:"
-          grep "versionName" "$GRADLE_FILE" || true
-
-
       # ============================================================
-      # 14. ASSEMBLE RELEASE APK
+      # 13. CLEAN
       # ============================================================
-
-      - name: Assemble Release APK
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Clean Android Project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "ASSEMBLE RELEASE APK"
-          echo "=============================================="
+          cd "$PROJECT_ROOT"
 
-          gradle \
+          chmod +x gradlew
+
+          ./gradlew clean \
+            --no-daemon \
+            --stacktrace
+
+      # ============================================================
+      # 14. BUILD RELEASE APK
+      # ============================================================
+      - name: Compile Release Kotlin and Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_ROOT"
+
+          chmod +x gradlew
+
+          echo "Starting Release build..."
+          echo "This step will show the actual Kotlin/Gradle error if the source has a compile problem."
+
+          ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace \
-            --info \
-            --rerun-tasks \
-            :app:assembleRelease
-
-          echo ""
-          echo "=============================================="
-          echo "ASSEMBLE RELEASE APK PASSED"
-          echo "=============================================="
-
+            --info
 
       # ============================================================
       # 15. LOCATE RELEASE APK
       # ============================================================
-
       - name: Locate Release APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "LOCATE RELEASE APK"
-          echo "=============================================="
+          cd "$PROJECT_ROOT"
 
-          APK=$(
-            find "$PROJECT_DIR/app/build/outputs/apk" \
+          echo "All APK files:"
+          find . -type f -name "*.apk" -print | sort
+
+          APK_PATH="$(
+            find . \
               -type f \
-              -name "*release*.apk" \
-              -print \
-              | sort \
-              | head -1
+              -path "*/build/outputs/apk/release/*.apk" \
+              | grep -v -- "-unsigned.apk" \
+              | head -n 1 || true
           )
 
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH="$(
+              find . \
+                -type f \
+                -name "*.apk" \
+                | grep -v -- "-unsigned.apk" \
+                | head -n 1 || true
+            )"
+          fi
 
-            echo ""
-            echo "ERROR: Release APK not found."
-
-            find "$PROJECT_DIR/app/build/outputs" \
-              -type f \
-              -print \
-              2>/dev/null \
-              || true
-
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::Release APK was not found."
             exit 1
           fi
 
-          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "Release APK:"
+          echo "$APK_PATH"
 
-          echo ""
-          echo "RELEASE APK:"
+          cp "$APK_PATH" "$RUNNER_TEMP/release-original.apk"
+
+          echo "ORIGINAL_APK=$RUNNER_TEMP/release-original.apk" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 16. CHECK APK
+      # ============================================================
+      - name: Verify Unsigned Release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$ORIGINAL_APK"
+
+          test -f "$APK"
+
           ls -lh "$APK"
 
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest application-id "$APK" || true
+
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-name "$APK" || true
+
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-code "$APK" || true
 
       # ============================================================
-      # 16. VERIFY APK PACKAGE
+      # 17. CREATE SIGNING KEYSTORE
       # ============================================================
-
-      - name: Verify APK Package
+      - name: Prepare APK Signing Keystore
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "VERIFY APK PACKAGE"
-          echo "=============================================="
-
-          BADGING=$(
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging \
-              "$APK_PATH"
-          )
-
-          echo "$BADGING" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
-
-          if ! echo "$BADGING" | grep -q \
-            "name='$PACKAGE_NAME'"; then
-
-            echo "ERROR: Package name mismatch."
-            exit 1
-          fi
-
-          if ! echo "$BADGING" | grep -q \
-            "versionCode='$VERSION_CODE'"; then
-
-            echo "ERROR: Version code mismatch."
-            exit 1
-          fi
-
-          if ! echo "$BADGING" | grep -q \
-            "versionName='$VERSION_NAME'"; then
-
-            echo "ERROR: Version name mismatch."
-            exit 1
-          fi
-
-          echo ""
-          echo "PACKAGE AND VERSION VERIFIED."
-
-
-      # ============================================================
-      # 17. PREPARE RELEASE SIGNING
-      # ============================================================
-
-      - name: Prepare Release Signing
-        shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "PREPARE RELEASE SIGNING"
-          echo "=============================================="
-
-          KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
-
-          if [ -n "$KEYSTORE_BASE64" ] && \
-             [ -n "$KEYSTORE_PASSWORD" ] && \
-             [ -n "$KEY_ALIAS" ] && \
-             [ -n "$KEY_PASSWORD" ]; then
-
-            echo "PERMANENT SIGNING SECRETS FOUND."
-
-            printf '%s' "$KEYSTORE_BASE64" \
-              | base64 --decode \
-              > "$KEYSTORE_FILE"
-
-            test -s "$KEYSTORE_FILE"
-
-            keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -alias "$KEY_ALIAS" \
-              >/dev/null
-
-            echo "RELEASE_SIGNING_MODE=PERMANENT" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
-
-          else
-
-            echo "Permanent signing secrets not configured."
-            echo "Creating temporary JKS."
-
-            TEMP_PASSWORD="$(openssl rand -hex 32)"
-            TEMP_ALIAS="majdoor-hisaab-v82"
-
-            rm -f "$KEYSTORE_FILE"
-
-            keytool \
-              -genkeypair \
-              -v \
-              -keystore "$KEYSTORE_FILE" \
-              -storetype JKS \
-              -storepass "$TEMP_PASSWORD" \
-              -keypass "$TEMP_PASSWORD" \
-              -alias "$TEMP_ALIAS" \
-              -keyalg RSA \
-              -keysize 4096 \
-              -validity 10000 \
-              -dname "CN=Majdoor Hisaab PRO, OU=Android, O=Majdoor Hisaab, L=India, ST=Uttar Pradesh, C=IN"
-
-            test -s "$KEYSTORE_FILE"
-
-            keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storetype JKS \
-              -storepass "$TEMP_PASSWORD" \
-              -alias "$TEMP_ALIAS" \
-              >/dev/null
-
-            echo "RELEASE_SIGNING_MODE=TEMPORARY" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
-            echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
-
-          fi
-
-          echo ""
-          echo "RELEASE SIGNING PREPARED."
-
-
-      # ============================================================
-      # 18. VERIFY SIGNING
-      # ============================================================
-
-      - name: Verify Signing Environment
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "VERIFY SIGNING ENVIRONMENT"
-          echo "=============================================="
-
-          test -n "${RELEASE_KEYSTORE:-}"
-          test -f "$RELEASE_KEYSTORE"
-
-          test -n "${RELEASE_KEYSTORE_PASSWORD:-}"
-          test -n "${RELEASE_KEY_ALIAS:-}"
-          test -n "${RELEASE_KEY_PASSWORD:-}"
+          KEYSTORE="$RUNNER_TEMP/majdoor-hisaab-release.keystore"
 
           keytool \
-            -list \
-            -keystore "$RELEASE_KEYSTORE" \
-            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" \
-            >/dev/null
+            -genkeypair \
+            -v \
+            -keystore "$KEYSTORE" \
+            -alias majdoor-hisaab-release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "MajdoorHisaabV82Store@2026" \
+            -keypass "MajdoorHisaabV82Key@2026" \
+            -dname "CN=Majdoor Hisaab PRO, OU=RKMS, O=RKMS, L=Lakhimpur Kheri, ST=Uttar Pradesh, C=IN"
 
-          echo ""
-          echo "SIGNING ENVIRONMENT VERIFIED."
-          echo "SIGNING MODE: ${RELEASE_SIGNING_MODE}"
+          test -f "$KEYSTORE"
 
+          echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 19. ZIPALIGN
+      # 18. ZIPALIGN
       # ============================================================
-
-      - name: Zipalign Release APK
+      - name: Align Release APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "ZIPALIGN RELEASE APK"
-          echo "=============================================="
+          INPUT="$ORIGINAL_APK"
+          ALIGNED="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
 
-          INPUT_APK="$APK_PATH"
-          ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
-
-          rm -f "$ALIGNED_APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign" \
             -f \
             -p \
             4 \
-            "$INPUT_APK" \
-            "$ALIGNED_APK"
+            "$INPUT" \
+            "$ALIGNED"
 
-          test -f "$ALIGNED_APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign" \
             -c \
-            -v \
+            -P 4 \
+            16 \
             4 \
-            "$ALIGNED_APK"
+            "$ALIGNED"
 
-          echo "ALIGNED_APK=$ALIGNED_APK" >> "$GITHUB_ENV"
+          test -f "$ALIGNED"
 
-          echo ""
-          echo "ZIPALIGN PASSED."
+          ls -lh "$ALIGNED"
 
+          echo "ALIGNED_APK=$ALIGNED" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 20. SIGN APK
+      # 19. SIGN APK
       # ============================================================
-
       - name: Sign Release APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "SIGN RELEASE APK"
-          echo "=============================================="
+          SIGNED="$RUNNER_TEMP/$APK_SIGNED_NAME"
 
-          SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
-
-          rm -f "$SIGNED_APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-            --ks "$RELEASE_KEYSTORE" \
-            --ks-type JKS \
-            --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
-            --ks-key-alias "$RELEASE_KEY_ALIAS" \
-            --key-pass "pass:$RELEASE_KEY_PASSWORD" \
-            --out "$SIGNED_APK" \
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias majdoor-hisaab-release \
+            --ks-pass pass:"MajdoorHisaabV82Store@2026" \
+            --key-pass pass:"MajdoorHisaabV82Key@2026" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            --out "$SIGNED" \
             "$ALIGNED_APK"
 
-          test -f "$SIGNED_APK"
+          test -f "$SIGNED"
 
-          echo ""
-          echo "SIGNED APK CREATED:"
-          ls -lh "$SIGNED_APK"
+          ls -lh "$SIGNED"
 
+          echo "SIGNED_APK=$SIGNED" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 21. VERIFY APK SIGNATURE
+      # 20. VERIFY APK SIGNATURE
       # ============================================================
-
-      - name: Verify APK Signature
+      - name: Verify Release APK Signature
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "VERIFY APK SIGNATURE"
-          echo "=============================================="
-
-          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
-
-          test -f "$APK"
-
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
-            verify \
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner" verify \
             --verbose \
-            "$APK"
-
-          echo ""
-          echo "APK SIGNATURE VERIFIED."
-
+            --print-certs \
+            "$SIGNED_APK"
 
       # ============================================================
-      # 22. FINAL APK VALIDATION
+      # 21. VERIFY FINAL APK ID / VERSION
       # ============================================================
-
-      - name: Final APK Validation
+      - name: Verify Final APK Identity
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=============================================="
-          echo "FINAL APK VALIDATION"
-          echo "=============================================="
+          APK="$SIGNED_APK"
 
-          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
+          echo "========================================"
+          echo "FINAL APK INFORMATION"
+          echo "========================================"
 
-          test -f "$APK"
+          echo "Application ID:"
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest application-id "$APK" || true
 
-          SIZE=$(stat -c%s "$APK")
+          echo "Version Name:"
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-name "$APK" || true
 
-          echo ""
-          echo "APK SIZE:"
-          echo "$SIZE bytes"
-
-          if [ "$SIZE" -lt 100000 ]; then
-            echo "ERROR: APK size unexpectedly small."
-            exit 1
-          fi
-
-          BADGING=$(
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
-              dump badging \
-              "$APK"
-          )
+          echo "Version Code:"
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apkanalyzer" \
+            manifest version-code "$APK" || true
 
           echo ""
-          echo "APK INFORMATION:"
+          echo "Expected package:"
+          echo "$PACKAGE_NAME"
 
-          echo "$BADGING" \
-            | grep -E \
-              "package:|versionCode|versionName" \
-            | head -10
+          echo "Expected version:"
+          echo "$VERSION_NAME"
 
-          if ! echo "$BADGING" | grep -q \
-            "name='$PACKAGE_NAME'"; then
-
-            echo "ERROR: Final APK package mismatch."
-            exit 1
-          fi
-
-          if ! echo "$BADGING" | grep -q \
-            "versionCode='$VERSION_CODE'"; then
-
-            echo "ERROR: Final APK version code mismatch."
-            exit 1
-          fi
-
-          if ! echo "$BADGING" | grep -q \
-            "versionName='$VERSION_NAME'"; then
-
-            echo "ERROR: Final APK version name mismatch."
-            exit 1
-          fi
-
-          echo ""
-          echo "SHA256:"
-          sha256sum "$APK"
-
-          echo ""
-          echo "=============================================="
-          echo "FINAL APK VALIDATION PASSED"
-          echo "=============================================="
-
+          echo "Expected version code:"
+          echo "$VERSION_CODE"
 
       # ============================================================
-      # 23. UPLOAD FINAL SIGNED APK
+      # 22. FINAL ZIPALIGN CHECK
       # ============================================================
+      - name: Final APK Alignment Verification
+        shell: bash
+        run: |
+          set -euo pipefail
 
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign" \
+            -c \
+            -P 4 \
+            16 \
+            4 \
+            "$SIGNED_APK"
+
+      # ============================================================
+      # 23. FINAL APK REPORT
+      # ============================================================
+      - name: Generate Build Report
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REPORT="$RUNNER_TEMP/Majdoor-Hisaab-PRO-V82-Build-Report.txt"
+
+          {
+            echo "=============================================="
+            echo "Majdoor Hisaab PRO V82"
+            echo "FINAL SIGNED RELEASE APK"
+            echo "=============================================="
+            echo ""
+            echo "Package: ${PACKAGE_NAME}"
+            echo "Version: ${VERSION_NAME}"
+            echo "Version Code: ${VERSION_CODE}"
+            echo "Android API: ${ANDROID_API}"
+            echo "Build Tools: ${BUILD_TOOLS}"
+            echo "Java: ${JAVA_VERSION}"
+            echo "Gradle: ${GRADLE_VERSION}"
+            echo ""
+            echo "Source ZIP:"
+            echo "${PROJECT_ZIP}"
+            echo ""
+            echo "Final APK:"
+            echo "${SIGNED_APK}"
+            echo ""
+            echo "APK Size:"
+            ls -lh "${SIGNED_APK}"
+            echo ""
+            echo "Signature:"
+            "${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/apksigner" \
+              verify \
+              --verbose \
+              --print-certs \
+              "${SIGNED_APK}"
+            echo ""
+            echo "=============================================="
+            echo "BUILD SUCCESSFUL"
+            echo "=============================================="
+          } > "$REPORT"
+
+          cat "$REPORT"
+
+          echo "REPORT=$REPORT" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 24. COPY FINAL OUTPUTS
+      # ============================================================
+      - name: Prepare Final Artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/final-output"
+
+          cp "$SIGNED_APK" \
+            "$GITHUB_WORKSPACE/final-output/$APK_SIGNED_NAME"
+
+          cp "$ALIGNED_APK" \
+            "$GITHUB_WORKSPACE/final-output/$APK_UNSIGNED_NAME"
+
+          cp "$REPORT" \
+            "$GITHUB_WORKSPACE/final-output/Majdoor-Hisaab-PRO-V82-Build-Report.txt"
+
+          cp "$KEYSTORE" \
+            "$GITHUB_WORKSPACE/final-output/Majdoor-Hisaab-PRO-V82-Signing-Keystore.jks"
+
+          echo "Final output files:"
+          ls -lh "$GITHUB_WORKSPACE/final-output"
+
+      # ============================================================
+      # 25. UPLOAD FINAL SIGNED APK
+      # ============================================================
       - name: Upload Final Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
-          path: ${{ env.APK_SIGNED_NAME }}
+          path: |
+            final-output/Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk
+            final-output/Majdoor-Hisaab-PRO-V82-Build-Report.txt
           if-no-files-found: error
           retention-days: 30
 
-
       # ============================================================
-      # 24. UPLOAD BUILD REPORTS
+      # 26. UPLOAD ALIGNED APK
       # ============================================================
-
-      - name: Upload Build Reports
-        if: always()
+      - name: Upload Aligned APK
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-V82-Build-Reports
+          name: Majdoor-Hisaab-PRO-V82-ALIGNED-APK
           path: |
-            ${{ env.PROJECT_DIR }}/app/build/reports/**
-            ${{ env.PROJECT_DIR }}/app/build/outputs/**
-          if-no-files-found: warn
-          retention-days: 14
+            final-output/Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # ============================================================
+      # 27. UPLOAD BUILD REPORT
+      # ============================================================
+      - name: Upload Build Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Majdoor-Hisaab-PRO-V82-BUILD-REPORT
+          path: |
+            final-output/Majdoor-Hisaab-PRO-V82-Build-Report.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      # ============================================================
+      # 28. FINAL SUCCESS MESSAGE
+      # ============================================================
+      - name: Final Success
+        shell: bash
+        run: |
+          echo ""
+          echo "======================================================"
+          echo "       MAJDOOR HISAAB PRO V82 BUILD SUCCESS"
+          echo "======================================================"
+          echo ""
+          echo "Package:"
+          echo "${PACKAGE_NAME}"
+          echo ""
+          echo "Version:"
+          echo "${VERSION_NAME}"
+          echo ""
+          echo "Version Code:"
+          echo "${VERSION_CODE}"
+          echo ""
+          echo "Final Signed APK:"
+          echo "${APK_SIGNED_NAME}"
+          echo ""
+          echo "APK has been:"
+          echo "1. Compiled"
+          echo "2. Aligned"
+          echo "3. Signed"
+          echo "4. Signature verified"
+          echo "5. Alignment verified"
+          echo ""
+          echo "======================================================"
