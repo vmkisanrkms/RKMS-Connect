@@ -27,7 +27,6 @@ env:
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
-
 jobs:
 
   build-release:
@@ -58,7 +57,7 @@ jobs:
 
 
       # ============================================================
-      # 3. SETUP GRADLE 8.11.1
+      # 3. GRADLE 8.11.1
       # ============================================================
 
       - name: Setup Gradle 8.11.1
@@ -85,24 +84,32 @@ jobs:
           elif [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
             SDK_ROOT="$ANDROID_HOME"
           else
-            SDK_ROOT="$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v sdkmanager)")")")")"
+            SDKMANAGER_FOUND="$(command -v sdkmanager || true)"
+
+            if [ -z "$SDKMANAGER_FOUND" ]; then
+              echo "::error::Android SDK and sdkmanager were not found."
+              exit 1
+            fi
+
+            SDK_ROOT="$(dirname "$(dirname "$(dirname "$(readlink -f "$SDKMANAGER_FOUND")")")")"
           fi
 
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
 
+          echo
           echo "ANDROID_SDK_ROOT=$SDK_ROOT"
           echo "ANDROID_HOME=$SDK_ROOT"
 
           test -d "$SDK_ROOT"
 
           echo
-          echo "SDK contents:"
+          echo "SDK directory:"
           ls -la "$SDK_ROOT"
 
 
       # ============================================================
-      # 5. FIND SDKMANAGER
+      # 5. LOCATE SDKMANAGER
       # ============================================================
 
       - name: Locate sdkmanager
@@ -118,20 +125,26 @@ jobs:
             SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" \
               -type f \
               -name sdkmanager \
-              -print -quit 2>/dev/null || true)"
+              -print \
+              -quit 2>/dev/null || true)"
           fi
 
           if [ -z "$SDKMANAGER" ]; then
             echo "::error::sdkmanager not found."
+
             echo
-            echo "Android SDK:"
-            find "$ANDROID_SDK_ROOT" -maxdepth 4 -type f \
-              -name sdkmanager -print || true
+            echo "Searching SDK:"
+            find "$ANDROID_SDK_ROOT" \
+              -type f \
+              -name sdkmanager \
+              -print || true
+
             exit 1
           fi
 
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
+          echo
           echo "sdkmanager:"
           echo "$SDKMANAGER"
 
@@ -153,7 +166,7 @@ jobs:
 
 
       # ============================================================
-      # 7. INSTALL REQUIRED ANDROID COMPONENTS
+      # 7. INSTALL ANDROID API 36
       # ============================================================
 
       - name: Install Android API 36 and Build Tools
@@ -190,20 +203,19 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
           ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
+          echo "Checking AAPT2..."
           test -x "$AAPT2"
-          test -x "$APKSIGNER"
-          test -x "$ZIPALIGN"
-
-          echo "AAPT2:"
           "$AAPT2" version
 
           echo
-          echo "APKSIGNER:"
+          echo "Checking APKSIGNER..."
+          test -x "$APKSIGNER"
           "$APKSIGNER" --version
 
           echo
-          echo "ZIPALIGN:"
-          "$ZIPALIGN" -h | head -5
+          echo "Checking ZIPALIGN..."
+          test -x "$ZIPALIGN"
+          ls -lh "$ZIPALIGN"
 
           echo
           echo "Android build tools verification PASSED."
@@ -250,11 +262,15 @@ jobs:
 
           echo
           echo "Top-level files:"
-          find . -maxdepth 2 -type f | sort | head -300
+          find . \
+            -maxdepth 2 \
+            -type f \
+            | sort \
+            | head -300
 
 
       # ============================================================
-      # 12. FIND PROJECT ZIP
+      # 12. FIND MAJDOOR HISAAB ZIP
       # ============================================================
 
       - name: Locate Majdoor Hisaab ZIP
@@ -264,16 +280,21 @@ jobs:
 
           ZIP_PATH=""
 
-          ZIP_PATH="$(find "$GITHUB_WORKSPACE" \
-            -type f \
-            -iname "Majdoor_Hisaab_PRO*.zip" \
-            -print | head -n 1)"
+          ZIP_PATH="$(
+            find "$GITHUB_WORKSPACE" \
+              -type f \
+              -iname "Majdoor_Hisaab_PRO*.zip" \
+              -print \
+              | head -n 1
+          )"
 
           if [ -z "$ZIP_PATH" ]; then
+
             echo "::error::Majdoor Hisaab PRO ZIP not found."
 
             echo
             echo "Available ZIP files:"
+
             find "$GITHUB_WORKSPACE" \
               -type f \
               -iname "*.zip" \
@@ -304,6 +325,7 @@ jobs:
 
           echo "BUILD_ROOT=$RUNNER_TEMP/majdoor-build" >> "$GITHUB_ENV"
 
+          echo
           echo "BUILD_ROOT:"
           echo "$RUNNER_TEMP/majdoor-build"
 
@@ -317,11 +339,14 @@ jobs:
         run: |
           set -e
 
+          echo "Extracting:"
+          echo "$ZIP_PATH"
+
           unzip -q "$ZIP_PATH" \
             -d "$BUILD_ROOT"
 
           echo
-          echo "ZIP extracted."
+          echo "ZIP extracted successfully."
 
           echo
           echo "Extracted structure:"
@@ -333,7 +358,7 @@ jobs:
 
 
       # ============================================================
-      # 15. LOCATE GRADLE PROJECT
+      # 15. LOCATE GRADLE PROJECT ROOT
       # ============================================================
 
       - name: Locate Gradle project root
@@ -343,19 +368,24 @@ jobs:
 
           SETTINGS_FILE=""
 
-          SETTINGS_FILE="$(find "$BUILD_ROOT" \
-            -type f \
-            \( \
-              -name "settings.gradle.kts" \
-              -o \
-              -name "settings.gradle" \
-            \) \
-            -print \
-            | head -n 1)"
+          SETTINGS_FILE="$(
+            find "$BUILD_ROOT" \
+              -type f \
+              \( \
+                -name "settings.gradle.kts" \
+                -o \
+                -name "settings.gradle" \
+              \) \
+              -print \
+              | head -n 1
+          )"
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "::error::settings.gradle.kts not found."
 
+            echo "::error::settings.gradle.kts or settings.gradle not found."
+
+            echo
+            echo "Build directory:"
             find "$BUILD_ROOT" \
               -maxdepth 6 \
               -type f \
@@ -385,16 +415,29 @@ jobs:
           echo "Project:"
           echo "$PROJECT_ROOT"
 
-          test -f "$PROJECT_ROOT/settings.gradle.kts" \
-            || test -f "$PROJECT_ROOT/settings.gradle"
+          if [ ! -f "$PROJECT_ROOT/settings.gradle.kts" ] && \
+             [ ! -f "$PROJECT_ROOT/settings.gradle" ]; then
 
-          test -f "$PROJECT_ROOT/build.gradle.kts" \
-            || test -f "$PROJECT_ROOT/build.gradle"
+            echo "::error::Gradle settings file missing."
+            exit 1
+          fi
 
-          test -f "$PROJECT_ROOT/app/build.gradle.kts" \
-            || test -f "$PROJECT_ROOT/app/build.gradle"
+          if [ ! -f "$PROJECT_ROOT/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_ROOT/build.gradle" ]; then
 
-          test -f "$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
+            echo "::error::Root Gradle build file missing."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_ROOT/app/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_ROOT/app/build.gradle" ]; then
+
+            echo "::error::App Gradle build file missing."
+            exit 1
+          fi
+
+          test -f \
+            "$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
           echo
           echo "Android project structure PASSED."
@@ -414,6 +457,8 @@ jobs:
           echo "Checking:"
           echo "$MAIN"
 
+          test -f "$MAIN"
+
           grep -q "fun validDate" "$MAIN"
           grep -q "BackHandler" "$MAIN"
           grep -q "PhotoThumb" "$MAIN"
@@ -427,7 +472,7 @@ jobs:
 
 
       # ============================================================
-      # 18. VERIFY FIXED PAYMENT LOGIC
+      # 18. VERIFY PAYMENT AND CROP FIX
       # ============================================================
 
       - name: Verify payment and crop cleanup
@@ -450,10 +495,10 @@ jobs:
             "$MAIN"; then
 
             echo "::error::Old mandatory field validation still exists."
-
             exit 1
           fi
 
+          echo
           echo "Payment/crop cleanup fix PASSED."
 
 
@@ -488,7 +533,7 @@ jobs:
 
 
       # ============================================================
-      # 20. CREATE local.properties
+      # 20. CONFIGURE ANDROID SDK FOR GRADLE
       # ============================================================
 
       - name: Configure Android SDK for Gradle
@@ -499,6 +544,7 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" \
             > "$PROJECT_ROOT/local.properties"
 
+          echo
           echo "local.properties:"
           cat "$PROJECT_ROOT/local.properties"
 
@@ -552,10 +598,12 @@ jobs:
           )"
 
           if [ -z "$APK_PATH" ]; then
+
             echo "::error::Release APK was not generated."
 
             echo
             echo "Available APK files:"
+
             find "$PROJECT_ROOT/app/build/outputs" \
               -type f \
               -name "*.apk" \
@@ -587,11 +635,13 @@ jobs:
           cp "$APK_UNSIGNED_PATH" \
             "$RUNNER_TEMP/apk/$APK_UNSIGNED_NAME"
 
+          echo
+          echo "Unsigned APK:"
           ls -lh "$RUNNER_TEMP/apk"
 
 
       # ============================================================
-      # 25. CREATE TEMPORARY SIGNING KEY
+      # 25. GENERATE TEMPORARY SIGNING KEY
       # ============================================================
 
       - name: Generate temporary signing keystore
@@ -617,11 +667,12 @@ jobs:
           echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
           echo "KEY_ALIAS=majdoor_release" >> "$GITHUB_ENV"
 
+          echo
           echo "Temporary signing keystore created."
 
 
       # ============================================================
-      # 26. ZIPALIGN
+      # 26. ZIPALIGN APK
       # ============================================================
 
       - name: Align APK
@@ -631,6 +682,8 @@ jobs:
 
           ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
+          test -x "$ZIPALIGN"
+
           "$ZIPALIGN" \
             -p \
             -f \
@@ -638,11 +691,12 @@ jobs:
             "$RUNNER_TEMP/apk/$APK_UNSIGNED_NAME" \
             "$RUNNER_TEMP/apk/aligned.apk"
 
+          echo
           echo "APK alignment completed."
 
 
       # ============================================================
-      # 27. SIGN APK
+      # 27. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -651,6 +705,8 @@ jobs:
           set -e
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
+
+          test -x "$APKSIGNER"
 
           "$APKSIGNER" sign \
             --ks "$KEYSTORE" \
@@ -671,7 +727,7 @@ jobs:
 
 
       # ============================================================
-      # 28. VERIFY SIGNATURE
+      # 28. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -691,7 +747,7 @@ jobs:
 
 
       # ============================================================
-      # 29. VERIFY ALIGNMENT
+      # 29. VERIFY APK ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -712,7 +768,7 @@ jobs:
 
 
       # ============================================================
-      # 30. VERIFY PACKAGE / VERSION FROM APK
+      # 30. VERIFY FINAL APK PACKAGE AND VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -724,9 +780,13 @@ jobs:
 
           APK="$RUNNER_TEMP/apk/$APK_SIGNED_NAME"
 
+          test -f "$APK"
+
           "$AAPT2" dump badging "$APK" \
             > "$RUNNER_TEMP/apk/badging.txt"
 
+          echo
+          echo "APK BADGING:"
           cat "$RUNNER_TEMP/apk/badging.txt"
 
           grep -q \
@@ -745,9 +805,11 @@ jobs:
           echo "PACKAGE VERIFIED:"
           echo "$PACKAGE_NAME"
 
+          echo
           echo "VERSION CODE VERIFIED:"
           echo "$VERSION_CODE"
 
+          echo
           echo "VERSION NAME VERIFIED:"
           echo "$VERSION_NAME"
 
@@ -768,8 +830,8 @@ jobs:
 
           {
             echo "=============================================="
-            echo "MAJDOOR HISAAB PRO V82"
-            echo "FINAL SIGNED RELEASE BUILD"
+            echo "        MAJDOOR HISAAB PRO V82"
+            echo "        FINAL SIGNED RELEASE BUILD"
             echo "=============================================="
             echo
             echo "Package      : ${PACKAGE_NAME}"
@@ -784,27 +846,27 @@ jobs:
             echo "APK          : ${APK_SIGNED_NAME}"
             echo
             echo "----------------------------------------------"
-            echo "CHECKS"
+            echo "BUILD CHECKS"
             echo "----------------------------------------------"
             echo "Android SDK              : PASS"
             echo "Android API 36           : PASS"
             echo "Build Tools 36.0.0       : PASS"
-            echo "Java 17                   : PASS"
-            echo "Gradle 8.11.1             : PASS"
-            echo "Project structure         : PASS"
-            echo "Kotlin source             : PASS"
-            echo "Payment cleanup           : PASS"
-            echo "Gradle clean              : PASS"
-            echo "Release compilation       : PASS"
-            echo "APK generation            : PASS"
-            echo "APK alignment             : PASS"
-            echo "APK signing               : PASS"
-            echo "Signature verification    : PASS"
-            echo "Package verification      : PASS"
-            echo "Version verification      : PASS"
+            echo "Java 17                  : PASS"
+            echo "Gradle 8.11.1            : PASS"
+            echo "Project structure        : PASS"
+            echo "Kotlin source            : PASS"
+            echo "Payment cleanup          : PASS"
+            echo "Gradle clean             : PASS"
+            echo "Release compilation      : PASS"
+            echo "APK generation           : PASS"
+            echo "APK alignment            : PASS"
+            echo "APK signing              : PASS"
+            echo "Signature verification   : PASS"
+            echo "Package verification     : PASS"
+            echo "Version verification     : PASS"
             echo
             echo "=============================================="
-            echo "BUILD SUCCESS"
+            echo "              BUILD SUCCESS"
             echo "=============================================="
           } > "$REPORT"
 
@@ -812,7 +874,7 @@ jobs:
 
 
       # ============================================================
-      # 32. UPLOAD FINAL APK
+      # 32. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -866,4 +928,5 @@ jobs:
           rm -f "$RUNNER_TEMP/apk/aligned.apk" || true
           rm -f "$RUNNER_TEMP/apk/$APK_UNSIGNED_NAME" || true
 
+          echo
           echo "Temporary signing material cleaned."
