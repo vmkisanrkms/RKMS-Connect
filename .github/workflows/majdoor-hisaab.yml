@@ -240,9 +240,6 @@ jobs:
           echo ""
           echo "Extraction completed."
 
-          echo ""
-          echo "Important project files:"
-
           find "$EXTRACT_DIR" \
             -type f \
             \( \
@@ -294,9 +291,6 @@ jobs:
 
           if [ -z "$PROJECT_ROOT" ]; then
             echo "::error::Android Gradle project root was not found."
-
-            echo ""
-            echo "Extracted project structure:"
 
             find "$BASE" \
               -maxdepth 6 \
@@ -377,7 +371,7 @@ jobs:
             | head -n 500
 
       # ============================================================
-      # 12. SHOW KOTLIN FILES
+      # 12. LOCATE KOTLIN SOURCE
       # ============================================================
       - name: Locate Kotlin Source
         shell: bash
@@ -401,7 +395,7 @@ jobs:
             | head -n 500 || true
 
       # ============================================================
-      # 13. ANDROID CONFIGURATION
+      # 13. VERIFY ANDROID CONFIGURATION
       # ============================================================
       - name: Verify Android Configuration
         shell: bash
@@ -494,13 +488,6 @@ jobs:
 
       # ============================================================
       # 16. LOCATE RELEASE APK
-      #
-      # IMPORTANT:
-      # assembleRelease creates:
-      # app-release-unsigned.apk
-      #
-      # This unsigned APK is intentionally used as the input for
-      # zipalign and apksigner below.
       # ============================================================
       - name: Locate Release APK
         shell: bash
@@ -526,9 +513,6 @@ jobs:
 
           APK_PATH=""
 
-          # --------------------------------------------------------
-          # 1. Preferred standard Gradle release APK
-          # --------------------------------------------------------
           APK_PATH="$(
             find . \
               -type f \
@@ -537,9 +521,6 @@ jobs:
               | head -n 1 || true
           )"
 
-          # --------------------------------------------------------
-          # 2. Exact standard filename fallback
-          # --------------------------------------------------------
           if [ -z "$APK_PATH" ]; then
             APK_PATH="$(
               find . \
@@ -550,9 +531,6 @@ jobs:
             )"
           fi
 
-          # --------------------------------------------------------
-          # 3. Any APK inside release output
-          # --------------------------------------------------------
           if [ -z "$APK_PATH" ]; then
             APK_PATH="$(
               find . \
@@ -563,9 +541,6 @@ jobs:
             )"
           fi
 
-          # --------------------------------------------------------
-          # 4. Final fallback: any APK
-          # --------------------------------------------------------
           if [ -z "$APK_PATH" ]; then
             APK_PATH="$(
               find . \
@@ -576,27 +551,12 @@ jobs:
             )"
           fi
 
-          # --------------------------------------------------------
-          # 5. Fail only if absolutely no APK exists
-          # --------------------------------------------------------
           if [ -z "$APK_PATH" ]; then
             echo "::error::Release APK was not found."
-
-            echo ""
-            echo "Complete APK search result:"
 
             find . \
               -type f \
               -name "*.apk" \
-              -print \
-              | sort || true
-
-            echo ""
-            echo "Release output directories:"
-
-            find . \
-              -type d \
-              -path "*/build/outputs/apk/release" \
               -print \
               | sort || true
 
@@ -610,23 +570,13 @@ jobs:
           echo "RELEASE APK FOUND"
           echo "=========================================="
 
-          echo "APK PATH:"
           echo "$APK_PATH"
 
-          echo ""
-          echo "APK SIZE:"
           ls -lh "$APK_PATH"
 
-          # --------------------------------------------------------
-          # Copy to stable temporary location
-          # --------------------------------------------------------
           cp "$APK_PATH" "$RUNNER_TEMP/release-original.apk"
 
           test -f "$RUNNER_TEMP/release-original.apk"
-
-          echo ""
-          echo "Original APK copied to:"
-          echo "$RUNNER_TEMP/release-original.apk"
 
           echo "ORIGINAL_APK=$RUNNER_TEMP/release-original.apk" >> "$GITHUB_ENV"
 
@@ -667,7 +617,7 @@ jobs:
             manifest version-code "$APK" || true
 
       # ============================================================
-      # 18. PREPARE TEMPORARY SIGNING KEYSTORE
+      # 18. PREPARE APK SIGNING KEYSTORE
       # ============================================================
       - name: Prepare APK Signing Keystore
         shell: bash
@@ -695,7 +645,16 @@ jobs:
           echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 19. ZIPALIGN
+      # 19. ALIGN RELEASE APK
+      #
+      # IMPORTANT:
+      # Android 16 / 16 KB page-size compatible alignment.
+      #
+      # DO NOT USE:
+      # -p 4
+      #
+      # Correct:
+      # -P 16 4
       # ============================================================
       - name: Align Release APK
         shell: bash
@@ -705,31 +664,73 @@ jobs:
           INPUT="$ORIGINAL_APK"
           ALIGNED="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
 
+          if [ ! -f "$INPUT" ]; then
+            echo "::error::Original APK not found:"
+            echo "$INPUT"
+            exit 1
+          fi
+
           rm -f "$ALIGNED"
 
-          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign" \
+          echo "=========================================="
+          echo "ALIGNING RELEASE APK"
+          echo "=========================================="
+
+          echo "Input:"
+          echo "$INPUT"
+
+          echo "Output:"
+          echo "$ALIGNED"
+
+          ZIPALIGN="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign"
+
+          if [ ! -x "$ZIPALIGN" ]; then
+            echo "::error::zipalign not found:"
+            echo "$ZIPALIGN"
+            exit 1
+          fi
+
+          echo ""
+          echo "zipalign version:"
+          "$ZIPALIGN" -h | head -n 5 || true
+
+          echo ""
+          echo "Running 16 KB page-size alignment..."
+
+          "$ZIPALIGN" \
             -f \
-            -p \
+            -P 16 \
             4 \
             "$INPUT" \
             "$ALIGNED"
 
-          test -f "$ALIGNED"
+          if [ ! -f "$ALIGNED" ]; then
+            echo "::error::Aligned APK was not created."
+            exit 1
+          fi
 
-          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign" \
+          echo ""
+          echo "=========================================="
+          echo "VERIFYING ALIGNMENT"
+          echo "=========================================="
+
+          "$ZIPALIGN" \
             -c \
-            -P 4 \
-            16 \
+            -P 16 \
             4 \
             "$ALIGNED"
 
-          echo "Aligned APK:"
+          echo ""
+          echo "=========================================="
+          echo "ZIPALIGN SUCCESS"
+          echo "=========================================="
+
           ls -lh "$ALIGNED"
 
           echo "ALIGNED_APK=$ALIGNED" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 20. SIGN APK
+      # 20. SIGN RELEASE APK
       # ============================================================
       - name: Sign Release APK
         shell: bash
@@ -739,6 +740,10 @@ jobs:
           SIGNED="$RUNNER_TEMP/$APK_SIGNED_NAME"
 
           rm -f "$SIGNED"
+
+          echo "=========================================="
+          echo "SIGNING RELEASE APK"
+          echo "=========================================="
 
           "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner" sign \
             --ks "$KEYSTORE" \
@@ -776,6 +781,9 @@ jobs:
             --verbose \
             --print-certs \
             "$SIGNED_APK"
+
+          echo ""
+          echo "APK SIGNATURE VERIFICATION SUCCESSFUL."
 
       # ============================================================
       # 22. VERIFY FINAL APK ID AND VERSION
@@ -833,20 +841,30 @@ jobs:
           echo "APK identity verification successful."
 
       # ============================================================
-      # 23. FINAL ZIPALIGN CHECK
+      # 23. FINAL APK ALIGNMENT VERIFICATION
       # ============================================================
       - name: Final APK Alignment Verification
         shell: bash
         run: |
           set -euo pipefail
 
+          if [ ! -f "$SIGNED_APK" ]; then
+            echo "::error::Signed APK not found:"
+            echo "$SIGNED_APK"
+            exit 1
+          fi
+
+          echo "=========================================="
+          echo "FINAL 16 KB APK ALIGNMENT CHECK"
+          echo "=========================================="
+
           "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign" \
             -c \
-            -P 4 \
-            16 \
+            -P 16 \
             4 \
             "$SIGNED_APK"
 
+          echo ""
           echo "Final APK alignment verification successful."
 
       # ============================================================
@@ -887,6 +905,13 @@ jobs:
               verify \
               --verbose \
               --print-certs \
+              "${SIGNED_APK}"
+            echo ""
+            echo "16 KB alignment verification:"
+            "${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/zipalign" \
+              -c \
+              -P 16 \
+              4 \
               "${SIGNED_APK}"
             echo ""
             echo "=============================================="
@@ -973,13 +998,15 @@ jobs:
           echo "1. Java 17"
           echo "2. Gradle ${GRADLE_VERSION}"
           echo "3. Android API ${ANDROID_API}"
-          echo "4. Release compilation"
-          echo "5. APK detection"
-          echo "6. APK alignment"
-          echo "7. APK signing"
-          echo "8. Signature verification"
-          echo "9. Package/version verification"
-          echo "10. Final artifact upload"
+          echo "4. Kotlin compilation"
+          echo "5. Release APK generation"
+          echo "6. Release APK detection"
+          echo "7. 16 KB page-size alignment"
+          echo "8. APK signing"
+          echo "9. Signature verification"
+          echo "10. Package/version verification"
+          echo "11. Final alignment verification"
+          echo "12. Final artifact upload"
           echo ""
           echo "======================================================"
           echo "                BUILD SUCCESSFUL"
