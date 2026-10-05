@@ -192,7 +192,7 @@ jobs:
 
 
       # ============================================================
-      # 7. FIND PROJECT ZIP
+      # 7. FIND EXACT PROJECT ZIP
       # ============================================================
 
       - name: Find Majdoor Hisaab Project ZIP
@@ -204,51 +204,26 @@ jobs:
           echo "FIND MAJDOOR HISAAB PROJECT ZIP"
           echo "=============================================="
 
-          FOUND_ZIP=""
-
-          if [ -f "$ZIP_NAME" ]; then
-            FOUND_ZIP="$ZIP_NAME"
-          fi
-
-          if [ -z "$FOUND_ZIP" ]; then
-            FOUND_ZIP=$(
-              find . \
-                -type f \
-                -iname "*Majdoor*Hisaab*.zip" \
-                -not -path "./.git/*" \
-                -print \
-                | sort \
-                | tail -1
-            )
-          fi
-
-          if [ -z "$FOUND_ZIP" ] || [ ! -f "$FOUND_ZIP" ]; then
-
+          if [ ! -f "$ZIP_NAME" ]; then
             echo ""
-            echo "ERROR: Majdoor Hisaab project ZIP NOT FOUND."
-
+            echo "ERROR: Required ZIP not found:"
+            echo "$ZIP_NAME"
             echo ""
             echo "AVAILABLE ZIP FILES:"
-
             find . \
               -type f \
               -name "*.zip" \
               -not -path "./.git/*" \
               -print \
               | sort
-
             exit 1
           fi
 
-          FOUND_ZIP="${FOUND_ZIP#./}"
-
           echo ""
           echo "PROJECT ZIP FOUND:"
-          echo "$FOUND_ZIP"
+          echo "$ZIP_NAME"
 
-          ls -lh "$FOUND_ZIP"
-
-          echo "ZIP_NAME=$FOUND_ZIP" >> "$GITHUB_ENV"
+          ls -lh "$ZIP_NAME"
 
           echo ""
           echo "ZIP DETECTION PASSED."
@@ -283,7 +258,6 @@ jobs:
             -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
-
             echo ""
             echo "ERROR: Gradle settings file not found."
 
@@ -326,10 +300,11 @@ jobs:
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
-
             echo "ERROR: app Gradle file not found."
             exit 1
           fi
+
+          test -d "app/src/main"
 
           echo ""
           echo "ANDROID PROJECT VERIFIED."
@@ -380,7 +355,8 @@ jobs:
       # ============================================================
       # 11. LOCATE MAIN KOTLIN SOURCE
       #
-      # NOTHING BEFORE THIS STEP MODIFIES KOTLIN SOURCE.
+      # IMPORTANT:
+      # NOTHING BEFORE COMPILE STEP MODIFIES KOTLIN SOURCE.
       # ============================================================
 
       - name: Locate Main Kotlin Source
@@ -422,29 +398,25 @@ jobs:
           echo "MAIN FILE:"
           echo "$MAIN_FILE"
 
+          echo ""
+          echo "SOURCE HASH BEFORE COMPILE:"
+          sha256sum "$MAIN_FILE"
+
 
       # ============================================================
-      # 12. FINAL AUDITED KOTLIN REPAIR + COMPILE
+      # 12. COMPILE RELEASE KOTLIN
       #
-      # ACTUAL v11 ZIP AUDIT FIXES:
+      # CRITICAL:
       #
-      # 1. mapList() Kotlin parser syntax
+      # NO PYTHON REPAIR
+      # NO SOURCE REPLACEMENT
+      # NO BRACE REPAIR
+      # NO LABOURDETAIL REPLACEMENT
+      # NO EXPENSEDIALOG REPLACEMENT
+      # NO SALEDIALOG REPLACEMENT
+      # NO CHOICEFIELD MODIFICATION
       #
-      # 2. Replace the ENTIRE broken LabourDetail() function
-      #    with a structurally correct version.
-      #
-      # 3. ExpenseDialog() argument order
-      #
-      # 4. SaleDialog() argument order
-      #
-      # IMPORTANT:
-      #
-      # - NO generic brace counting
-      # - NO automatic brace deletion
-      # - NO ChoiceField modification
-      # - NO guessing
-      #
-      # Kotlin compiler is then run normally.
+      # ZIP SOURCE IS COMPILED AS-IS.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -464,712 +436,12 @@ jobs:
           echo "$MAIN_FILE"
 
           echo ""
-          echo "=============================================="
-          echo "AUDITED KOTLIN SOURCE REPAIR"
-          echo "=============================================="
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-
-          source = path.read_text(
-              encoding="utf-8"
-          )
-
-          original = source
-
-          print("SOURCE:", path)
-          print("SOURCE LINES:", len(source.splitlines()))
-          print("SOURCE BYTES:", len(source.encode("utf-8")))
-
-
-          # ==========================================================
-          # FIX 1
-          # JSONArray.mapList()
-          # ==========================================================
-
-          bad_map = (
-              "private fun <T> JSONArray.mapList"
-              "(mapper:(JSONObject)->T):List<T>="
-              "(0 until length()).map{mapper(getJSONObject(it))}"
-          )
-
-          good_map = (
-              "private fun <T> JSONArray.mapList"
-              "(mapper:(JSONObject)->T): List<T> = "
-              "(0 until length()).map { mapper(getJSONObject(it)) }"
-          )
-
-          map_count = source.count(bad_map)
-
-          print("")
-          print("FIX 1 - mapList count:", map_count)
-
-          if map_count == 1:
-
-              source = source.replace(
-                  bad_map,
-                  good_map,
-                  1
-              )
-
-              print("FIX 1 APPLIED.")
-
-          elif map_count == 0:
-
-              print("FIX 1 already applied.")
-
-          else:
-
-              print(
-                  "ERROR: mapList pattern found more than once."
-              )
-
-              raise SystemExit(1)
-
-
-          # ==========================================================
-          # FIX 2
-          #
-          # Replace the complete LabourDetail function.
-          #
-          # This avoids all guessing around individual braces.
-          # ==========================================================
-
-          start_marker = (
-              "@Composable private fun LabourDetail("
-          )
-
-          end_marker = (
-              "@Composable private fun PaymentDialog("
-          )
-
-          start = source.find(start_marker)
-
-          if start == -1:
-
-              print("")
-              print(
-                  "ERROR: LabourDetail declaration not found."
-              )
-
-              raise SystemExit(1)
-
-          end = source.find(
-              end_marker,
-              start
-          )
-
-          if end == -1:
-
-              print("")
-              print(
-                  "ERROR: PaymentDialog boundary not found."
-              )
-
-              raise SystemExit(1)
-
-
-          labour_detail = r'''@Composable
-          private fun LabourDetail(
-              store: Store,
-              id: String,
-              onBack: () -> Unit
-          ) {
-              val labour = store.labours.firstOrNull { it.id == id } ?: return
-
-              var edit by remember { mutableStateOf(false) }
-              var payment by remember { mutableStateOf(false) }
-              var rate by remember { mutableStateOf(false) }
-              var delPay by remember { mutableStateOf<Payment?>(null) }
-
-              val wage = store.attendances
-                  .filter { it.labourId == id }
-                  .sumOf { it.fraction * it.rate }
-
-              val paid = store.payments
-                  .filter { it.labourId == id }
-                  .sumOf { it.amount }
-
-              Column(
-                  Modifier.fillMaxSize()
-              ) {
-
-                  DetailTopBar(
-                      "👷 ${labour.name.ifBlank { "मजदूर" }}",
-                      onBack
-                  )
-
-                  LazyColumn(
-                      Modifier.padding(16.dp),
-                      verticalArrangement = Arrangement.spacedBy(10.dp)
-                  ) {
-
-                      item {
-
-                          Row(
-                              Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
-                          ) {
-
-                              Box(
-                                  Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      "मजदूरी",
-                                      wage
-                                  )
-                              }
-
-                              Box(
-                                  Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      "भुगतान",
-                                      paid
-                                  )
-                              }
-
-                              Box(
-                                  Modifier.weight(1f)
-                              ) {
-                                  Stat(
-                                      "बाकी",
-                                      wage - paid
-                                  )
-                              }
-                          }
-                      }
-
-
-                      item {
-
-                          Button(
-                              onClick = {
-                                  payment = true
-                              },
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Text(
-                                  "₹ Cash+ भुगतान जोड़ें"
-                              )
-                          }
-                      }
-
-
-                      item {
-
-                          Button(
-                              onClick = {
-                                  rate = true
-                              },
-                              modifier = Modifier.fillMaxWidth(),
-                              colors = ButtonDefaults.buttonColors(
-                                  containerColor = GreenDark
-                              )
-                          ) {
-                              Text(
-                                  "दिहाड़ी बदलें"
-                              )
-                          }
-                      }
-
-
-                      item {
-
-                          Text(
-                              "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
-                              fontWeight = FontWeight.Bold,
-                              color = Green
-                          )
-                      }
-
-
-                      item {
-
-                          Text(
-                              "दिहाड़ी इतिहास",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-
-                      items(
-                          store.rateHistoryFor(id),
-                          key = { it.id }
-                      ) { wageRate ->
-
-                          Text(
-                              "${displayDate(wageRate.effectiveDate)} से ₹${money(wageRate.rate)}/दिन",
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 3.dp),
-                              fontSize = 12.sp,
-                              color = Color.Gray
-                          )
-                      }
-
-
-                      item {
-
-                          Text(
-                              "हाजिरी",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-
-                      items(
-                          store.attendances
-                              .filter { it.labourId == id }
-                              .sortedByDescending { it.date },
-                          key = { it.id }
-                      ) { attendance ->
-
-                          val field = store.fields.firstOrNull {
-                              it.id == attendance.fieldId
-                          }
-
-                          val cropName = store.crops
-                              .firstOrNull {
-                                  it.id == attendance.cropId
-                              }
-                              ?.name
-                              ?.let {
-                                  "$it • "
-                              }
-                              ?: ""
-
-                          Card(
-                              Modifier.fillMaxWidth()
-                          ) {
-
-                              Text(
-                                  "${displayDate(attendance.date)} • " +
-                                      "${field?.name ?: "खेत"} • " +
-                                      cropName +
-                                      "${if (attendance.fraction == 1.0) "Full" else "Half"} • " +
-                                      "₹${money(attendance.fraction * attendance.rate)}",
-                                  Modifier.padding(12.dp)
-                              )
-                          }
-                      }
-
-
-                      item {
-
-                          Text(
-                              "भुगतान",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp
-                          )
-                      }
-
-
-                      items(
-                          store.payments
-                              .filter { it.labourId == id }
-                              .sortedByDescending { it.date },
-                          key = { it.id }
-                      ) { paymentItem ->
-
-                          val field = store.fields.firstOrNull {
-                              it.id == paymentItem.fieldId
-                          }
-
-                          val cropName = store.crops
-                              .firstOrNull {
-                                  it.id == paymentItem.cropId
-                              }
-                              ?.name
-                              ?.let {
-                                  " • $it"
-                              }
-                              ?: ""
-
-                          Row(
-                              Modifier
-                                  .fillMaxWidth()
-                                  .padding(vertical = 5.dp),
-                              verticalAlignment = Alignment.CenterVertically
-                          ) {
-
-                              Text(
-                                  "${displayDate(paymentItem.date)} • " +
-                                      "${field?.name ?: "सामान्य"}" +
-                                      cropName +
-                                      " • ₹${money(paymentItem.amount)}",
-                                  modifier = Modifier.weight(1f)
-                              )
-
-                              IconButton(
-                                  onClick = {
-                                      delPay = paymentItem
-                                  }
-                              ) {
-
-                                  Icon(
-                                      imageVector = Icons.Default.Delete,
-                                      contentDescription = null,
-                                      tint = Color(0xFFB3261E)
-                                  )
-                              }
-                          }
-                      }
-                  }
-
-
-                  if (edit) {
-
-                      LabourDialog(
-                          store,
-                          labour
-                      ) {
-                          edit = false
-                      }
-                  }
-
-
-                  if (payment) {
-
-                      PaymentDialog(
-                          store,
-                          id,
-                          null,
-                          ""
-                      ) {
-                          payment = false
-                      }
-                  }
-
-
-                  if (rate) {
-
-                      RateDialog(
-                          store,
-                          id
-                      ) {
-                          rate = false
-                      }
-                  }
-
-
-                  delPay?.let { paymentItem ->
-
-                      ConfirmDialog(
-                          "भुगतान हटाएँ?",
-                          "यह payment record हट जाएगा।",
-                          {
-                              store.deletePayment(
-                                  paymentItem.id
-                              )
-
-                              delPay = null
-                          },
-                          {
-                              delPay = null
-                          }
-                      )
-                  }
-              }
-          }
-
-          '''
-
-          old_labour = source[start:end]
-
-          print("")
-          print(
-              "FIX 2 - LabourDetail old block found."
-          )
-
-          source = (
-              source[:start]
-              + labour_detail
-              + source[end:]
-          )
-
-          print(
-              "FIX 2 APPLIED: LabourDetail replaced "
-              "with audited structured version."
-          )
-
-
-          # ==========================================================
-          # FIX 3
-          #
-          # ExpenseDialog argument order.
-          #
-          # Correct signature:
-          #
-          # ExpenseDialog(
-          #     store,
-          #     existing,
-          #     onClose,
-          #     isEdit
-          # )
-          # ==========================================================
-
-          bad_expense = (
-              'if(add)ExpenseDialog('
-              'store,'
-              'edit?:Expense('
-              'UUID.randomUUID().toString(),'
-              'preField?:(store.fields.firstOrNull()?.id?:""),'
-              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
-              '"बीज","","","",0.0,today()),'
-              'edit!=null){add=false;edit=null}'
-          )
-
-          good_expense = (
-              'if(add)ExpenseDialog('
-              'store,'
-              'edit?:Expense('
-              'UUID.randomUUID().toString(),'
-              'preField?:(store.fields.firstOrNull()?.id?:""),'
-              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
-              '"बीज","","","",0.0,today()),'
-              '{add=false;edit=null},'
-              'edit!=null)'
-          )
-
-          expense_count = source.count(
-              bad_expense
-          )
-
-          print("")
-          print(
-              "FIX 3 - ExpenseDialog count:",
-              expense_count
-          )
-
-          if expense_count == 1:
-
-              source = source.replace(
-                  bad_expense,
-                  good_expense,
-                  1
-              )
-
-              print(
-                  "FIX 3 APPLIED."
-              )
-
-          elif expense_count == 0:
-
-              print(
-                  "FIX 3 already applied."
-              )
-
-          else:
-
-              print(
-                  "ERROR: ExpenseDialog pattern found "
-                  "more than once."
-              )
-
-              raise SystemExit(1)
-
-
-          # ==========================================================
-          # FIX 4
-          #
-          # SaleDialog argument order.
-          # ==========================================================
-
-          bad_sale = (
-              'if(add)SaleDialog('
-              'store,'
-              'edit?:Sale('
-              'UUID.randomUUID().toString(),'
-              'preField?:(store.fields.firstOrNull()?.id?:""),'
-              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
-              '0.0,"क्विंटल",0.0,0.0,"",today()),'
-              'edit!=null){add=false;edit=null}'
-          )
-
-          good_sale = (
-              'if(add)SaleDialog('
-              'store,'
-              'edit?:Sale('
-              'UUID.randomUUID().toString(),'
-              'preField?:(store.fields.firstOrNull()?.id?:""),'
-              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
-              '0.0,"क्विंटल",0.0,0.0,"",today()),'
-              '{add=false;edit=null},'
-              'edit!=null)'
-          )
-
-          sale_count = source.count(
-              bad_sale
-          )
-
-          print("")
-          print(
-              "FIX 4 - SaleDialog count:",
-              sale_count
-          )
-
-          if sale_count == 1:
-
-              source = source.replace(
-                  bad_sale,
-                  good_sale,
-                  1
-              )
-
-              print(
-                  "FIX 4 APPLIED."
-              )
-
-          elif sale_count == 0:
-
-              print(
-                  "FIX 4 already applied."
-              )
-
-          else:
-
-              print(
-                  "ERROR: SaleDialog pattern found "
-                  "more than once."
-              )
-
-              raise SystemExit(1)
-
-
-          # ==========================================================
-          # WRITE
-          # ==========================================================
-
-          if source != original:
-
-              path.write_text(
-                  source,
-                  encoding="utf-8"
-              )
-
-              print("")
-              print(
-                  "AUDITED KOTLIN SOURCE WRITTEN."
-              )
-
-          else:
-
-              print("")
-              print(
-                  "NO SOURCE CHANGE REQUIRED."
-              )
-
-
-          # ==========================================================
-          # FINAL SOURCE VERIFICATION
-          # ==========================================================
-
-          final_source = path.read_text(
-              encoding="utf-8"
-          )
-
-          if bad_map in final_source:
-
-              print(
-                  "ERROR: Old mapList syntax remains."
-              )
-
-              raise SystemExit(1)
-
-
-          if bad_expense in final_source:
-
-              print(
-                  "ERROR: Old ExpenseDialog call remains."
-              )
-
-              raise SystemExit(1)
-
-
-          if bad_sale in final_source:
-
-              print(
-                  "ERROR: Old SaleDialog call remains."
-              )
-
-              raise SystemExit(1)
-
-
-          if final_source.count(
-              "@Composable\nprivate fun LabourDetail("
-          ) != 1:
-
-              print(
-                  "ERROR: LabourDetail final declaration "
-                  "verification failed."
-              )
-
-              raise SystemExit(1)
-
-
-          if final_source.count(
-              "@Composable private fun PaymentDialog("
-          ) != 1:
-
-              print(
-                  "ERROR: PaymentDialog boundary verification failed."
-              )
-
-              raise SystemExit(1)
-
-
-          print("")
-          print(
-              "=============================================="
-          )
-          print(
-              "ALL AUDITED KOTLIN FIXES VERIFIED."
-          )
-          print(
-              "=============================================="
-          )
-
-          print("")
-          print(
-              "ChoiceField was NOT modified."
-          )
-          PY
-
+          echo "SOURCE HASH:"
+          sha256sum "$MAIN_FILE"
 
           echo ""
-          echo "=============================================="
-          echo "SHOW AUDITED FUNCTION BOUNDARIES"
-          echo "=============================================="
-
-          grep -n \
-            "private fun LabourDetail" \
-            "$MAIN_FILE"
-
-          grep -n \
-            "private fun PaymentDialog" \
-            "$MAIN_FILE"
-
-          grep -n \
-            "private fun ExpenseDialog" \
-            "$MAIN_FILE"
-
-          grep -n \
-            "private fun SaleDialog" \
-            "$MAIN_FILE"
-
-          grep -n \
-            "private fun ChoiceField" \
-            "$MAIN_FILE"
-
-          echo ""
-          echo "FUNCTION BOUNDARY AUDIT PASSED."
-
+          echo "SOURCE MODIFICATION:"
+          echo "NONE"
 
           echo ""
           echo "=============================================="
