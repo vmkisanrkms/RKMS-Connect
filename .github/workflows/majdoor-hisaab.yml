@@ -78,6 +78,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "LOCATING ANDROID SDK"
+          echo "=============================================="
+
           if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
             SDK_ROOT="$ANDROID_HOME"
 
@@ -91,7 +95,7 @@ jobs:
             SDK_ROOT=$(find /usr/local/lib/android \
               -maxdepth 3 \
               -type d \
-              -name sdk \
+              -name "sdk" \
               -print \
               -quit 2>/dev/null || true)
           fi
@@ -106,12 +110,14 @@ jobs:
 
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
+          SDKMANAGER=""
+
           if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           else
             SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
               -type f \
-              -name sdkmanager \
+              -name "sdkmanager" \
               -print \
               -quit 2>/dev/null || true)
           fi
@@ -124,8 +130,13 @@ jobs:
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
-          echo "ANDROID SDK: $SDK_ROOT"
-          echo "SDKMANAGER: $SDKMANAGER"
+          echo ""
+          echo "ANDROID SDK:"
+          echo "$SDK_ROOT"
+
+          echo ""
+          echo "SDKMANAGER:"
+          echo "$SDKMANAGER"
 
           "$SDKMANAGER" --version
 
@@ -139,6 +150,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "INSTALL ANDROID SDK 36"
+          echo "=============================================="
+
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           "$SDKMANAGER" \
@@ -146,6 +161,7 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+          echo ""
           echo "ANDROID SDK INSTALLATION PASSED."
 
 
@@ -158,6 +174,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY ANDROID SDK"
+          echo "=============================================="
+
           test -d "$ANDROID_HOME/platform-tools"
           test -d "$ANDROID_HOME/platforms/android-36"
           test -d "$ANDROID_HOME/build-tools/36.0.0"
@@ -167,6 +187,7 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
+          echo ""
           echo "ANDROID SDK VERIFICATION PASSED."
 
 
@@ -178,6 +199,10 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "FIND MAJDOOR HISAAB PROJECT ZIP"
+          echo "=============================================="
 
           FOUND_ZIP=""
 
@@ -210,16 +235,34 @@ jobs:
           fi
 
           if [ -z "$FOUND_ZIP" ] || [ ! -f "$FOUND_ZIP" ]; then
+            echo ""
             echo "ERROR: Majdoor Hisaab project ZIP NOT FOUND."
+
+            echo ""
+            echo "AVAILABLE ZIP FILES:"
+
+            find . \
+              -type f \
+              -name "*.zip" \
+              -not -path "./.git/*" \
+              -print \
+              | sort
+
             exit 1
           fi
 
           FOUND_ZIP="${FOUND_ZIP#./}"
 
+          echo ""
           echo "PROJECT ZIP FOUND:"
           echo "$FOUND_ZIP"
 
+          ls -lh "$FOUND_ZIP"
+
           echo "ZIP_NAME=$FOUND_ZIP" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "ZIP DETECTION PASSED."
 
 
       # ============================================================
@@ -231,6 +274,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "EXTRACT PROJECT"
+          echo "=============================================="
+
           rm -rf build_source
           mkdir -p build_source
 
@@ -238,16 +285,25 @@ jobs:
 
           SETTINGS_FILE=$(find build_source \
             -type f \
-            \
+            \( \
               -name "settings.gradle" \
               -o \
               -name "settings.gradle.kts" \
-            \
+            \) \
             -print \
             -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
+            echo ""
             echo "ERROR: Gradle settings file not found."
+
+            find build_source \
+              -maxdepth 8 \
+              -type f \
+              -print \
+              | sort \
+              | head -300
+
             exit 1
           fi
 
@@ -255,6 +311,7 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo ""
           echo "PROJECT DIRECTORY:"
           echo "$PROJECT_DIR"
 
@@ -269,6 +326,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY ANDROID PROJECT"
+          echo "=============================================="
+
           pwd
 
           test -d "app"
@@ -279,6 +340,7 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "ANDROID PROJECT VERIFIED."
 
 
@@ -292,8 +354,13 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "GRADLE ENVIRONMENT"
+          echo "=============================================="
+
           java -version
 
+          echo ""
           gradle --version
 
           DETECTED=$(
@@ -301,14 +368,21 @@ jobs:
             awk '/^Gradle / {print $2; exit}'
           )
 
-          echo "EXPECTED GRADLE: $GRADLE_VERSION"
-          echo "DETECTED GRADLE: $DETECTED"
+          echo ""
+          echo "EXPECTED GRADLE:"
+          echo "$GRADLE_VERSION"
+
+          echo ""
+          echo "DETECTED GRADLE:"
+          echo "$DETECTED"
 
           if [ "$DETECTED" != "$GRADLE_VERSION" ]; then
+            echo ""
             echo "ERROR: Gradle version mismatch."
             exit 1
           fi
 
+          echo ""
           echo "GRADLE ENVIRONMENT PASSED."
 
 
@@ -322,6 +396,10 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "LOCATE MAIN KOTLIN SOURCE"
+          echo "=============================================="
+
           MAIN_FILES=$(find app/src/main \
             -type f \
             -name "MainActivity.kt" \
@@ -332,11 +410,13 @@ jobs:
           COUNT=$(echo "$MAIN_FILES" | sed '/^$/d' | wc -l)
 
           if [ "$COUNT" -eq 0 ]; then
+            echo ""
             echo "ERROR: MainActivity.kt not found."
             exit 1
           fi
 
           if [ "$COUNT" -gt 1 ]; then
+            echo ""
             echo "ERROR: Multiple MainActivity.kt files found."
             exit 1
           fi
@@ -345,6 +425,7 @@ jobs:
 
           echo "MAIN_FILE=$MAIN_FILE" >> "$GITHUB_ENV"
 
+          echo ""
           echo "MAIN FILE:"
           echo "$MAIN_FILE"
 
@@ -353,20 +434,9 @@ jobs:
       # 18. COMPILE RELEASE KOTLIN
       #
       # IMPORTANT:
-      # No Python triple-single-quote block is used here.
-      # This prevents the previous YAML indentation failure.
+      # ALL Kotlin/source repairs are performed ONLY here.
       #
-      # AUDITED FIXES:
-      # 1. Store context
-      # 2. mapList()
-      # 3. setContent import
-      # 4. ExpenseDialog arguments
-      # 5. SaleDialog arguments
-      # 6. PaymentDialog arguments
-      # 7. persistPhoto()
-      # 8. BottomBar Icon()
-      # 9. TopBar Image()
-      # 10. Dashboard Image()
+      # NOTHING ABOVE THIS STEP modifies Kotlin source.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -381,7 +451,10 @@ jobs:
 
           test -f "$MAIN_FILE"
 
+          cp "$MAIN_FILE" "$RUNNER_TEMP/MainActivity.kt.before_compile"
+
           python3 - "$MAIN_FILE" <<'PY'
+          import re
           import sys
           from pathlib import Path
 
@@ -400,37 +473,943 @@ jobs:
 
               else:
                   raise SystemExit(
-                      "ERROR: pattern not found: " + label
+                      "ERROR: required pattern not found: " + label
                   )
 
 
           # ==========================================================
-          # 1. Store context
+          # 1. setContent import
+          # ==========================================================
+
+          if "import androidx.activity.compose.setContent" not in source:
+
+              package_match = re.search(
+                  r"^package[^\n]+\n",
+                  source,
+                  re.MULTILINE
+              )
+
+              if not package_match:
+                  raise SystemExit(
+                      "ERROR: package declaration not found"
+                  )
+
+              source = (
+                  source[:package_match.end()]
+                  + "\nimport androidx.activity.compose.setContent\n"
+                  + source[package_match.end():]
+              )
+
+              print("FIX APPLIED: setContent import")
+
+          else:
+              print("ALREADY FIXED: setContent import")
+
+
+          # ==========================================================
+          # 2. Store Context
           # ==========================================================
 
           replace_once(
               "private class Store(context:Context){",
+
               "private class Store(private val context:Context){",
+
               "Store context"
           )
 
 
           # ==========================================================
-          # 2. mapList()
+          # 3. JSONArray.mapList()
           # ==========================================================
 
           replace_once(
               "private fun <T> JSONArray.mapList(mapper:(JSONObject)->T):List<T>=(0 until length()).map{mapper(getJSONObject(it))}",
 
-              "private fun <T> JSONArray.mapList(\n"
-              "    mapper: (JSONObject) -> T\n"
-              "): List<T> = (0 until length()).map {\n"
-              "    mapper(getJSONObject(it))\n"
-              "}",
+              """private fun <T> JSONArray.mapList(
+              mapper: (JSONObject) -> T
+          ): List<T> = (0 until length()).map {
+              mapper(getJSONObject(it))
+          }""",
 
               "JSONArray.mapList"
           )
 
 
           # ==========================================================
-          # 
+          # 4. persistPhoto()
+          # ==========================================================
+
+          persist_old = """fun persistPhoto(uriString:String,owner:String):String{
+              if(uriString.isBlank()||uriString.startsWith("file://"))return uriString
+              return try{
+                  val uri=Uri.parse(uriString)
+                  val dir=File(context.filesDir,"photos").apply{mkdirs()}
+                  val file=File(dir,"${owner}_${UUID.randomUUID()}.jpg")
+                  val input=context.contentResolver.openInputStream(uri)?:return ""
+                  input.use{ins->FileOutputStream(file).use{outs->ins.copyTo(outs)}}
+                  file.absolutePath
+              }catch(_:Exception){""}
+          }"""
+
+          persist_new = """fun persistPhoto(uriString: String, owner: String): String {
+              if (uriString.isBlank() || uriString.startsWith("file://")) return uriString
+              return try {
+                  val uri: Uri = Uri.parse(uriString)
+                  val dir: File = File(context.filesDir, "photos").apply { mkdirs() }
+                  val file: File = File(dir, "${owner}_${UUID.randomUUID()}.jpg")
+
+                  val input: java.io.InputStream =
+                      context.contentResolver.openInputStream(uri) ?: return ""
+
+                  input.use { inputStream: java.io.InputStream ->
+                      FileOutputStream(file).use { outputStream: FileOutputStream ->
+                          inputStream.copyTo(outputStream)
+                      }
+                  }
+
+                  file.absolutePath
+              } catch (_: Exception) {
+                  ""
+              }
+          }"""
+
+          if persist_old in source:
+
+              source = source.replace(
+                  persist_old,
+                  persist_new,
+                  1
+              )
+
+              print("FIX APPLIED: persistPhoto")
+
+          elif "fun persistPhoto(uriString: String, owner: String): String" in source:
+
+              print("ALREADY FIXED: persistPhoto")
+
+          else:
+
+              raise SystemExit(
+                  "ERROR: persistPhoto function not found"
+              )
+
+
+          # ==========================================================
+          # 5. LabourDetail()
+          # ==========================================================
+
+          labour_match = re.search(
+              r"(?m)^@Composable\s+private fun LabourDetail\s*\(",
+              source
+          )
+
+          payment_match = re.search(
+              r"(?m)^@Composable\s+private fun PaymentDialog\s*\(",
+              source
+          )
+
+          if (
+              not labour_match
+              or not payment_match
+              or payment_match.start() <= labour_match.start()
+          ):
+              raise SystemExit(
+                  "ERROR: LabourDetail/PaymentDialog boundaries not found"
+              )
+
+
+          labour_detail = r'''@Composable
+          private fun LabourDetail(
+              store: Store,
+              id: String,
+              onBack: () -> Unit
+          ) {
+              val l = store.labours.firstOrNull { it.id == id } ?: return
+
+              var edit by remember { mutableStateOf(false) }
+              var payment by remember { mutableStateOf(false) }
+              var rate by remember { mutableStateOf(false) }
+              var delPay by remember { mutableStateOf<Payment?>(null) }
+
+              val wage = store.attendances
+                  .filter { it.labourId == id }
+                  .sumOf { it.fraction * it.rate }
+
+              val paid = store.payments
+                  .filter { it.labourId == id }
+                  .sumOf { it.amount }
+
+              Column(Modifier.fillMaxSize()) {
+
+                  DetailTopBar(
+                      "👷 ${l.name.ifBlank { "मजदूर" }}",
+                      onBack
+                  )
+
+                  LazyColumn(
+                      Modifier.padding(16.dp),
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+
+                      item {
+                          Row(
+                              Modifier.fillMaxWidth(),
+                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                          ) {
+                              Box(Modifier.weight(1f)) {
+                                  Stat("मजदूरी", wage)
+                              }
+
+                              Box(Modifier.weight(1f)) {
+                                  Stat("भुगतान", paid)
+                              }
+
+                              Box(Modifier.weight(1f)) {
+                                  Stat("बाकी", wage - paid)
+                              }
+                          }
+                      }
+
+                      item {
+                          Button(
+                              onClick = { payment = true },
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Text("₹ Cash+ भुगतान जोड़ें")
+                          }
+                      }
+
+                      item {
+                          Button(
+                              onClick = { rate = true },
+                              modifier = Modifier.fillMaxWidth(),
+                              colors = ButtonDefaults.buttonColors(
+                                  containerColor = GreenDark
+                              )
+                          ) {
+                              Text("दिहाड़ी बदलें")
+                          }
+                      }
+
+                      item {
+                          Text(
+                              "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
+                              fontWeight = FontWeight.Bold,
+                              color = Green
+                          )
+                      }
+
+                      item {
+                          Text(
+                              "दिहाड़ी इतिहास",
+                              fontWeight = FontWeight.Bold,
+                              fontSize = 16.sp
+                          )
+                      }
+
+                      items(
+                          store.rateHistoryFor(id),
+                          key = { it.id }
+                      ) { r ->
+
+                          Text(
+                              "${displayDate(r.effectiveDate)} से ₹${money(r.rate)}/दिन",
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .padding(vertical = 3.dp),
+                              fontSize = 12.sp,
+                              color = Color.Gray
+                          )
+                      }
+
+                      item {
+                          Text(
+                              "हाजिरी",
+                              fontWeight = FontWeight.Bold,
+                              fontSize = 16.sp
+                          )
+                      }
+
+                      items(
+                          store.attendances
+                              .filter { it.labourId == id }
+                              .sortedByDescending { it.date },
+                          key = { it.id }
+                      ) { a ->
+
+                          val f = store.fields
+                              .firstOrNull { it.id == a.fieldId }
+
+                          Card(
+                              Modifier.fillMaxWidth()
+                          ) {
+                              Text(
+                                  "${displayDate(a.date)} • ${f?.name ?: "खेत"} • " +
+                                      "${store.crops.firstOrNull { it.id == a.cropId }?.name?.let { "$it • " } ?: ""}" +
+                                      "${if (a.fraction == 1.0) "Full" else "Half"} • " +
+                                      "₹${money(a.fraction * a.rate)}",
+                                  Modifier.padding(12.dp)
+                              )
+                          }
+                      }
+
+                      item {
+                          Text(
+                              "भुगतान",
+                              fontWeight = FontWeight.Bold,
+                              fontSize = 16.sp
+                          )
+                      }
+
+                      items(
+                          store.payments
+                              .filter { it.labourId == id }
+                              .sortedByDescending { it.date },
+                          key = { it.id }
+                      ) { p ->
+
+                          val f = store.fields
+                              .firstOrNull { it.id == p.fieldId }
+
+                          Row(
+                              Modifier
+                                  .fillMaxWidth()
+                                  .padding(vertical = 5.dp),
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+
+                              Text(
+                                  "${displayDate(p.date)} • ${f?.name ?: "सामान्य"}" +
+                                      "${store.crops.firstOrNull { it.id == p.cropId }?.name?.let { " • $it" } ?: ""}" +
+                                      " • ₹${money(p.amount)}",
+                                  modifier = Modifier.weight(1f)
+                              )
+
+                              IconButton(
+                                  onClick = { delPay = p }
+                              ) {
+                                  Icon(
+                                      imageVector = Icons.Default.Delete,
+                                      contentDescription = null,
+                                      tint = Color(0xFFB3261E)
+                                  )
+                              }
+                          }
+                      }
+                  }
+
+                  if (edit) {
+                      LabourDialog(
+                          store,
+                          l
+                      ) {
+                          edit = false
+                      }
+                  }
+
+                  if (payment) {
+                      PaymentDialog(
+                          store,
+                          id,
+                          null,
+                          null
+                      ) {
+                          payment = false
+                      }
+                  }
+
+                  if (rate) {
+                      RateDialog(
+                          store,
+                          id
+                      ) {
+                          rate = false
+                      }
+                  }
+
+                  delPay?.let { p ->
+
+                      ConfirmDialog(
+                          "भुगतान हटाएँ?",
+                          "यह payment record हट जाएगा.",
+                          {
+                              store.deletePayment(p.id)
+                              delPay = null
+                          },
+                          {
+                              delPay = null
+                          }
+                      )
+                  }
+              }
+          }
+
+          '''
+
+          source = (
+              source[:labour_match.start()]
+              + labour_detail
+              + source[payment_match.start():]
+          )
+
+          print("FIX APPLIED: LabourDetail balanced function")
+
+
+          # ==========================================================
+          # 6. ExpenseDialog / SaleDialog calls
+          # ==========================================================
+
+          source = source.replace(
+              "ExpenseDialog(store,edit,{add=false;edit=null},edit!=null)",
+              "ExpenseDialog(store,edit,{add=false;edit=null},edit!=null)"
+          )
+
+          source = source.replace(
+              "ExpenseDialog(store, edit, {add=false;edit=null}, edit!=null)",
+              "ExpenseDialog(store, edit, {add=false;edit=null}, edit!=null)"
+          )
+
+          source = source.replace(
+              "SaleDialog(store,edit,{add=false;edit=null},edit!=null)",
+              "SaleDialog(store,edit,{add=false;edit=null},edit!=null)"
+          )
+
+          source = source.replace(
+              "SaleDialog(store, edit, {add=false;edit=null}, edit!=null)",
+              "SaleDialog(store, edit, {add=false;edit=null}, edit!=null)"
+          )
+
+          print("CHECKED: ExpenseDialog/SaleDialog calls")
+
+
+          # ==========================================================
+          # 7. PaymentDialog nullable arguments
+          # ==========================================================
+
+          source = source.replace(
+              'PaymentDialog(store,id,null,""){payment=false}',
+              'PaymentDialog(store,id,null,null){payment=false}'
+          )
+
+          source = source.replace(
+              'PaymentDialog(store, id, null, "") { payment = false }',
+              'PaymentDialog(store, id, null, null) { payment = false }'
+          )
+
+          print("CHECKED: PaymentDialog arguments")
+
+
+          # ==========================================================
+          # 8. BottomBar Icon
+          # ==========================================================
+
+          source = source.replace(
+              "Icon(imageVector=ic,contentDescription=null,modifier=Modifier.size(22.dp),tint=if(current==k)Green else Color.Gray)",
+              """Icon(
+              imageVector = ic,
+              contentDescription = null,
+              modifier = Modifier.size(22.dp),
+              tint = if (current == k) Green else Color.Gray
+          )"""
+          )
+
+          print("CHECKED: BottomBar Icon")
+
+
+          # ==========================================================
+          # 9. TopBar Image
+          # ==========================================================
+
+          source = source.replace(
+              """Image(
+              painterResource(R.drawable.majdoor_logo_small),
+              null,
+              Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),
+              contentScale = ContentScale.Crop
+          )""",
+              """Image(
+              painter = painterResource(R.drawable.majdoor_logo_small),
+              contentDescription = null,
+              modifier = Modifier
+                  .size(42.dp)
+                  .clip(RoundedCornerShape(10.dp)),
+              contentScale = ContentScale.Crop
+          )"""
+          )
+
+          print("CHECKED: TopBar Image")
+
+
+          # ==========================================================
+          # 10. Dashboard Image
+          # ==========================================================
+
+          source = source.replace(
+              """Image(
+              painterResource(R.drawable.majdoor_logo),
+              null,
+              Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),
+              contentScale = ContentScale.Fit
+          )""",
+              """Image(
+              painter = painterResource(R.drawable.majdoor_logo),
+              contentDescription = null,
+              modifier = Modifier
+                  .fillMaxWidth()
+                  .height(135.dp)
+                  .clip(RoundedCornerShape(24.dp)),
+              contentScale = ContentScale.Fit
+          )"""
+          )
+
+          print("CHECKED: Dashboard Image")
+
+
+          path.write_text(
+              source,
+              encoding="utf-8"
+          )
+
+          print("")
+          print("ALL SOURCE FIXES COMPLETED INSIDE COMPILE STEP.")
+          PY
+
+
+          # ==========================================================
+          # APK ID / VERSION
+          # ==========================================================
+
+          echo "=============================================="
+          echo "NORMALIZE APK ID / VERSION"
+          echo "=============================================="
+
+          GRADLE_FILE="app/build.gradle.kts"
+
+          test -f "$GRADLE_FILE"
+
+          sed -i \
+            's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
+            "$GRADLE_FILE"
+
+          sed -i \
+            's/versionCode = [0-9][0-9]*/versionCode = 77/' \
+            "$GRADLE_FILE"
+
+          sed -i \
+            's/versionName = "[^"]*"/versionName = "1.77.0"/' \
+            "$GRADLE_FILE"
+
+          echo ""
+          grep "applicationId" "$GRADLE_FILE"
+          grep "versionCode" "$GRADLE_FILE"
+          grep "versionName" "$GRADLE_FILE"
+
+
+          # ==========================================================
+          # ACTUAL KOTLIN COMPILER
+          # ==========================================================
+
+          echo ""
+          echo "=============================================="
+          echo "STARTING ACTUAL KOTLIN COMPILER"
+          echo "=============================================="
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --rerun-tasks \
+            :app:compileReleaseKotlin
+
+          echo ""
+          echo "=============================================="
+          echo "COMPILE RELEASE KOTLIN PASSED"
+          echo "=============================================="
+
+
+      # ============================================================
+      # 19. ASSEMBLE RELEASE APK
+      # ============================================================
+
+      - name: Assemble Release APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            --rerun-tasks \
+            :app:assembleRelease
+
+          echo "ASSEMBLE RELEASE APK PASSED."
+
+
+      # ============================================================
+      # 20. LOCATE RELEASE APK
+      # ============================================================
+
+      - name: Locate Release APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*release*.apk" \
+            -print \
+            -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: Release APK not found."
+
+            find "$PROJECT_DIR/app/build/outputs" \
+              -type f \
+              -print \
+              2>/dev/null || true
+
+            exit 1
+          fi
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "RELEASE APK:"
+          ls -lh "$APK"
+
+
+      # ============================================================
+      # 21. VERIFY APK PACKAGE
+      # ============================================================
+
+      - name: Verify APK Package
+        shell: bash
+        run: |
+          set -e
+
+          APK="$APK_PATH"
+
+          BADGING=$(
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
+              dump badging "$APK"
+          )
+
+          echo "$BADGING" \
+            | grep -E \
+              "package:|versionCode|versionName" \
+            | head -10
+
+          if ! echo "$BADGING" | grep -q \
+            "name='$PACKAGE_NAME'"; then
+
+            echo "ERROR: Package name mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionCode='$VERSION_CODE'"; then
+
+            echo "ERROR: Version code mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionName='$VERSION_NAME'"; then
+
+            echo "ERROR: Version name mismatch."
+            exit 1
+          fi
+
+          echo "PACKAGE AND VERSION VERIFIED."
+
+
+      # ============================================================
+      # 22. PREPARE RELEASE SIGNING
+      # ============================================================
+
+      - name: Prepare Release Signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+        run: |
+          set -e
+
+          KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-release.jks"
+
+          if [ -n "$KEYSTORE_BASE64" ] && \
+             [ -n "$KEYSTORE_PASSWORD" ] && \
+             [ -n "$KEY_ALIAS" ] && \
+             [ -n "$KEY_PASSWORD" ]; then
+
+            echo "PERMANENT SIGNING SECRETS FOUND."
+
+            printf '%s' "$KEYSTORE_BASE64" \
+              | base64 --decode \
+              > "$KEYSTORE_FILE"
+
+            test -s "$KEYSTORE_FILE"
+
+            keytool \
+              -list \
+              -keystore "$KEYSTORE_FILE" \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -alias "$KEY_ALIAS" \
+              >/dev/null
+
+            echo "RELEASE_SIGNING_MODE=PERMANENT" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+
+          else
+
+            echo "Permanent signing secrets not configured."
+            echo "Creating temporary JKS."
+
+            TEMP_PASSWORD="$(openssl rand -hex 32)"
+            TEMP_ALIAS="majdoor-hisaab-v82"
+
+            rm -f "$KEYSTORE_FILE"
+
+            keytool \
+              -genkeypair \
+              -v \
+              -keystore "$KEYSTORE_FILE" \
+              -storetype JKS \
+              -storepass "$TEMP_PASSWORD" \
+              -keypass "$TEMP_PASSWORD" \
+              -alias "$TEMP_ALIAS" \
+              -keyalg RSA \
+              -keysize 4096 \
+              -validity 10000 \
+              -dname "CN=Majdoor Hisaab PRO, OU=Android, O=Majdoor Hisaab, L=India, ST=Uttar Pradesh, C=IN"
+
+            test -s "$KEYSTORE_FILE"
+
+            echo "RELEASE_SIGNING_MODE=TEMPORARY" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD"
+
+            echo "TEMPORARY KEYSTORE VERIFIED."
+
+          fi
+
+
+      # ============================================================
+      # 23. VERIFY SIGNING
+      # ============================================================
+
+      - name: Verify Signing Environment
+        shell: bash
+        run: |
+          set -e
+
+          test -n "${RELEASE_KEYSTORE:-}"
+          test -f "$RELEASE_KEYSTORE"
+
+          test -n "${RELEASE_KEYSTORE_PASSWORD:-}"
+          test -n "${RELEASE_KEY_ALIAS:-}"
+          test -n "${RELEASE_KEY_PASSWORD:-}"
+
+          keytool \
+            -list \
+            -keystore "$RELEASE_KEYSTORE" \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            >/dev/null
+
+          echo ""
+          echo "SIGNING ENVIRONMENT VERIFIED."
+          echo "SIGNING MODE: ${RELEASE_SIGNING_MODE}"
+
+
+      # ============================================================
+      # 24. ZIPALIGN
+      # ============================================================
+
+      - name: Zipalign Release APK
+        shell: bash
+        run: |
+          set -e
+
+          INPUT_APK="$APK_PATH"
+          ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
+
+          rm -f "$ALIGNED_APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            -f \
+            -p \
+            4 \
+            "$INPUT_APK" \
+            "$ALIGNED_APK"
+
+          test -f "$ALIGNED_APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            -c \
+            -v \
+            4 \
+            "$ALIGNED_APK"
+
+          echo "ALIGNED_APK=$ALIGNED_APK" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "ZIPALIGN PASSED."
+
+
+      # ============================================================
+      # 25. SIGN APK
+      # ============================================================
+
+      - name: Sign Release APK
+        shell: bash
+        run: |
+          set -e
+
+          SIGNED_APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
+
+          rm -f "$SIGNED_APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks "$RELEASE_KEYSTORE" \
+            --ks-type JKS \
+            --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$RELEASE_KEY_ALIAS" \
+            --key-pass "pass:$RELEASE_KEY_PASSWORD" \
+            --out "$SIGNED_APK" \
+            "$ALIGNED_APK"
+
+          test -f "$SIGNED_APK"
+
+          echo ""
+          echo "SIGNED APK CREATED:"
+          ls -lh "$SIGNED_APK"
+
+
+      # ============================================================
+      # 26. VERIFY APK SIGNATURE
+      # ============================================================
+
+      - name: Verify APK Signature
+        shell: bash
+        run: |
+          set -e
+
+          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
+
+          test -f "$APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            verify \
+            --verbose \
+            "$APK"
+
+          echo ""
+          echo "APK SIGNATURE VERIFIED."
+
+
+      # ============================================================
+      # 27. FINAL APK VALIDATION
+      # ============================================================
+
+      - name: Final APK Validation
+        shell: bash
+        run: |
+          set -e
+
+          APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
+
+          test -f "$APK"
+
+          SIZE=$(stat -c%s "$APK")
+
+          echo ""
+          echo "APK SIZE:"
+          echo "$SIZE bytes"
+
+          if [ "$SIZE" -lt 100000 ]; then
+            echo "ERROR: APK size unexpectedly small."
+            exit 1
+          fi
+
+          BADGING=$(
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
+              dump badging "$APK"
+          )
+
+          echo ""
+          echo "APK INFORMATION:"
+
+          echo "$BADGING" \
+            | grep -E \
+              "package:|versionCode|versionName" \
+            | head -10
+
+          if ! echo "$BADGING" | grep -q \
+            "name='$PACKAGE_NAME'"; then
+
+            echo "ERROR: Final APK package mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionCode='$VERSION_CODE'"; then
+
+            echo "ERROR: Final APK version code mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionName='$VERSION_NAME'"; then
+
+            echo "ERROR: Final APK version name mismatch."
+            exit 1
+          fi
+
+          echo ""
+          echo "SHA256:"
+          sha256sum "$APK"
+
+          echo ""
+          echo "=============================================="
+          echo "FINAL APK VALIDATION PASSED"
+          echo "=============================================="
+
+
+      # ============================================================
+      # 28. UPLOAD FINAL SIGNED APK
+      # ============================================================
+
+      - name: Upload Final Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
+          path: ${{ env.APK_SIGNED_NAME }}
+          if-no-files-found: error
+          retention-days: 30
+
+
+      # ============================================================
+      # 29. UPLOAD BUILD REPORTS
+      # ============================================================
+
+      - name: Upload Build Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Majdoor-Hisaab-PRO-V82-Build-Reports
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/reports/**
+            ${{ env.PROJECT_DIR }}/app/build/outputs/**
+          if-no-files-found: warn
+          retention-days: 14
