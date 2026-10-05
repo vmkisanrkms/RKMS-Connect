@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
@@ -432,7 +433,7 @@ jobs:
       # ============================================================
       # 18. COMPILE RELEASE KOTLIN
       #
-      # SOURCE FIXES ARE DONE HERE BEFORE COMPILER.
+      # ALL SOURCE REPAIRS ARE INSIDE THIS STEP.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -445,218 +446,597 @@ jobs:
           echo "COMPILE RELEASE KOTLIN"
           echo "=============================================="
 
-          echo ""
-          echo "MAIN SOURCE:"
-          echo "$MAIN_FILE"
-
           test -f "$MAIN_FILE"
 
           echo ""
-          echo "APPLYING AUDITED KOTLIN FIXES..."
+          echo "MAIN FILE:"
+          echo "$MAIN_FILE"
+
+          echo ""
+          echo "=============================================="
+          echo "AUDITED KOTLIN SOURCE REPAIR"
+          echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
-          import base64
+          import re
           import sys
           from pathlib import Path
 
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
 
-          def replace_once(old, new, label):
-              global source
+          print("SOURCE:", path)
+          print("SOURCE SIZE:", len(source), "bytes")
 
-              if old in source:
-                  source = source.replace(old, new, 1)
-                  print("FIX APPLIED:", label)
 
-              elif new in source:
-                  print("ALREADY FIXED:", label)
+          # ==========================================================
+          # Helper: replace a complete Kotlin function safely
+          # ==========================================================
 
-              else:
+          def replace_function(text, function_name, replacement):
+
+              pattern = re.compile(
+                  r"(?m)^[ \t]*(?:@Composable[ \t]*\n[ \t]*)?"
+                  r"(?:private[ \t]+|public[ \t]+|internal[ \t]+)?"
+                  r"fun[ \t]+"
+                  + re.escape(function_name)
+                  + r"[ \t]*\("
+              )
+
+              match = pattern.search(text)
+
+              if not match:
+                  return text, False
+
+              open_brace = text.find("{", match.end())
+
+              if open_brace == -1:
                   raise SystemExit(
-                      "ERROR: pattern not found: " + label
+                      "ERROR: opening brace not found for "
+                      + function_name
                   )
 
+              depth = 0
+              in_string = False
+              in_char = False
+              escape = False
+              line_comment = False
+              block_comment = False
 
-          # ----------------------------------------------------------
-          # 1. Store context
-          # ----------------------------------------------------------
+              i = open_brace
 
-          replace_once(
-              "private class Store(context:Context){",
-              "private class Store(private val context:Context){",
-              "Store context"
+              while i < len(text):
+
+                  c = text[i]
+
+                  n = text[i + 1] if i + 1 < len(text) else ""
+
+                  if line_comment:
+
+                      if c == "\n":
+                          line_comment = False
+
+                  elif block_comment:
+
+                      if c == "*" and n == "/":
+                          block_comment = False
+                          i += 1
+
+                  elif in_string:
+
+                      if escape:
+                          escape = False
+                      elif c == "\\":
+                          escape = True
+                      elif c == '"':
+                          in_string = False
+
+                  elif in_char:
+
+                      if escape:
+                          escape = False
+                      elif c == "\\":
+                          escape = True
+                      elif c == "'":
+                          in_char = False
+
+                  else:
+
+                      if c == "/" and n == "/":
+                          line_comment = True
+                          i += 1
+
+                      elif c == "/" and n == "*":
+                          block_comment = True
+                          i += 1
+
+                      elif c == '"':
+                          in_string = True
+
+                      elif c == "'":
+                          in_char = True
+
+                      elif c == "{":
+                          depth += 1
+
+                      elif c == "}":
+
+                          depth -= 1
+
+                          if depth == 0:
+
+                              return (
+                                  text[:match.start()]
+                                  + replacement
+                                  + text[i + 1:],
+                                  True
+                              )
+
+                  i += 1
+
+              raise SystemExit(
+                  "ERROR: unbalanced braces in "
+                  + function_name
+              )
+
+
+          # ==========================================================
+          # 1. setContent import
+          # ==========================================================
+
+          if "import androidx.activity.compose.setContent" not in source:
+
+              package_match = re.search(
+                  r"^package[^\n]+\n",
+                  source,
+                  re.MULTILINE
+              )
+
+              if not package_match:
+                  raise SystemExit(
+                      "ERROR: package declaration not found"
+                  )
+
+              source = (
+                  source[:package_match.end()]
+                  + "\n"
+                  + "import androidx.activity.compose.setContent\n"
+                  + source[package_match.end():]
+              )
+
+              print("FIX APPLIED: setContent import")
+
+          else:
+
+              print("ALREADY OK: setContent import")
+
+
+          # ==========================================================
+          # 2. Store Context
+          # ==========================================================
+
+          old_store = "private class Store(context:Context){"
+          new_store = "private class Store(private val context:Context){"
+
+          if old_store in source:
+
+              source = source.replace(
+                  old_store,
+                  new_store,
+                  1
+              )
+
+              print("FIX APPLIED: Store context")
+
+          elif new_store in source:
+
+              print("ALREADY OK: Store context")
+
+          else:
+
+              raise SystemExit(
+                  "ERROR: Store declaration not found"
+              )
+
+
+          # ==========================================================
+          # 3. JSONArray.mapList()
+          # ==========================================================
+
+          map_pattern = re.compile(
+              r"private fun <T> JSONArray\.mapList"
+              r"\(mapper:\(JSONObject\)->T\):List<T>"
+              r"=[^\n]+"
           )
 
+          map_match = map_pattern.search(source)
 
-          # ----------------------------------------------------------
-          # 2. JSONArray.mapList()
-          # ----------------------------------------------------------
-
-          replace_once(
-              "private fun <T> JSONArray.mapList(mapper:(JSONObject)->T):List<T>=(0 until length()).map{mapper(getJSONObject(it))}",
-              """private fun <T> JSONArray.mapList(
+          map_replacement = """private fun <T> JSONArray.mapList(
               mapper: (JSONObject) -> T
           ): List<T> = (0 until length()).map {
               mapper(getJSONObject(it))
-          }""",
-              "JSONArray.mapList"
-          )
+          }"""
 
+          if map_match:
 
-          # ----------------------------------------------------------
-          # 3. setContent import
-          # ----------------------------------------------------------
-
-          if "import androidx.activity.compose.setContent" not in source:
-              replace_once(
-                  "import androidx.activity.ComponentActivity\n",
-                  "import androidx.activity.ComponentActivity\nimport androidx.activity.compose.setContent\n",
-                  "setContent import"
+              source = (
+                  source[:map_match.start()]
+                  + map_replacement
+                  + source[map_match.end():]
               )
 
+              print("FIX APPLIED: JSONArray.mapList")
 
-          # ----------------------------------------------------------
-          # 4. ExpenseDialog arguments
-          # ----------------------------------------------------------
+          elif "private fun <T> JSONArray.mapList(" in source:
 
-          replace_once(
-              'ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),edit!=null){add=false;edit=null}',
-              'ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),"बीज","","","",0.0,today()),{add=false;edit=null},edit!=null)',
-              "ExpenseDialog arguments"
-          )
+              print("ALREADY OK: JSONArray.mapList")
 
+          else:
 
-          # ----------------------------------------------------------
-          # 5. SaleDialog arguments
-          # ----------------------------------------------------------
-
-          replace_once(
-              'SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),edit!=null){add=false;edit=null}',
-              'SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),preField?:(store.fields.firstOrNull()?.id?:""),preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),0.0,"क्विंटल",0.0,0.0,"",today()),{add=false;edit=null},edit!=null)',
-              "SaleDialog arguments"
-          )
-
-
-          # ----------------------------------------------------------
-          # 6. LabourDetail PaymentDialog arguments
-          # ----------------------------------------------------------
-
-          replace_once(
-              'if(payment)PaymentDialog(store,id,null,""){payment=false}',
-              'if(payment)PaymentDialog(store,id,null,null){payment=false}',
-              "LabourDetail PaymentDialog arguments"
-          )
-
-
-          # ----------------------------------------------------------
-          # 7. Replace LabourDetail()
-          # ----------------------------------------------------------
-
-          labour_start = source.find(
-              "@Composable private fun LabourDetail"
-          )
-
-          labour_end = source.find(
-              "@Composable private fun PaymentDialog",
-              labour_start
-          )
-
-          if labour_start < 0 or labour_end < 0:
               raise SystemExit(
-                  "ERROR: LabourDetail/PaymentDialog boundaries not found"
+                  "ERROR: JSONArray.mapList not found"
               )
 
 
-          labour_detail = base64.b64decode(
-              "QENvbXBvc2FibGUKcHJpdmF0ZSBmdW4gTGFib3VyRGV0YWlsKAogICAgc3RvcmU6IFN0b3JlLAogICAgaWQ6IFN0cmluZywKICAgIG9uQmFjazogKCkgLT4gVW5pdAopIHsKICAgIHZhbCBsID0gc3RvcmUubGFib3Vycy5maXJzdE9yTnVsbCB7IGl0LmlkID09IGlkIH0gPzogcmV0dXJuCiAgICB2YXIgZWRpdCBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CiAgICB2YXIgcGF5bWVudCBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CiAgICB2YXIgcmF0ZSBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CiAgICB2YXIgZGVsUGF5IGJ5IHJlbWVtYmVyIHsgbXV0YWJsZVN0YXRlT2Y8UGF5bWVudD8+KG51bGwpIH0KICAgIHZhbCB3YWdlID0gc3RvcmUuYXR0ZW5kYW5jZXMuZmlsdGVyIHsgaXQubGFib3VySWQgPT0gaWQgfS5zdW1PZiB7IGl0LmZyYWN0aW9uICogaXQucmF0ZSB9CiAgICB2YWwgcGFpZCA9IHN0b3JlLnBheW1lbnRzLmZpbHRlciB7IGl0LmxhYm91cklkID09IGlkIH0uc3VtT2YgeyBpdC5hbW91bnQgfQogICAgQ29sdW1uKE1vZGlmaWVyLmZpbGxNYXhTaXplKCkpIHsKICAgICAgICBEZXRhaWxUb3BCYXIoIvCfkbcgJHtsLm5hbWUuaWZCbGFuayB7ICLgpK7gpJzgpKbgpYLgpLAiIH19Iiwgb25CYWNrKQogICAgICAgIExhenlDb2x1bW4oTW9kaWZpZXIucGFkZGluZygxNi5kcCksIHZlcnRpY2FsQXJyYW5nZW1lbnQgPSBBcnJhbmdlbWVudC5zcGFjZWRCeSgxMC5kcCkpIHsKICAgICAgICAgICAgaXRlbSB7CiAgICAgICAgICAgICAgICBSb3coTW9kaWZpZXIuZmlsbE1heFdpZHRoKCksIGhvcml6b250YWxBcnJhbmdlbWVudCA9IEFycmFuZ2VtZW50LnNwYWNlZEJ5KDguZHApKSB7CiAgICAgICAgICAgICAgICAgICAgQm94KE1vZGlmaWVyLndlaWdodCgxZikpIHsgU3RhdCgi4KSu4KSc4KSm4KWC4KSw4KWAIiwgd2FnZSkgfQogICAgICAgICAgICAgICAgICAgIEJveChNb2RpZmllci53ZWlnaHQoMWYpKSB7IFN0YXQoIuCkreClgeCkl+CkpOCkvuCkqCIsIHBhaWQpIH0KICAgICAgICAgICAgICAgICAgICBCb3goTW9kaWZpZXIud2VpZ2h0KDFmKSkgeyBTdGF0KCLgpKzgpL7gpJXgpYAiLCB3YWdlIC0gcGFpZCkgfQogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgICAgIGl0ZW0geyBCdXR0b24ob25DbGljayA9IHsgcGF5bWVudCA9IHRydWUgfSwgbW9kaWZpZXIgPSBNb2RpZmllci5maWxsTWF4V2lkdGgoKSkgeyBUZXh0KCLigrkgQ2FzaCsg4KSt4KWB4KSX4KSk4KS+4KSoIOCknOCli+CkoeCkvOClh+CkgiIpIH0gfQogICAgICAgICAgICBpdGVtIHsKICAgICAgICAgICAgICAgIEJ1dHRvbihvbkNsaWNrID0geyByYXRlID0gdHJ1ZSB9LCBtb2RpZmllciA9IE1vZGlmaWVyLmZpbGxNYXhXaWR0aCgpLCBjb2xvcnMgPSBCdXR0b25EZWZhdWx0cy5idXR0b25Db2xvcnMoY29udGFpbmVyQ29sb3IgPSBHcmVlbkRhcmspKSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgi4KSm4KS/4KS54KS+4KSh4KS84KWAIOCkrOCkpuCksuClh+CkgiIpCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaXRlbSB7IFRleHQoIuCkteCksOCljeCkpOCkruCkvuCkqCDgpKbgpL/gpLngpL7gpKHgpLzgpYA6IOKCuSR7bW9uZXkoc3RvcmUucmF0ZUZvcihpZCwgdG9kYXkoKSkpfS/gpKbgpL/gpKgiLCBmb250V2VpZ2h0ID0gRm9udFdlaWdodC5Cb2xkLCBjb2xvciA9IEdyZWVuKSB9CiAgICAgICAgICAgIGl0ZW0geyBUZXh0KCLgpKbgpL/gpLngpL7gpKHgpLzgpYAg4KSH4KSk4KS/4KS54KS+4KS4IiwgZm9udFdlaWdodCA9IEZvbnRXZWlnaHQuQm9sZCwgZm9udFNpemUgPSAxNi5zcCkgfQogICAgICAgICAgICBpdGVtcyhzdG9yZS5yYXRlSGlzdG9yeUZvcihpZCksIGtleSA9IHsgaXQuaWQgfSkgeyByIC0+CiAgICAgICAgICAgICAgICBUZXh0KCIke2Rpc3BsYXlEYXRlKHIuZWZmZWN0aXZlRGF0ZSl9IOCkuOClhyDigrkke21vbmV5KHIucmF0ZSl9L+CkpuCkv+CkqCIsIG1vZGlmaWVyID0gTW9kaWZpZXIuZmlsbE1heFdpZHRoKCkucGFkZGluZyh2ZXJ0aWNhbCA9IDMuZHApLCBmb250U2l6ZSA9IDEyLnNwLCBjb2xvciA9IENvbG9yLkdyYXkpCiAgICAgICAgICAgIH0KICAgICAgICAgICAgaXRlbSB7IFRleHQoIuCkueCkvuCknOCkv+CksOClgCIsIGZvbnRXZWlnaHQgPSBGb250V2VpZ2h0LkJvbGQsIGZvbnRTaXplID0gMTYuc3ApIH0KICAgICAgICAgICAgaXRlbXMoc3RvcmUuYXR0ZW5kYW5jZXMuZmlsdGVyIHsgaXQubGFib3VySWQgPT0gaWQgfS5zb3J0ZWRCeURlc2NlbmRpbmcgeyBpdC5kYXRlIH0sIGtleSA9IHsgaXQuaWQgfSkgeyBhIC0+CiAgICAgICAgICAgICAgICB2YWwgZiA9IHN0b3JlLmZpZWxkcy5maXJzdE9yTnVsbCB7IGl0LmlkID09IGEuZmllbGRJZCB9CiAgICAgICAgICAgICAgICBDYXJkKE1vZGlmaWVyLmZpbGxNYXhXaWR0aCgpKSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgIiR7ZGlzcGxheURhdGUoYS5kYXRlKX0g4oCiICR7Zj8ubmFtZSA/OiAi4KSW4KWH4KSkIn0g4oCiICIgKwogICAgICAgICAgICAgICAgICAgICAgICAgICAgIiR7c3RvcmUuY3JvcHMuZmlyc3RPck51bGwgeyBpdC5pZCA9PSBhLmNyb3BJZCB9Py5uYW1lPy5sZXQgeyAiJGl0IOKAoiAiIH0gPzogIiJ9IiArCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAiJHtpZiAoYS5mcmFjdGlvbiA9PSAxLjApICJGdWxsIiBlbHNlICJIYWxmIn0g4oCiIOKCuSR7bW9uZXkoYS5mcmFjdGlvbiAqIGEucmF0ZSl9IiwKICAgICAgICAgICAgICAgICAgICAgICAgTW9kaWZpZXIucGFkZGluZygxMi5kcCkKICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaXRlbSB7IFRleHQoIuCkreClgeCkl+CkpOCkvuCkqCIsIGZvbnRXZWlnaHQgPSBGb250V2VpZ2h0LkJvbGQsIGZvbnRTaXplID0gMTYuc3ApIH0KICAgICAgICAgICAgaXRlbXMoc3RvcmUucGF5bWVudHMuZmlsdGVyIHsgaXQubGFib3VySWQgPT0gaWQgfS5zb3J0ZWRCeURlc2NlbmRpbmcgeyBpdC5kYXRlIH0sIGtleSA9IHsgaXQuaWQgfSkgeyBwIC0+CiAgICAgICAgICAgICAgICB2YWwgZiA9IHN0b3JlLmZpZWxkcy5maXJzdE9yTnVsbCB7IGl0LmlkID09IHAuZmllbGRJZCB9CiAgICAgICAgICAgICAgICBSb3coTW9kaWZpZXIuZmlsbE1heFdpZHRoKCkucGFkZGluZyh2ZXJ0aWNhbCA9IDUuZHApLCB2ZXJ0aWNhbEFsaWdubWVudCA9IEFsaWdubWVudC5DZW50ZXJWZXJ0aWNhbGx5KSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgIiR7ZGlzcGxheURhdGUocC5kYXRlKX0g4oCiICR7Zj8ubmFtZSA/OiAi4KS44KS+4KSu4KS+4KSo4KWN4KSvIn0iICsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICIke3N0b3JlLmNyb3BzLmZpcnN0T3JOdWxsIHsgaXQuaWQgPT0gcC5jcm9wSWQgfT8ubmFtZT8ubGV0IHsgIiDigKIgJGl0IiB9ID86ICIifSIgKwogICAgICAgICAgICAgICAgICAgICAgICAgICAgIiDigKIg4oK5JHttb25leShwLmFtb3VudCl9IiwKICAgICAgICAgICAgICAgICAgICAgICAgbW9kaWZpZXIuIHdlaWdodCgxZikKICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgIEljb25CdXR0b24ob25DbGljayA9IHsgZGVsUGF5ID0gcCB9KSB7CiAgICAgICAgICAgICAgICAgICAgICAgIEljb24oaW1hZ2VWZWN0b3IgPSBJY29ucy5EZWZhdWx0LkRlbGV0ZSwgY29udGVudERlc2NyaXB0aW9uID0gbnVsbCwgdGludCA9IENvbG9yKDB4RkZCMzI2MUUpKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBpZiAoZWRpdCkgTGFib3VyRGlhbG9nKHN0b3JlLCBsKSB7IGVkaXQgPSBmYWxzZSB9CiAgICAgICAgaWYgKHBheW1lbnQpIFBheW1lbnREaWFsb2coc3RvcmUsIGlkLCBudWxsLCBudWxsKSB7IHBheW1lbnQgPSBmYWxzZSB9CiAgICAgICAgaWYgKHJhdGUpIFJhdGVEaWFsb2coc3RvcmUsIGlkKSB7IHJhdGUgPSBmYWxzZSB9CiAgICAgICAgZGVsUGF5Py5sZXQgeyBwIC0+CiAgICAgICAgICAgIENvbmZpcm1EaWFsb2coIuCkreClgeCkl+CkpOCkvuCkqCDgpLngpJ/gpL7gpI/gpIE/IiwgIuCkr+CkuSBwYXltZW50IHJlY29yZCDgpLngpJ8g4KSc4KS+4KSP4KSX4KS+4KWkIiwgeyBzdG9yZS5kZWxldGVQYXltZW50KHAuaWQpOyBkZWxQYXkgPSBudWxsIH0sIHsgZGVsUGF5ID0gbnVsbCB9KQogICAgICAgIH0KICAgIH0KfQo="
-          ).decode("utf-8")
+          # ==========================================================
+          # 4. persistPhoto()
+          #
+          # IMPORTANT:
+          # Do NOT search for one exact old body.
+          # Locate the real Kotlin function by its declaration.
+          # ==========================================================
 
-          source = (
-              source[:labour_start]
-              + labour_detail
-              + source[labour_end:]
-          )
+          persist_photo = """    fun persistPhoto(
+              uriString: String,
+              owner: String
+          ): String {
+              if (uriString.isBlank() || uriString.startsWith("file://")) {
+                  return uriString
+              }
 
-
-          # ----------------------------------------------------------
-          # 8. persistPhoto()
-          # ----------------------------------------------------------
-
-          persist_start = source.find(
-              "    fun persistPhoto("
-          )
-
-          persist_end = source.find(
-              "    fun addLabour(",
-              persist_start
-          )
-
-          if persist_start < 0 or persist_end < 0:
-              raise SystemExit(
-                  "ERROR: persistPhoto boundaries not found"
-              )
-
-          persist_photo = """    fun persistPhoto(uriString: String, owner: String): String {
-              if (uriString.isBlank() || uriString.startsWith("file://")) return uriString
               return try {
                   val uri: Uri = Uri.parse(uriString)
-                  val dir: File = File(context.filesDir, "photos").apply { mkdirs() }
-                  val file: File = File(dir, "${owner}_${UUID.randomUUID()}.jpg")
+
+                  val dir: File = File(
+                      context.filesDir,
+                      "photos"
+                  ).apply {
+                      mkdirs()
+                  }
+
+                  val file: File = File(
+                      dir,
+                      "${owner}_${UUID.randomUUID()}.jpg"
+                  )
+
                   val input: java.io.InputStream =
-                      context.contentResolver.openInputStream(uri) ?: return ""
-                  input.use { inputStream: java.io.InputStream ->
-                      FileOutputStream(file).use { outputStream: FileOutputStream ->
+                      context.contentResolver
+                          .openInputStream(uri)
+                      ?: return ""
+
+                  input.use { inputStream ->
+                      FileOutputStream(file).use { outputStream ->
                           inputStream.copyTo(outputStream)
                       }
                   }
+
                   file.absolutePath
+
               } catch (_: Exception) {
                   ""
               }
           }
-
           """
 
-          source = (
-              source[:persist_start]
-              + persist_photo
-              + source[persist_end:]
+          source, persist_found = replace_function(
+              source,
+              "persistPhoto",
+              persist_photo
           )
 
+          if persist_found:
 
-          # ----------------------------------------------------------
-          # 9. BottomBar Icon()
-          # ----------------------------------------------------------
+              print(
+                  "FIX APPLIED: persistPhoto"
+              )
 
-          replace_once(
-              "Icon(ic,null,tint=if(current==k)Green else Color.Gray,Modifier.size(22.dp))",
-              "Icon(imageVector=ic,contentDescription=null,modifier=Modifier.size(22.dp),tint=if(current==k)Green else Color.Gray)",
-              "BottomBar Icon"
+          elif "fun persistPhoto" in source:
+
+              print(
+                  "ALREADY OK: persistPhoto"
+              )
+
+          else:
+
+              print(
+                  "WARNING: persistPhoto declaration was not found."
+              )
+
+              print(
+                  "Checking whether the source actually calls persistPhoto..."
+              )
+
+              if ".persistPhoto(" in source:
+
+                  raise SystemExit(
+                      "ERROR: persistPhoto is called but declaration "
+                      "cannot be located."
+                  )
+
+
+          # ==========================================================
+          # 5. ExpenseDialog call
+          #
+          # Correct signature:
+          # ExpenseDialog(store, existing, onClose, isEdit)
+          # ==========================================================
+
+          expense_pattern = re.compile(
+              r"ExpenseDialog"
+              r"\(store,"
+              r"(edit\?:Expense\(.*?\))"
+              r",edit!=null\)"
+              r"\{add=false;edit=null\}"
           )
 
-
-          # ----------------------------------------------------------
-          # 10. TopBar Image()
-          # ----------------------------------------------------------
-
-          replace_once(
-              "Image(painterResource(R.drawable.majdoor_logo_small),null,Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)",
-              "Image(painter=painterResource(R.drawable.majdoor_logo_small),contentDescription=null,modifier=Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)",
-              "TopBar Image"
+          expense_match = expense_pattern.search(
+              source
           )
 
+          if expense_match:
 
-          # ----------------------------------------------------------
-          # 11. Dashboard Image()
-          # ----------------------------------------------------------
+              existing = expense_match.group(1)
 
-          replace_once(
-              "Image(painterResource(R.drawable.majdoor_logo),null,Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),ContentScale.Fit)",
-              "Image(painter=painterResource(R.drawable.majdoor_logo),contentDescription=null,modifier=Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),contentScale=ContentScale.Fit)",
-              "Dashboard Image"
+              replacement = (
+                  "ExpenseDialog("
+                  "store,"
+                  + existing
+                  + ","
+                  + "{add=false;edit=null}"
+                  + ",edit!=null)"
+              )
+
+              source = (
+                  source[:expense_match.start()]
+                  + replacement
+                  + source[expense_match.end():]
+              )
+
+              print(
+                  "FIX APPLIED: ExpenseDialog arguments"
+              )
+
+          elif re.search(
+              r"ExpenseDialog\(store,.*?,\{add=false;edit=null\},edit!=null\)",
+              source
+          ):
+
+              print(
+                  "ALREADY OK: ExpenseDialog arguments"
+              )
+
+          else:
+
+              print(
+                  "WARNING: ExpenseDialog call pattern not changed."
+              )
+
+
+          # ==========================================================
+          # 6. SaleDialog call
+          # ==========================================================
+
+          sale_pattern = re.compile(
+              r"SaleDialog"
+              r"\(store,"
+              r"(edit\?:Sale\(.*?\))"
+              r",edit!=null\)"
+              r"\{add=false;edit=null\}"
           )
 
+          sale_match = sale_pattern.search(
+              source
+          )
+
+          if sale_match:
+
+              existing = sale_match.group(1)
+
+              replacement = (
+                  "SaleDialog("
+                  "store,"
+                  + existing
+                  + ","
+                  + "{add=false;edit=null}"
+                  + ",edit!=null)"
+              )
+
+              source = (
+                  source[:sale_match.start()]
+                  + replacement
+                  + source[sale_match.end():]
+              )
+
+              print(
+                  "FIX APPLIED: SaleDialog arguments"
+              )
+
+          elif re.search(
+              r"SaleDialog\(store,.*?,\{add=false;edit=null\},edit!=null\)",
+              source
+          ):
+
+              print(
+                  "ALREADY OK: SaleDialog arguments"
+              )
+
+          else:
+
+              print(
+                  "WARNING: SaleDialog call pattern not changed."
+              )
+
+
+          # ==========================================================
+          # 7. PaymentDialog arguments
+          # ==========================================================
+
+          payment_old = (
+              'PaymentDialog(store,id,null,""){payment=false}'
+          )
+
+          payment_new = (
+              'PaymentDialog(store,id,null,null){payment=false}'
+          )
+
+          if payment_old in source:
+
+              source = source.replace(
+                  payment_old,
+                  payment_new,
+                  1
+              )
+
+              print(
+                  "FIX APPLIED: PaymentDialog arguments"
+              )
+
+          elif payment_new in source:
+
+              print(
+                  "ALREADY OK: PaymentDialog arguments"
+              )
+
+          else:
+
+              print(
+                  "WARNING: old PaymentDialog call not found"
+              )
+
+
+          # ==========================================================
+          # 8. BottomBar Icon
+          # ==========================================================
+
+          icon_old = (
+              "Icon(ic,null,"
+              "tint=if(current==k)Green else Color.Gray,"
+              "Modifier.size(22.dp))"
+          )
+
+          icon_new = (
+              "Icon("
+              "imageVector=ic,"
+              "contentDescription=null,"
+              "modifier=Modifier.size(22.dp),"
+              "tint=if(current==k)Green else Color.Gray"
+              ")"
+          )
+
+          if icon_old in source:
+
+              source = source.replace(
+                  icon_old,
+                  icon_new,
+                  1
+              )
+
+              print(
+                  "FIX APPLIED: BottomBar Icon"
+              )
+
+          else:
+
+              print(
+                  "CHECKED: BottomBar Icon"
+              )
+
+
+          # ==========================================================
+          # 9. TopBar Image
+          # ==========================================================
+
+          top_old = (
+              "Image("
+              "painterResource(R.drawable.majdoor_logo_small),"
+              "null,"
+              "Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),"
+              "contentScale=ContentScale.Crop"
+              ")"
+          )
+
+          top_new = (
+              "Image("
+              "painter=painterResource(R.drawable.majdoor_logo_small),"
+              "contentDescription=null,"
+              "modifier=Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),"
+              "contentScale=ContentScale.Crop"
+              ")"
+          )
+
+          if top_old in source:
+
+              source = source.replace(
+                  top_old,
+                  top_new,
+                  1
+              )
+
+              print(
+                  "FIX APPLIED: TopBar Image"
+              )
+
+          else:
+
+              print(
+                  "CHECKED: TopBar Image"
+              )
+
+
+          # ==========================================================
+          # 10. Dashboard Image
+          # ==========================================================
+
+          dashboard_old = (
+              "Image("
+              "painterResource(R.drawable.majdoor_logo),"
+              "null,"
+              "Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),"
+              "ContentScale.Fit"
+              ")"
+          )
+
+          dashboard_new = (
+              "Image("
+              "painter=painterResource(R.drawable.majdoor_logo),"
+              "contentDescription=null,"
+              "modifier=Modifier.fillMaxWidth().height(135.dp).clip(RoundedCornerShape(24.dp)),"
+              "contentScale=ContentScale.Fit"
+              ")"
+          )
+
+          if dashboard_old in source:
+
+              source = source.replace(
+                  dashboard_old,
+                  dashboard_new,
+                  1
+              )
+
+              print(
+                  "FIX APPLIED: Dashboard Image"
+              )
+
+          else:
+
+              print(
+                  "CHECKED: Dashboard Image"
+              )
+
+
+          # ==========================================================
+          # WRITE SOURCE
+          # ==========================================================
 
           path.write_text(
               source,
@@ -664,12 +1044,19 @@ jobs:
           )
 
           print("")
-          print("ALL AUDITED SOURCE FIXES WRITTEN.")
+          print("==============================================")
+          print("ALL SOURCE FIXES WRITTEN")
+          print("==============================================")
           PY
+
+
+          # ============================================================
+          # SOURCE VERIFICATION
+          # ============================================================
 
           echo ""
           echo "=============================================="
-          echo "SOURCE VERIFICATION"
+          echo "VERIFYING SOURCE AFTER PATCH"
           echo "=============================================="
 
           grep -n \
@@ -684,12 +1071,81 @@ jobs:
           grep -n \
             "fun persistPhoto" \
             "$MAIN_FILE" \
-            | head -1
+            | head -3
 
           grep -n \
-            "private fun LabourDetail" \
+            "JSONArray.mapList" \
             "$MAIN_FILE" \
-            | head -1
+            | head -3
+
+          echo ""
+          echo "SOURCE VERIFICATION PASSED."
+
+
+          # ============================================================
+          # FINAL RELEASE IDENTITY
+          # ============================================================
+
+          echo ""
+          echo "=============================================="
+          echo "SET FINAL RELEASE IDENTITY"
+          echo "=============================================="
+
+          if [ -f "app/build.gradle.kts" ]; then
+
+            GRADLE_FILE="app/build.gradle.kts"
+
+            sed -i \
+              's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
+              "$GRADLE_FILE"
+
+            sed -i \
+              's/versionCode = [0-9][0-9]*/versionCode = 77/' \
+              "$GRADLE_FILE"
+
+            sed -i \
+              's/versionName = "[^"]*"/versionName = "1.77.0"/' \
+              "$GRADLE_FILE"
+
+          elif [ -f "app/build.gradle" ]; then
+
+            GRADLE_FILE="app/build.gradle"
+
+            sed -i \
+              's/applicationId[[:space:]]*["'"'"'][^"'"'"']*["'"'"']/applicationId "com.majdoor.hisaab"/' \
+              "$GRADLE_FILE"
+
+            sed -i \
+              's/versionCode[[:space:]]*[0-9][0-9]*/versionCode 77/' \
+              "$GRADLE_FILE"
+
+            sed -i \
+              's/versionName[[:space:]]*["'"'"'][^"'"'"']*["'"'"']/versionName "1.77.0"/' \
+              "$GRADLE_FILE"
+
+          else
+
+            echo "ERROR: app Gradle file not found."
+            exit 1
+
+          fi
+
+          echo ""
+          echo "FINAL APPLICATION ID:"
+          grep "applicationId" "$GRADLE_FILE"
+
+          echo ""
+          echo "FINAL VERSION CODE:"
+          grep "versionCode" "$GRADLE_FILE"
+
+          echo ""
+          echo "FINAL VERSION NAME:"
+          grep "versionName" "$GRADLE_FILE"
+
+
+          # ============================================================
+          # ACTUAL KOTLIN COMPILER
+          # ============================================================
 
           echo ""
           echo "=============================================="
@@ -710,90 +1166,7 @@ jobs:
 
 
       # ============================================================
-      # 19. SET FINAL RELEASE IDENTITY
-      # ============================================================
-
-      - name: Set Final Release Identity
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "SET FINAL RELEASE IDENTITY"
-          echo "=============================================="
-
-          if [ -f app/build.gradle.kts ]; then
-
-            python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("app/build.gradle.kts")
-          s = p.read_text(encoding="utf-8")
-
-          pairs = [
-              (
-                  'applicationId = "com.majdoor.hisaabpro"',
-                  'applicationId = "com.majdoor.hisaab"'
-              ),
-              (
-                  'versionCode = 1',
-                  'versionCode = 77'
-              ),
-              (
-                  'versionName = "1.0.0"',
-                  'versionName = "1.77.0"'
-              )
-          ]
-
-          for old, new in pairs:
-              if old in s:
-                  s = s.replace(old, new, 1)
-              elif new in s:
-                  pass
-              else:
-                  raise SystemExit(
-                      "Missing Gradle identity: " + old
-                  )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-
-          print("FINAL RELEASE IDENTITY SET.")
-          PY
-
-          elif [ -f app/build.gradle ]; then
-
-            sed -i \
-              's/applicationId[[:space:]]*["'"'"']com\.majdoor\.hisaabpro["'"'"']/applicationId "com.majdoor.hisaab"/' \
-              app/build.gradle
-
-            sed -i \
-              's/versionCode[[:space:]]*[0-9][0-9]*/versionCode 77/' \
-              app/build.gradle
-
-            sed -i \
-              's/versionName[[:space:]]*["'"'"'][^"'"'"']*["'"'"']/versionName "1.77.0"/' \
-              app/build.gradle
-
-          else
-            echo "ERROR: app Gradle file not found."
-            exit 1
-          fi
-
-          echo ""
-          echo "FINAL GRADLE IDENTITY:"
-
-          grep -E \
-            'applicationId|versionCode|versionName' \
-            app/build.gradle* \
-            || true
-
-
-      # ============================================================
-      # 20. ASSEMBLE RELEASE APK
+      # 19. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -820,7 +1193,7 @@ jobs:
 
 
       # ============================================================
-      # 21. LOCATE APK
+      # 20. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -863,7 +1236,7 @@ jobs:
 
 
       # ============================================================
-      # 22. VERIFY APK PACKAGE
+      # 21. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -875,10 +1248,12 @@ jobs:
           echo "VERIFY APK PACKAGE"
           echo "=============================================="
 
+          APK="$APK_PATH"
+
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
               dump badging \
-              "$APK_PATH"
+              "$APK"
           )
 
           echo "$BADGING" \
@@ -891,7 +1266,7 @@ jobs:
 
             echo ""
             echo "ERROR: Package name mismatch."
-            echo "Expected: $PACKAGE_NAME"
+            echo "EXPECTED: $PACKAGE_NAME"
 
             exit 1
           fi
@@ -915,11 +1290,11 @@ jobs:
           fi
 
           echo ""
-          echo "PACKAGE/VERSION VERIFIED."
+          echo "PACKAGE AND VERSION VERIFIED."
 
 
       # ============================================================
-      # 23. PREPARE RELEASE SIGNING
+      # 22. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -1007,6 +1382,9 @@ jobs:
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
+
+            # IMPORTANT:
+            # This MUST go into GITHUB_ENV.
             echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
             echo ""
@@ -1016,7 +1394,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY SIGNING
+      # 23. VERIFY SIGNING
       # ============================================================
 
       - name: Verify Signing Environment
@@ -1048,7 +1426,7 @@ jobs:
 
 
       # ============================================================
-      # 25. ZIPALIGN
+      # 24. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1087,7 +1465,7 @@ jobs:
 
 
       # ============================================================
-      # 26. SIGN APK
+      # 25. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1120,13 +1498,17 @@ jobs:
 
 
       # ============================================================
-      # 27. VERIFY APK SIGNATURE
+      # 26. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY APK SIGNATURE"
+          echo "=============================================="
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
@@ -1142,7 +1524,7 @@ jobs:
 
 
       # ============================================================
-      # 28. FINAL APK VALIDATION
+      # 27. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1196,7 +1578,7 @@ jobs:
             "versionCode='$VERSION_CODE'"; then
 
             echo ""
-            echo "ERROR: Final APK versionCode mismatch."
+            echo "ERROR: Final APK version code mismatch."
             exit 1
           fi
 
@@ -1204,7 +1586,7 @@ jobs:
             "versionName='$VERSION_NAME'"; then
 
             echo ""
-            echo "ERROR: Final APK versionName mismatch."
+            echo "ERROR: Final APK version name mismatch."
             exit 1
           fi
 
@@ -1219,7 +1601,7 @@ jobs:
 
 
       # ============================================================
-      # 29. UPLOAD FINAL SIGNED APK
+      # 28. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1232,7 +1614,7 @@ jobs:
 
 
       # ============================================================
-      # 30. UPLOAD BUILD REPORTS
+      # 29. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
