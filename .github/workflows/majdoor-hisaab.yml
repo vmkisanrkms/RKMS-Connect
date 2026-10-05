@@ -433,12 +433,14 @@ jobs:
       # ============================================================
       # 18. COMPILE RELEASE KOTLIN
       #
-      # FIXES FOUND BY FULL V10 SOURCE AUDIT:
+      # AUDITED SOURCE FIXES:
       #
-      # 1. JSONArray.mapList() declaration syntax
-      # 2. LabourDetail() broken scope/braces
+      # 1. mapList() syntax
+      # 2. LabourDetail() complete scope/braces
+      # 3. ExpenseDialog() onClose/isEdit argument order
+      # 4. SaleDialog() onClose/isEdit argument order
       #
-      # No other source modification is performed here.
+      # No other source modification is performed.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -457,24 +459,24 @@ jobs:
 
           test -f "$MAIN_FILE"
 
-          echo ""
-          echo "KOTLIN FILE COUNT:"
-
           KOTLIN_COUNT=$(find app/src/main \
             -type f \
             -name "*.kt" \
             | wc -l)
 
+          echo ""
+          echo "KOTLIN FILE COUNT:"
           echo "$KOTLIN_COUNT"
 
           if [ "$KOTLIN_COUNT" -eq 0 ]; then
+            echo ""
             echo "ERROR: No Kotlin source files found."
             exit 1
           fi
 
           echo ""
           echo "=============================================="
-          echo "APPLYING AUDITED KOTLIN FIXES"
+          echo "APPLYING AUDITED KOTLIN SOURCE FIXES"
           echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
@@ -484,10 +486,9 @@ jobs:
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
 
-          # ----------------------------------------------------------
-          # FIX 1:
-          # JSONArray.mapList declaration
-          # ----------------------------------------------------------
+          # ==========================================================
+          # FIX 1 - JSONArray.mapList()
+          # ==========================================================
 
           old_map = (
               'private fun <T> JSONArray.mapList(mapper:(JSONObject)->T):List<T>='
@@ -500,18 +501,90 @@ jobs:
               mapper(getJSONObject(it))
           }'''
 
-          if old_map not in source:
+          if source.count(old_map) != 1:
               raise SystemExit(
-                  "ERROR: Expected mapList() syntax pattern was not found."
+                  "ERROR: Expected mapList() syntax pattern was not found exactly once."
               )
 
           source = source.replace(old_map, new_map, 1)
 
-          # ----------------------------------------------------------
-          # FIX 2:
-          # Replace only the broken LabourDetail() function.
-          # Everything before and after this function remains intact.
-          # ----------------------------------------------------------
+
+          # ==========================================================
+          # FIX 2 - ExpenseDialog() argument order
+          #
+          # Correct signature:
+          # ExpenseDialog(store, existing, onClose, isEdit)
+          # ==========================================================
+
+          old_expense = (
+              'ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),'
+              'preField?:(store.fields.firstOrNull()?.id?:""),'
+              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
+              '"बीज","","","",0.0,today()),'
+              'edit!=null){add=false;edit=null}'
+          )
+
+          new_expense = (
+              'ExpenseDialog(store,edit?:Expense(UUID.randomUUID().toString(),'
+              'preField?:(store.fields.firstOrNull()?.id?:""),'
+              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
+              '"बीज","","","",0.0,today()),'
+              '{add=false;edit=null},edit!=null)'
+          )
+
+          if source.count(old_expense) != 1:
+              raise SystemExit(
+                  "ERROR: Expected ExpenseDialog() call was not found exactly once."
+              )
+
+          source = source.replace(old_expense, new_expense, 1)
+
+
+          # ==========================================================
+          # FIX 3 - SaleDialog() argument order
+          #
+          # Correct signature:
+          # SaleDialog(store, existing, onClose, isEdit)
+          # ==========================================================
+
+          old_sale = (
+              'SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),'
+              'preField?:(store.fields.firstOrNull()?.id?:""),'
+              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
+              '0.0,"क्विंटल",0.0,0.0,"",today()),'
+              'edit!=null){add=false;edit=null}'
+          )
+
+          new_sale = (
+              'SaleDialog(store,edit?:Sale(UUID.randomUUID().toString(),'
+              'preField?:(store.fields.firstOrNull()?.id?:""),'
+              'preCrop?:(store.crops.firstOrNull{it.fieldId==preField}?.id?:""),'
+              '0.0,"क्विंटल",0.0,0.0,"",today()),'
+              '{add=false;edit=null},edit!=null)'
+          )
+
+          if source.count(old_sale) != 1:
+              raise SystemExit(
+                  "ERROR: Expected SaleDialog() call was not found exactly once."
+              )
+
+          source = source.replace(old_sale, new_sale, 1)
+
+
+          # ==========================================================
+          # FIX 4 - LabourDetail()
+          #
+          # The original function had a broken Card()/items() closing
+          # sequence. That broke the composable scope and generated
+          # the cascade:
+          #
+          # @Composable context errors
+          # unresolved it
+          # unresolved delPay
+          # top-level declaration errors
+          #
+          # Replace only this complete function.
+          # ==========================================================
 
           start_marker = "@Composable private fun LabourDetail"
           end_marker = "@Composable private fun PaymentDialog"
@@ -530,7 +603,11 @@ jobs:
               )
 
           labour_detail = '''@Composable
-          private fun LabourDetail(store: Store, id: String, onBack: () -> Unit) {
+          private fun LabourDetail(
+              store: Store,
+              id: String,
+              onBack: () -> Unit
+          ) {
               val l = store.labours.firstOrNull { it.id == id } ?: return
               var edit by remember { mutableStateOf(false) }
               var payment by remember { mutableStateOf(false) }
@@ -617,6 +694,7 @@ jobs:
                           store.rateHistoryFor(id),
                           key = { it.id }
                       ) { r ->
+
                           Text(
                               "${displayDate(r.effectiveDate)} से ₹${money(r.rate)}/दिन",
                               modifier = Modifier
@@ -745,29 +823,40 @@ jobs:
 
           path.write_text(source, encoding="utf-8")
 
-          print("Kotlin source audit fixes applied successfully.")
+          print("ALL AUDITED KOTLIN FIXES APPLIED.")
           PY
 
           echo ""
           echo "=============================================="
-          echo "VERIFYING FIXED KOTLIN SOURCE"
+          echo "VERIFYING SOURCE REPAIR"
           echo "=============================================="
 
-          grep -n \
-            "mapList" \
-            "$MAIN_FILE" \
-            | head -5
+          grep -n "mapList" "$MAIN_FILE" | head -5
 
-          grep -n \
-            "private fun LabourDetail" \
-            "$MAIN_FILE"
+          grep -n "ExpenseDialog(store,edit" "$MAIN_FILE"
 
-          grep -n \
-            "private fun PaymentDialog" \
-            "$MAIN_FILE"
+          grep -n "SaleDialog(store,edit" "$MAIN_FILE"
+
+          grep -n "private fun LabourDetail" "$MAIN_FILE"
+
+          grep -n "private fun PaymentDialog" "$MAIN_FILE"
+
+          if grep -q \
+            'ExpenseDialog(store,edit.*edit!=null){add=false;edit=null}' \
+            "$MAIN_FILE"; then
+            echo "ERROR: Old ExpenseDialog argument order still exists."
+            exit 1
+          fi
+
+          if grep -q \
+            'SaleDialog(store,edit.*edit!=null){add=false;edit=null}' \
+            "$MAIN_FILE"; then
+            echo "ERROR: Old SaleDialog argument order still exists."
+            exit 1
+          fi
 
           echo ""
-          echo "SOURCE REPAIR PASSED."
+          echo "SOURCE REPAIR VERIFIED."
 
           echo ""
           echo "=============================================="
@@ -788,7 +877,96 @@ jobs:
 
 
       # ============================================================
-      # 19. ASSEMBLE RELEASE APK
+      # 19. SET FINAL RELEASE IDENTITY
+      #
+      # The source ZIP uses:
+      # namespace      = com.majdoor.hisaabpro
+      # applicationId  = com.majdoor.hisaabpro
+      # versionCode    = 1
+      # versionName    = 1.0.0
+      #
+      # The requested release identity is applied AFTER Kotlin
+      # compilation and BEFORE assembleRelease.
+      # ============================================================
+
+      - name: Set Final Release Identity
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "SET FINAL RELEASE IDENTITY"
+          echo "=============================================="
+
+          if [ -f "app/build.gradle.kts" ]; then
+
+            python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  'applicationId = "com.majdoor.hisaabpro"',
+                  'applicationId = "com.majdoor.hisaab"'
+              ),
+              (
+                  'versionCode = 1',
+                  'versionCode = 77'
+              ),
+              (
+                  'versionName = "1.0.0"',
+                  'versionName = "1.77.0"'
+              )
+          ]
+
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(
+                      f"ERROR: Expected Gradle identity line not found: {old}"
+                  )
+              s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding="utf-8")
+
+          print("Final release identity applied.")
+          PY
+
+          elif [ -f "app/build.gradle" ]; then
+
+            sed -i \
+              's/applicationId[[:space:]]*["'\'']com\.majdoor\.hisaabpro["'\'']/applicationId "com.majdoor.hisaab"/' \
+              app/build.gradle
+
+            sed -i \
+              's/versionCode[[:space:]]*[0-9][0-9]*/versionCode 77/' \
+              app/build.gradle
+
+            sed -i \
+              's/versionName[[:space:]]*["'\''][^"'\'']*["'\'']/versionName "1.77.0"/' \
+              app/build.gradle
+
+          else
+            echo "ERROR: Android Gradle file not found."
+            exit 1
+          fi
+
+          echo ""
+          echo "FINAL RELEASE CONFIGURATION:"
+
+          grep -E \
+            "applicationId|versionCode|versionName" \
+            app/build.gradle* \
+            || true
+
+          echo ""
+          echo "RELEASE IDENTITY PASSED."
+
+
+      # ============================================================
+      # 20. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -804,6 +982,7 @@ jobs:
           gradle \
             --no-daemon \
             --stacktrace \
+            --info \
             --rerun-tasks \
             :app:assembleRelease
 
@@ -814,7 +993,7 @@ jobs:
 
 
       # ============================================================
-      # 20. LOCATE APK
+      # 21. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -830,9 +1009,11 @@ jobs:
             -type f \
             -name "*release*.apk" \
             -print \
-            -quit)
+            | sort \
+            | head -1)
 
           if [ -z "$APK" ]; then
+
             echo ""
             echo "ERROR: Release APK not found."
 
@@ -852,7 +1033,7 @@ jobs:
 
 
       # ============================================================
-      # 21. VERIFY APK PACKAGE
+      # 22. VERIFY APK PACKAGE AND VERSION
       # ============================================================
 
       - name: Verify APK Package
@@ -860,12 +1041,21 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY APK PACKAGE"
+          echo "=============================================="
+
           APK="$APK_PATH"
+
+          test -f "$APK"
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
               dump badging "$APK"
           )
+
+          echo ""
+          echo "APK BADGING:"
 
           echo "$BADGING" \
             | grep -E \
@@ -882,12 +1072,34 @@ jobs:
             exit 1
           fi
 
+          if ! echo "$BADGING" | grep -q \
+            "versionCode='$VERSION_CODE'"; then
+
+            echo ""
+            echo "ERROR: Version code mismatch."
+            echo "Expected: $VERSION_CODE"
+
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionName='$VERSION_NAME'"; then
+
+            echo ""
+            echo "ERROR: Version name mismatch."
+            echo "Expected: $VERSION_NAME"
+
+            exit 1
+          fi
+
           echo ""
           echo "PACKAGE NAME VERIFIED."
+          echo "VERSION CODE VERIFIED."
+          echo "VERSION NAME VERIFIED."
 
 
       # ============================================================
-      # 22. PREPARE SIGNING
+      # 23. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -981,13 +1193,17 @@ jobs:
 
 
       # ============================================================
-      # 23. VERIFY SIGNING
+      # 24. VERIFY SIGNING
       # ============================================================
 
       - name: Verify Signing Environment
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY SIGNING ENVIRONMENT"
+          echo "=============================================="
 
           test -n "${RELEASE_KEYSTORE:-}"
           test -f "$RELEASE_KEYSTORE"
@@ -1009,13 +1225,17 @@ jobs:
 
 
       # ============================================================
-      # 24. ZIPALIGN
+      # 25. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "ZIPALIGN RELEASE APK"
+          echo "=============================================="
 
           INPUT_APK="$APK_PATH"
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
@@ -1044,7 +1264,7 @@ jobs:
 
 
       # ============================================================
-      # 25. SIGN APK
+      # 26. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1077,13 +1297,17 @@ jobs:
 
 
       # ============================================================
-      # 26. VERIFY APK SIGNATURE
+      # 27. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY APK SIGNATURE"
+          echo "=============================================="
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
@@ -1099,7 +1323,7 @@ jobs:
 
 
       # ============================================================
-      # 27. FINAL APK VALIDATION
+      # 28. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1148,6 +1372,22 @@ jobs:
             exit 1
           fi
 
+          if ! echo "$BADGING" | grep -q \
+            "versionCode='$VERSION_CODE'"; then
+
+            echo ""
+            echo "ERROR: Final APK version code mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionName='$VERSION_NAME'"; then
+
+            echo ""
+            echo "ERROR: Final APK version name mismatch."
+            exit 1
+          fi
+
           echo ""
           echo "SHA256:"
           sha256sum "$APK"
@@ -1159,7 +1399,7 @@ jobs:
 
 
       # ============================================================
-      # 28. UPLOAD FINAL SIGNED APK
+      # 29. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1172,7 +1412,7 @@ jobs:
 
 
       # ============================================================
-      # 29. UPLOAD BUILD REPORTS
+      # 30. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
