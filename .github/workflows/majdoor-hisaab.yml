@@ -54,7 +54,7 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # ============================================================
-      # 3. GRADLE
+      # 3. GRADLE 8.11.1
       # ============================================================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -194,7 +194,7 @@ jobs:
 
           if [ -z "$ZIP_PATH" ]; then
             echo "::error::Expected ZIP not found:"
-            echo "${ZIP_NAME}"
+            echo "$ZIP_NAME"
 
             echo ""
             echo "Available ZIP files:"
@@ -339,8 +339,6 @@ jobs:
 
           chmod +x gradlew
 
-          echo ""
-          echo "Gradle Wrapper:"
           ./gradlew --version
 
       # ============================================================
@@ -506,11 +504,6 @@ jobs:
             -print \
             | sort
 
-          echo ""
-          echo "=========================================="
-          echo "SEARCHING RELEASE APK"
-          echo "=========================================="
-
           APK_PATH=""
 
           APK_PATH="$(
@@ -553,13 +546,6 @@ jobs:
 
           if [ -z "$APK_PATH" ]; then
             echo "::error::Release APK was not found."
-
-            find . \
-              -type f \
-              -name "*.apk" \
-              -print \
-              | sort || true
-
             exit 1
           fi
 
@@ -571,7 +557,6 @@ jobs:
           echo "=========================================="
 
           echo "$APK_PATH"
-
           ls -lh "$APK_PATH"
 
           cp "$APK_PATH" "$RUNNER_TEMP/release-original.apk"
@@ -617,7 +602,11 @@ jobs:
             manifest version-code "$APK" || true
 
       # ============================================================
-      # 18. PREPARE APK SIGNING KEYSTORE
+      # 18. PREPARE PKCS12 SIGNING KEYSTORE
+      #
+      # IMPORTANT:
+      # Store password and key password MUST be identical for this
+      # PKCS12 keystore.
       # ============================================================
       - name: Prepare APK Signing Keystore
         shell: bash
@@ -626,35 +615,56 @@ jobs:
 
           KEYSTORE="$RUNNER_TEMP/majdoor-hisaab-release.keystore"
 
+          # Same password for PKCS12 store and private key.
+          SIGNING_PASSWORD="MajdoorHisaabV82Signing@2026"
+
           rm -f "$KEYSTORE"
+
+          echo "=========================================="
+          echo "CREATING PKCS12 SIGNING KEYSTORE"
+          echo "=========================================="
 
           keytool \
             -genkeypair \
             -v \
+            -storetype PKCS12 \
             -keystore "$KEYSTORE" \
             -alias majdoor-hisaab-release \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -storepass "MajdoorHisaabV82Store@2026" \
-            -keypass "MajdoorHisaabV82Key@2026" \
+            -storepass "$SIGNING_PASSWORD" \
+            -keypass "$SIGNING_PASSWORD" \
             -dname "CN=Majdoor Hisaab PRO, OU=RKMS, O=RKMS, L=Lakhimpur Kheri, ST=Uttar Pradesh, C=IN"
 
-          test -f "$KEYSTORE"
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "::error::Keystore was not created."
+            exit 1
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "VERIFYING KEYSTORE"
+          echo "=========================================="
+
+          keytool \
+            -list \
+            -v \
+            -storetype PKCS12 \
+            -keystore "$KEYSTORE" \
+            -storepass "$SIGNING_PASSWORD" \
+            -alias majdoor-hisaab-release \
+            >/dev/null
+
+          echo "Keystore and alias verification successful."
 
           echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "SIGNING_PASSWORD=$SIGNING_PASSWORD" >> "$GITHUB_ENV"
 
       # ============================================================
       # 19. ALIGN RELEASE APK
       #
-      # IMPORTANT:
-      # Android 16 / 16 KB page-size compatible alignment.
-      #
-      # DO NOT USE:
-      # -p 4
-      #
-      # Correct:
-      # -P 16 4
+      # Android 16 / 16 KB page-size compatible.
       # ============================================================
       - name: Align Release APK
         shell: bash
@@ -676,12 +686,6 @@ jobs:
           echo "ALIGNING RELEASE APK"
           echo "=========================================="
 
-          echo "Input:"
-          echo "$INPUT"
-
-          echo "Output:"
-          echo "$ALIGNED"
-
           ZIPALIGN="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/zipalign"
 
           if [ ! -x "$ZIPALIGN" ]; then
@@ -689,13 +693,6 @@ jobs:
             echo "$ZIPALIGN"
             exit 1
           fi
-
-          echo ""
-          echo "zipalign version:"
-          "$ZIPALIGN" -h | head -n 5 || true
-
-          echo ""
-          echo "Running 16 KB page-size alignment..."
 
           "$ZIPALIGN" \
             -f \
@@ -721,9 +718,7 @@ jobs:
             "$ALIGNED"
 
           echo ""
-          echo "=========================================="
           echo "ZIPALIGN SUCCESS"
-          echo "=========================================="
 
           ls -lh "$ALIGNED"
 
@@ -731,6 +726,9 @@ jobs:
 
       # ============================================================
       # 20. SIGN RELEASE APK
+      #
+      # FIX:
+      # Same PKCS12 password is used for store and key.
       # ============================================================
       - name: Sign Release APK
         shell: bash
@@ -739,17 +737,38 @@ jobs:
 
           SIGNED="$RUNNER_TEMP/$APK_SIGNED_NAME"
 
+          if [ ! -f "$ALIGNED_APK" ]; then
+            echo "::error::Aligned APK not found:"
+            echo "$ALIGNED_APK"
+            exit 1
+          fi
+
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "::error::Signing keystore not found:"
+            echo "$KEYSTORE"
+            exit 1
+          fi
+
           rm -f "$SIGNED"
 
           echo "=========================================="
           echo "SIGNING RELEASE APK"
           echo "=========================================="
 
-          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner" sign \
+          APKSIGNER="$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner"
+
+          if [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner not found:"
+            echo "$APKSIGNER"
+            exit 1
+          fi
+
+          "$APKSIGNER" sign \
             --ks "$KEYSTORE" \
+            --ks-type PKCS12 \
             --ks-key-alias majdoor-hisaab-release \
-            --ks-pass pass:"MajdoorHisaabV82Store@2026" \
-            --key-pass pass:"MajdoorHisaabV82Key@2026" \
+            --ks-pass pass:"$SIGNING_PASSWORD" \
+            --key-pass pass:"$SIGNING_PASSWORD" \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
@@ -757,9 +776,16 @@ jobs:
             --out "$SIGNED" \
             "$ALIGNED_APK"
 
-          test -f "$SIGNED"
+          if [ ! -f "$SIGNED" ]; then
+            echo "::error::Signed APK was not created."
+            exit 1
+          fi
 
-          echo "Signed APK:"
+          echo ""
+          echo "=========================================="
+          echo "SIGNING SUCCESS"
+          echo "=========================================="
+
           ls -lh "$SIGNED"
 
           echo "SIGNED_APK=$SIGNED" >> "$GITHUB_ENV"
@@ -771,6 +797,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ ! -f "$SIGNED_APK" ]; then
+            echo "::error::Signed APK not found:"
+            echo "$SIGNED_APK"
+            exit 1
+          fi
 
           echo "=========================================="
           echo "VERIFYING APK SIGNATURE"
@@ -1000,13 +1032,14 @@ jobs:
           echo "3. Android API ${ANDROID_API}"
           echo "4. Kotlin compilation"
           echo "5. Release APK generation"
-          echo "6. Release APK detection"
+          echo "6. APK detection"
           echo "7. 16 KB page-size alignment"
-          echo "8. APK signing"
-          echo "9. Signature verification"
-          echo "10. Package/version verification"
-          echo "11. Final alignment verification"
-          echo "12. Final artifact upload"
+          echo "8. PKCS12 keystore verification"
+          echo "9. APK signing"
+          echo "10. Signature verification"
+          echo "11. Package/version verification"
+          echo "12. Final alignment verification"
+          echo "13. Final artifact upload"
           echo ""
           echo "======================================================"
           echo "                BUILD SUCCESSFUL"
