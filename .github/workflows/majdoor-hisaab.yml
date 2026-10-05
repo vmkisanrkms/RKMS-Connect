@@ -431,6 +431,399 @@ jobs:
 
 
       # ============================================================
+      # 12. FIX VERIFIED SOURCE SYNTAX ISSUE
+      #
+      # The uploaded V10 source has an invalid LabourDetail()
+      # closing-brace structure. This causes:
+      #
+      # unresolved reference: store
+      # expecting a top level declaration
+      #
+      # This repair does NOT change the Compile Release Kotlin step.
+      # ============================================================
+
+      - name: Repair Verified Kotlin Source Syntax
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "REPAIR VERIFIED KOTLIN SOURCE"
+          echo "=============================================="
+
+          test -f "$MAIN_FILE"
+
+          cp "$MAIN_FILE" "$RUNNER_TEMP/MainActivity.kt.backup"
+
+          TMP_FILE="$RUNNER_TEMP/MainActivity.kt.fixed"
+
+          awk '
+            /^@Composable private fun LabourDetail[[:space:]]*\(/ {
+              exit
+            }
+            {
+              print
+            }
+          ' "$MAIN_FILE" > "$TMP_FILE"
+
+          cat >> "$TMP_FILE" <<'KOTLIN'
+
+@Composable
+private fun LabourDetail(store: Store, id: String, onBack: () -> Unit) {
+    val labour = store.labours.firstOrNull { it.id == id } ?: return
+    var edit by remember { mutableStateOf(false) }
+    var payment by remember { mutableStateOf(false) }
+    var rate by remember { mutableStateOf(false) }
+    var delPay by remember { mutableStateOf<Payment?>(null) }
+
+    val wage = store.attendances
+        .filter { it.labourId == id }
+        .sumOf { it.fraction * it.rate }
+
+    val paid = store.payments
+        .filter { it.labourId == id }
+        .sumOf { it.amount }
+
+    Column(Modifier.fillMaxSize()) {
+
+        DetailTopBar(
+            "👷 ${labour.name.ifBlank { "मजदूर" }}",
+            onBack
+        )
+
+        LazyColumn(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            item {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        Stat("मजदूरी", wage)
+                    }
+
+                    Box(Modifier.weight(1f)) {
+                        Stat("भुगतान", paid)
+                    }
+
+                    Box(Modifier.weight(1f)) {
+                        Stat("बाकी", wage - paid)
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = { payment = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("₹ Cash+ भुगतान जोड़ें")
+                }
+            }
+
+            item {
+                Button(
+                    onClick = { rate = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GreenDark
+                    )
+                ) {
+                    Text("दिहाड़ी बदलें")
+                }
+            }
+
+            item {
+                Text(
+                    "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
+                    fontWeight = FontWeight.Bold,
+                    color = Green
+                )
+            }
+
+            item {
+                Text(
+                    "दिहाड़ी इतिहास",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+
+            items(
+                store.rateHistoryFor(id),
+                key = { it.id }
+            ) { r ->
+                Text(
+                    "${displayDate(r.effectiveDate)} से ₹${money(r.rate)}/दिन",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+
+            item {
+                Text(
+                    "हाजिरी",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+
+            items(
+                store.attendances
+                    .filter { it.labourId == id }
+                    .sortedByDescending { it.date },
+                key = { it.id }
+            ) { a ->
+
+                val field = store.fields
+                    .firstOrNull { it.id == a.fieldId }
+
+                val cropName = store.crops
+                    .firstOrNull { it.id == a.cropId }
+                    ?.name
+                    ?.let { "$it • " }
+                    ?: ""
+
+                Card(
+                    Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "${displayDate(a.date)} • ${field?.name ?: "खेत"} • " +
+                            cropName +
+                            "${if (a.fraction == 1.0) "Full" else "Half"} • " +
+                            "₹${money(a.fraction * a.rate)}",
+                        Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    "भुगतान",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+
+            items(
+                store.payments
+                    .filter { it.labourId == id }
+                    .sortedByDescending { it.date },
+                key = { it.id }
+            ) { p ->
+
+                val field = store.fields
+                    .firstOrNull { it.id == p.fieldId }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        "${displayDate(p.date)} • ${field?.name ?: "सामान्य"}" +
+                            "${store.crops.firstOrNull { it.id == p.cropId }?.name?.let { " • $it" } ?: ""}" +
+                            " • ₹${money(p.amount)}",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    IconButton(
+                        onClick = { delPay = p }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = Color(0xFFB3261E)
+                        )
+                    }
+                }
+            }
+        }
+
+        if (edit) {
+            LabourDialog(
+                store,
+                labour
+            ) {
+                edit = false
+            }
+        }
+
+        if (payment) {
+            PaymentDialog(
+                store,
+                id,
+                null,
+                ""
+            ) {
+                payment = false
+            }
+        }
+
+        if (rate) {
+            RateDialog(
+                store,
+                id
+            ) {
+                rate = false
+            }
+        }
+
+        delPay?.let { p ->
+            ConfirmDialog(
+                "भुगतान हटाएँ?",
+                "यह payment record हट जाएगा।",
+                {
+                    store.deletePayment(p.id)
+                    delPay = null
+                },
+                {
+                    delPay = null
+                }
+            )
+        }
+    }
+}
+
+KOTLIN
+
+          awk '
+            BEGIN { found=0 }
+            /^@Composable private fun PaymentDialog[[:space:]]*\(/ {
+              found=1
+            }
+            found {
+              print
+            }
+          ' "$MAIN_FILE" >> "$TMP_FILE"
+
+          mv "$TMP_FILE" "$MAIN_FILE"
+
+          echo ""
+          echo "LabourDetail() syntax repair completed."
+
+          echo ""
+          echo "VERIFYING FUNCTION BOUNDARIES..."
+
+          grep -n \
+            -E \
+            "private fun LabourDetail|private fun PaymentDialog" \
+            "$MAIN_FILE"
+
+          test "$(grep -c '^private fun LabourDetail' "$MAIN_FILE")" -eq 0 || true
+          test "$(grep -c '^@Composable$' "$MAIN_FILE")" -ge 1
+
+          echo ""
+          echo "KOTLIN SOURCE REPAIR PASSED."
+
+
+      # ============================================================
+      # 13. NORMALIZE APK ID / VERSION
+      # ============================================================
+
+      - name: Normalize APK Identity
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "NORMALIZE APK ID / VERSION"
+          echo "=============================================="
+
+          GRADLE_FILE="app/build.gradle.kts"
+
+          test -f "$GRADLE_FILE"
+
+          sed -i \
+            's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
+            "$GRADLE_FILE"
+
+          sed -i \
+            's/versionCode = [0-9][0-9]*/versionCode = 77/' \
+            "$GRADLE_FILE"
+
+          sed -i \
+            's/versionName = "[^"]*"/versionName = "1.77.0"/' \
+            "$GRADLE_FILE"
+
+          echo ""
+          echo "FINAL APP ID:"
+          grep "applicationId" "$GRADLE_FILE"
+
+          echo ""
+          echo "FINAL VERSION CODE:"
+          grep "versionCode" "$GRADLE_FILE"
+
+          echo ""
+          echo "FINAL VERSION NAME:"
+          grep "versionName" "$GRADLE_FILE"
+
+          echo ""
+          echo "APK ID NORMALIZATION PASSED."
+
+
+      # ============================================================
+      # 14. VERIFY MAIN KOTLIN FILE
+      # ============================================================
+
+      - name: Verify Kotlin Source Structure
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY KOTLIN SOURCE STRUCTURE"
+          echo "=============================================="
+
+          test -f "$MAIN_FILE"
+
+          KOTLIN_COUNT=$(find app/src/main \
+            -type f \
+            -name "*.kt" \
+            | wc -l)
+
+          echo "KOTLIN FILE COUNT:"
+          echo "$KOTLIN_COUNT"
+
+          if [ "$KOTLIN_COUNT" -eq 0 ]; then
+            echo "ERROR: No Kotlin files found."
+            exit 1
+          fi
+
+          echo ""
+          echo "MAIN ACTIVITY DECLARATION:"
+          grep -n \
+            "class MainActivity" \
+            "$MAIN_FILE"
+
+          echo ""
+          echo "LABOUR DETAIL DECLARATION:"
+          grep -n \
+            "fun LabourDetail" \
+            "$MAIN_FILE"
+
+          echo ""
+          echo "PAYMENT DIALOG DECLARATION:"
+          grep -n \
+            "fun PaymentDialog" \
+            "$MAIN_FILE"
+
+          echo ""
+          echo "KOTLIN SOURCE STRUCTURE PASSED."
+
+
+      # ============================================================
       # 18. COMPILE RELEASE KOTLIN
       #
       # IMPORTANT:
@@ -608,8 +1001,29 @@ jobs:
             exit 1
           fi
 
+          if ! echo "$BADGING" | grep -q \
+            "versionCode='$VERSION_CODE'"; then
+
+            echo ""
+            echo "ERROR: Version code mismatch."
+            echo "Expected: $VERSION_CODE"
+
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionName='$VERSION_NAME'"; then
+
+            echo ""
+            echo "ERROR: Version name mismatch."
+            echo "Expected: $VERSION_NAME"
+
+            exit 1
+          fi
+
           echo ""
           echo "PACKAGE NAME VERIFIED."
+          echo "VERSION VERIFIED."
 
 
       # ============================================================
@@ -640,7 +1054,7 @@ jobs:
             echo ""
             echo "PERMANENT SIGNING SECRETS FOUND."
 
-            echo "$KEYSTORE_BASE64" \
+            printf '%s' "$KEYSTORE_BASE64" \
               | base64 --decode \
               > "$KEYSTORE_FILE"
 
@@ -871,6 +1285,22 @@ jobs:
 
             echo ""
             echo "ERROR: Final APK package mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionCode='$VERSION_CODE'"; then
+
+            echo ""
+            echo "ERROR: Final APK version code mismatch."
+            exit 1
+          fi
+
+          if ! echo "$BADGING" | grep -q \
+            "versionName='$VERSION_NAME'"; then
+
+            echo ""
+            echo "ERROR: Final APK version name mismatch."
             exit 1
           fi
 
