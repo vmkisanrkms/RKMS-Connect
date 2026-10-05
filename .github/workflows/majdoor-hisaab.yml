@@ -389,10 +389,10 @@ jobs:
 
 
       # ============================================================
-      # 17. FIX MAINACTIVITY KOTLIN BRACES
+      # 17. FIX MAINACTIVITY KOTLIN SOURCE
       # ============================================================
 
-      - name: Fix MainActivity Kotlin brace errors
+      - name: Fix MainActivity Kotlin source
         shell: bash
         run: |
           set -e
@@ -410,92 +410,221 @@ jobs:
 
           main = Path(sys.argv[1])
 
-          lines = main.read_text(
-              encoding="utf-8"
-          ).splitlines()
+          text = main.read_text(encoding="utf-8")
 
-          print("MainActivity.kt lines:", len(lines))
-
-          if len(lines) < 572:
-              raise SystemExit(
-                  "ERROR: MainActivity.kt is shorter than expected."
-              )
+          print("MainActivity:", main)
+          print("Original lines:", len(text.splitlines()))
 
           # ========================================================
-          # LINE 287
-          # One closing brace was missing.
+          # FIX 1
+          #
+          # This import is invalid:
+          #
+          # import androidx.compose.foundation.lazy.item
+          #
+          # LazyColumn's item{} is available through LazyListScope.
+          # No standalone import is required.
           # ========================================================
 
-          line287 = lines[286]
+          bad_import = "import androidx.compose.foundation.lazy.item\n"
 
-          if (
-              line287.count("{") == 14
-              and line287.count("}") == 13
-          ):
-              lines[286] = line287 + "}"
-              print("FIXED line 287: added one }")
+          if bad_import in text:
+              text = text.replace(bad_import, "")
+              print("FIXED: Removed invalid lazy.item import.")
           else:
+              print("OK: Invalid lazy.item import not present.")
+
+          # Also remove CRLF variant if present.
+          text = text.replace(
+              "import androidx.compose.foundation.lazy.item\r\n",
+              ""
+          )
+
+          # ========================================================
+          # FIX 2
+          #
+          # Make sure the correct items import exists.
+          # ========================================================
+
+          required_import = "import androidx.compose.foundation.lazy.items"
+
+          if required_import not in text:
               raise SystemExit(
-                  "ERROR: Line 287 does not match expected V82 source."
+                  "ERROR: Correct androidx.compose.foundation.lazy.items "
+                  "import is missing."
               )
 
           # ========================================================
-          # LINE 572
-          # One extra closing brace was present.
+          # FIX 3
+          #
+          # Check that MainActivity has the expected top-level
+          # functions. We do NOT modify arbitrary braces by line
+          # number.
           # ========================================================
 
-          line572 = lines[571]
+          required_symbols = [
+              "fun validDate",
+              "fun today",
+              "fun money",
+              "fun displayDate",
+              "fun Dashboard",
+              "fun DashboardStat",
+              "fun DashboardModule",
+              "fun Stat",
+              "fun LabourScreen",
+              "fun FieldScreen",
+              "fun CropScreen",
+              "fun ExpenseScreen",
+              "fun SaleScreen",
+              "fun AttendanceScreen",
+              "fun FieldDetail",
+              "fun LabourDetail",
+              "fun PaymentDialog",
+              "fun RateDialog",
+              "fun CropDetail",
+          ]
 
-          if (
-              line572.count("{") == 41
-              and line572.count("}") == 42
-          ):
-              lines[571] = line572[:-1]
-              print("FIXED line 572: removed one }")
-          else:
+          for symbol in required_symbols:
+              if symbol not in text:
+                  raise SystemExit(
+                      f"ERROR: Required Kotlin symbol missing: {symbol}"
+                  )
+
+          # ========================================================
+          # FIX 4
+          #
+          # Basic lexical brace check.
+          #
+          # Strings and comments are removed before counting so
+          # braces appearing inside UI text do not interfere.
+          # ========================================================
+
+          import re
+
+          cleaned = text
+
+          # Remove block comments.
+          cleaned = re.sub(
+              r"/\*.*?\*/",
+              "",
+              cleaned,
+              flags=re.S
+          )
+
+          # Remove line comments.
+          cleaned = re.sub(
+              r"//.*",
+              "",
+              cleaned
+          )
+
+          # Remove normal Kotlin strings.
+          cleaned = re.sub(
+              r'"(?:\\.|[^"\\])*"',
+              '""',
+              cleaned
+          )
+
+          # Remove character literals.
+          cleaned = re.sub(
+              r"'(?:\\.|[^'\\])*'",
+              "''",
+              cleaned
+          )
+
+          brace_open = cleaned.count("{")
+          brace_close = cleaned.count("}")
+
+          print("Brace { count:", brace_open)
+          print("Brace } count:", brace_close)
+
+          if brace_open != brace_close:
               raise SystemExit(
-                  "ERROR: Line 572 does not match expected V82 source."
+                  "ERROR: MainActivity Kotlin braces are unbalanced."
               )
+
+          # ========================================================
+          # WRITE FIXED SOURCE
+          # ========================================================
 
           main.write_text(
-              "\n".join(lines) + "\n",
+              text,
               encoding="utf-8"
           )
 
           # ========================================================
-          # FINAL BRACE CHECK
+          # FINAL CHECK
           # ========================================================
 
-          if (
-              lines[286].count("{")
-              !=
-              lines[286].count("}")
-          ):
+          final_text = main.read_text(encoding="utf-8")
+
+          if "import androidx.compose.foundation.lazy.item" in final_text:
               raise SystemExit(
-                  "ERROR: Line 287 brace balance failed."
+                  "ERROR: Invalid lazy.item import still exists."
               )
 
           if (
-              lines[571].count("{")
-              !=
-              lines[571].count("}")
+              "import androidx.compose.foundation.lazy.items"
+              not in final_text
           ):
               raise SystemExit(
-                  "ERROR: Line 572 brace balance failed."
+                  "ERROR: lazy.items import missing after repair."
               )
 
           print("")
           print("==============================================")
-          print("MAINACTIVITY KOTLIN BRACE FIX PASSED")
+          print("MAINACTIVITY KOTLIN SOURCE FIX PASSED")
           print("==============================================")
-          print("Line 287 : + one }")
-          print("Line 572 : - one }")
+          print("Invalid lazy.item import : REMOVED")
+          print("lazy.items import        : VERIFIED")
+          print("Required symbols         : VERIFIED")
+          print("Brace balance            : VERIFIED")
           print("==============================================")
           PY
 
 
       # ============================================================
-      # 18. VERIFY KOTLIN SOURCE
+      # 18. SHOW IMPORTANT SOURCE LINES
+      # ============================================================
+
+      - name: Show MainActivity source verification
+        shell: bash
+        run: |
+          set -e
+
+          MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
+
+          echo "=============================================="
+          echo "MAINACTIVITY SOURCE CHECK"
+          echo "=============================================="
+
+          echo
+          echo "Imports:"
+          sed -n '1,45p' "$MAIN"
+
+          echo
+          echo "Dashboard area:"
+          sed -n '225,315p' "$MAIN"
+
+          echo
+          echo "MainActivity line count:"
+          wc -l "$MAIN"
+
+          echo
+          echo "Invalid import search:"
+          if grep -n \
+            "import androidx.compose.foundation.lazy.item" \
+            "$MAIN"; then
+
+            echo "::error::Invalid lazy.item import still found."
+            exit 1
+          else
+            echo "No invalid lazy.item import found."
+          fi
+
+
+      # ============================================================
+      # 19. VERIFY KOTLIN SOURCE
       # ============================================================
 
       - name: Verify Kotlin source
@@ -506,18 +635,33 @@ jobs:
           MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
           grep -q "fun validDate" "$MAIN"
+          grep -q "fun today" "$MAIN"
+          grep -q "fun money" "$MAIN"
+          grep -q "fun displayDate" "$MAIN"
           grep -q "BackHandler" "$MAIN"
           grep -q "PhotoThumb" "$MAIN"
           grep -q "AttendanceScreen" "$MAIN"
           grep -q "DeviceCredentialDeleteGate" "$MAIN"
-          grep -q "Stat" "$MAIN"
-          grep -q "money" "$MAIN"
+          grep -q "fun Stat" "$MAIN"
+          grep -q "fun DashboardStat" "$MAIN"
+          grep -q "fun DashboardModule" "$MAIN"
+
+          if grep -q \
+            "import androidx.compose.foundation.lazy.item" \
+            "$MAIN"; then
+            echo "::error::Invalid lazy.item import found."
+            exit 1
+          fi
+
+          grep -q \
+            "import androidx.compose.foundation.lazy.items" \
+            "$MAIN"
 
           echo "Kotlin source checks PASSED."
 
 
       # ============================================================
-      # 19. PAYMENT / CROP CHECK
+      # 20. PAYMENT / CROP CHECK
       # ============================================================
 
       - name: Verify payment and crop cleanup
@@ -547,7 +691,7 @@ jobs:
 
 
       # ============================================================
-      # 20. PACKAGE / VERSION
+      # 21. PACKAGE / VERSION
       # ============================================================
 
       - name: Verify package and version
@@ -585,7 +729,7 @@ jobs:
 
 
       # ============================================================
-      # 21. CONFIGURE ANDROID SDK
+      # 22. CONFIGURE ANDROID SDK
       # ============================================================
 
       - name: Configure Android SDK for Gradle
@@ -600,7 +744,7 @@ jobs:
 
 
       # ============================================================
-      # 22. GRADLE CLEAN
+      # 23. GRADLE CLEAN
       # ============================================================
 
       - name: Gradle clean
@@ -615,7 +759,7 @@ jobs:
 
 
       # ============================================================
-      # 23. KOTLIN SOURCE DIAGNOSTICS
+      # 24. KOTLIN SOURCE DIAGNOSTICS
       # ============================================================
 
       - name: Print Kotlin source diagnostics
@@ -652,7 +796,7 @@ jobs:
 
 
       # ============================================================
-      # 24. BUILD RELEASE APK
+      # 25. BUILD RELEASE APK
       # ============================================================
 
       - name: Build Release APK
@@ -689,14 +833,14 @@ jobs:
             grep -nE \
               '(^e: |^.*\.kt:[0-9]+:[0-9]+:|Unresolved reference|Type mismatch|None of the following|Overload resolution ambiguity|Cannot infer|Expecting |Compilation error)' \
               "$LOG_FILE" \
-              | tail -n 200 || true
+              | tail -n 250 || true
 
             echo
             echo "=============================================="
-            echo "LAST 250 BUILD LOG LINES"
+            echo "LAST 300 BUILD LOG LINES"
             echo "=============================================="
 
-            tail -n 250 "$LOG_FILE"
+            tail -n 300 "$LOG_FILE"
 
             echo
             echo "=============================================="
@@ -707,11 +851,13 @@ jobs:
           fi
 
           echo
-          echo "RELEASE BUILD PASSED."
+          echo "=============================================="
+          echo "RELEASE BUILD PASSED"
+          echo "=============================================="
 
 
       # ============================================================
-      # 25. LOCATE RELEASE APK
+      # 26. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -739,7 +885,7 @@ jobs:
 
 
       # ============================================================
-      # 26. PREPARE APK
+      # 27. PREPARE APK
       # ============================================================
 
       - name: Prepare APK directory
@@ -758,7 +904,7 @@ jobs:
 
 
       # ============================================================
-      # 27. GENERATE TEMPORARY SIGNING KEY
+      # 28. GENERATE TEMPORARY SIGNING KEY
       # ============================================================
 
       - name: Generate temporary signing keystore
@@ -786,7 +932,7 @@ jobs:
 
 
       # ============================================================
-      # 28. ZIPALIGN
+      # 29. ZIPALIGN
       # ============================================================
 
       - name: Align APK
@@ -807,7 +953,7 @@ jobs:
 
 
       # ============================================================
-      # 29. SIGN RELEASE APK
+      # 30. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -835,7 +981,7 @@ jobs:
 
 
       # ============================================================
-      # 30. VERIFY SIGNATURE
+      # 31. VERIFY SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -854,7 +1000,7 @@ jobs:
 
 
       # ============================================================
-      # 31. VERIFY ALIGNMENT
+      # 32. VERIFY ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -874,7 +1020,7 @@ jobs:
 
 
       # ============================================================
-      # 32. VERIFY APK PACKAGE + VERSION
+      # 33. VERIFY APK PACKAGE + VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -908,7 +1054,7 @@ jobs:
 
 
       # ============================================================
-      # 33. BUILD REPORT
+      # 34. BUILD REPORT
       # ============================================================
 
       - name: Create build report
@@ -942,7 +1088,7 @@ jobs:
 
 
       # ============================================================
-      # 34. UPLOAD FINAL SIGNED APK
+      # 35. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -957,7 +1103,7 @@ jobs:
 
 
       # ============================================================
-      # 35. FINAL SUMMARY
+      # 36. FINAL SUMMARY
       # ============================================================
 
       - name: Final build summary
@@ -986,7 +1132,7 @@ jobs:
 
 
       # ============================================================
-      # 36. CLEANUP
+      # 37. CLEANUP
       # ============================================================
 
       - name: Cleanup signing material
