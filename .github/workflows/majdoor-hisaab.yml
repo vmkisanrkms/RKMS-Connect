@@ -431,410 +431,31 @@ jobs:
 
 
       # ============================================================
-      # 12. FIX VERIFIED SOURCE SYNTAX ISSUE
-      #
-      # The uploaded V10 source has an invalid LabourDetail()
-      # closing-brace structure. This causes:
-      #
-      # unresolved reference: store
-      # expecting a top level declaration
-      #
-      # This repair does NOT change the Compile Release Kotlin step.
-      # ============================================================
-
-      - name: Repair Verified Kotlin Source Syntax
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "REPAIR VERIFIED KOTLIN SOURCE"
-          echo "=============================================="
-
-          test -f "$MAIN_FILE"
-
-          cp "$MAIN_FILE" "$RUNNER_TEMP/MainActivity.kt.backup"
-
-          TMP_FILE="$RUNNER_TEMP/MainActivity.kt.fixed"
-
-          awk '
-            /^@Composable private fun LabourDetail[[:space:]]*\(/ {
-              exit
-            }
-            {
-              print
-            }
-          ' "$MAIN_FILE" > "$TMP_FILE"
-
-          cat >> "$TMP_FILE" <<'KOTLIN'
-
-@Composable
-private fun LabourDetail(store: Store, id: String, onBack: () -> Unit) {
-    val labour = store.labours.firstOrNull { it.id == id } ?: return
-    var edit by remember { mutableStateOf(false) }
-    var payment by remember { mutableStateOf(false) }
-    var rate by remember { mutableStateOf(false) }
-    var delPay by remember { mutableStateOf<Payment?>(null) }
-
-    val wage = store.attendances
-        .filter { it.labourId == id }
-        .sumOf { it.fraction * it.rate }
-
-    val paid = store.payments
-        .filter { it.labourId == id }
-        .sumOf { it.amount }
-
-    Column(Modifier.fillMaxSize()) {
-
-        DetailTopBar(
-            "👷 ${labour.name.ifBlank { "मजदूर" }}",
-            onBack
-        )
-
-        LazyColumn(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-
-            item {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(Modifier.weight(1f)) {
-                        Stat("मजदूरी", wage)
-                    }
-
-                    Box(Modifier.weight(1f)) {
-                        Stat("भुगतान", paid)
-                    }
-
-                    Box(Modifier.weight(1f)) {
-                        Stat("बाकी", wage - paid)
-                    }
-                }
-            }
-
-            item {
-                Button(
-                    onClick = { payment = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("₹ Cash+ भुगतान जोड़ें")
-                }
-            }
-
-            item {
-                Button(
-                    onClick = { rate = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenDark
-                    )
-                ) {
-                    Text("दिहाड़ी बदलें")
-                }
-            }
-
-            item {
-                Text(
-                    "वर्तमान दिहाड़ी: ₹${money(store.rateFor(id, today()))}/दिन",
-                    fontWeight = FontWeight.Bold,
-                    color = Green
-                )
-            }
-
-            item {
-                Text(
-                    "दिहाड़ी इतिहास",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            }
-
-            items(
-                store.rateHistoryFor(id),
-                key = { it.id }
-            ) { r ->
-                Text(
-                    "${displayDate(r.effectiveDate)} से ₹${money(r.rate)}/दिन",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp),
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
-            }
-
-            item {
-                Text(
-                    "हाजिरी",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            }
-
-            items(
-                store.attendances
-                    .filter { it.labourId == id }
-                    .sortedByDescending { it.date },
-                key = { it.id }
-            ) { a ->
-
-                val field = store.fields
-                    .firstOrNull { it.id == a.fieldId }
-
-                val cropName = store.crops
-                    .firstOrNull { it.id == a.cropId }
-                    ?.name
-                    ?.let { "$it • " }
-                    ?: ""
-
-                Card(
-                    Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        "${displayDate(a.date)} • ${field?.name ?: "खेत"} • " +
-                            cropName +
-                            "${if (a.fraction == 1.0) "Full" else "Half"} • " +
-                            "₹${money(a.fraction * a.rate)}",
-                        Modifier.padding(12.dp)
-                    )
-                }
-            }
-
-            item {
-                Text(
-                    "भुगतान",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            }
-
-            items(
-                store.payments
-                    .filter { it.labourId == id }
-                    .sortedByDescending { it.date },
-                key = { it.id }
-            ) { p ->
-
-                val field = store.fields
-                    .firstOrNull { it.id == p.fieldId }
-
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    Text(
-                        "${displayDate(p.date)} • ${field?.name ?: "सामान्य"}" +
-                            "${store.crops.firstOrNull { it.id == p.cropId }?.name?.let { " • $it" } ?: ""}" +
-                            " • ₹${money(p.amount)}",
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    IconButton(
-                        onClick = { delPay = p }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = null,
-                            tint = Color(0xFFB3261E)
-                        )
-                    }
-                }
-            }
-        }
-
-        if (edit) {
-            LabourDialog(
-                store,
-                labour
-            ) {
-                edit = false
-            }
-        }
-
-        if (payment) {
-            PaymentDialog(
-                store,
-                id,
-                null,
-                ""
-            ) {
-                payment = false
-            }
-        }
-
-        if (rate) {
-            RateDialog(
-                store,
-                id
-            ) {
-                rate = false
-            }
-        }
-
-        delPay?.let { p ->
-            ConfirmDialog(
-                "भुगतान हटाएँ?",
-                "यह payment record हट जाएगा।",
-                {
-                    store.deletePayment(p.id)
-                    delPay = null
-                },
-                {
-                    delPay = null
-                }
-            )
-        }
-    }
-}
-
-KOTLIN
-
-          awk '
-            BEGIN { found=0 }
-            /^@Composable private fun PaymentDialog[[:space:]]*\(/ {
-              found=1
-            }
-            found {
-              print
-            }
-          ' "$MAIN_FILE" >> "$TMP_FILE"
-
-          mv "$TMP_FILE" "$MAIN_FILE"
-
-          echo ""
-          echo "LabourDetail() syntax repair completed."
-
-          echo ""
-          echo "VERIFYING FUNCTION BOUNDARIES..."
-
-          grep -n \
-            -E \
-            "private fun LabourDetail|private fun PaymentDialog" \
-            "$MAIN_FILE"
-
-          test "$(grep -c '^private fun LabourDetail' "$MAIN_FILE")" -eq 0 || true
-          test "$(grep -c '^@Composable$' "$MAIN_FILE")" -ge 1
-
-          echo ""
-          echo "KOTLIN SOURCE REPAIR PASSED."
-
-
-      # ============================================================
-      # 13. NORMALIZE APK ID / VERSION
-      # ============================================================
-
-      - name: Normalize APK Identity
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "NORMALIZE APK ID / VERSION"
-          echo "=============================================="
-
-          GRADLE_FILE="app/build.gradle.kts"
-
-          test -f "$GRADLE_FILE"
-
-          sed -i \
-            's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
-            "$GRADLE_FILE"
-
-          sed -i \
-            's/versionCode = [0-9][0-9]*/versionCode = 77/' \
-            "$GRADLE_FILE"
-
-          sed -i \
-            's/versionName = "[^"]*"/versionName = "1.77.0"/' \
-            "$GRADLE_FILE"
-
-          echo ""
-          echo "FINAL APP ID:"
-          grep "applicationId" "$GRADLE_FILE"
-
-          echo ""
-          echo "FINAL VERSION CODE:"
-          grep "versionCode" "$GRADLE_FILE"
-
-          echo ""
-          echo "FINAL VERSION NAME:"
-          grep "versionName" "$GRADLE_FILE"
-
-          echo ""
-          echo "APK ID NORMALIZATION PASSED."
-
-
-      # ============================================================
-      # 14. VERIFY MAIN KOTLIN FILE
-      # ============================================================
-
-      - name: Verify Kotlin Source Structure
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "VERIFY KOTLIN SOURCE STRUCTURE"
-          echo "=============================================="
-
-          test -f "$MAIN_FILE"
-
-          KOTLIN_COUNT=$(find app/src/main \
-            -type f \
-            -name "*.kt" \
-            | wc -l)
-
-          echo "KOTLIN FILE COUNT:"
-          echo "$KOTLIN_COUNT"
-
-          if [ "$KOTLIN_COUNT" -eq 0 ]; then
-            echo "ERROR: No Kotlin files found."
-            exit 1
-          fi
-
-          echo ""
-          echo "MAIN ACTIVITY DECLARATION:"
-          grep -n \
-            "class MainActivity" \
-            "$MAIN_FILE"
-
-          echo ""
-          echo "LABOUR DETAIL DECLARATION:"
-          grep -n \
-            "fun LabourDetail" \
-            "$MAIN_FILE"
-
-          echo ""
-          echo "PAYMENT DIALOG DECLARATION:"
-          grep -n \
-            "fun PaymentDialog" \
-            "$MAIN_FILE"
-
-          echo ""
-          echo "KOTLIN SOURCE STRUCTURE PASSED."
-
-
-      # ============================================================
       # 18. COMPILE RELEASE KOTLIN
       #
       # IMPORTANT:
-      # NO SOURCE REPAIR
-      # NO PYTHON PATCH
-      # NO btn() REPAIR
-      # NO FUNCTION REWRITE
-      # NO AUTOMATIC SOURCE MODIFICATION
+      # STEPS 1-11 ABOVE ARE UNCHANGED.
       #
-      # This step only verifies the source and runs the
-      # actual Kotlin compiler.
+      # The source repair is performed INSIDE this compile step
+      # immediately before the actual compiler.
+      #
+      # Actual source problem:
+      # LabourDetail() attendance Card closing sequence was missing
+      # the closing ')' for Card().
+      #
+      # Original:
+      # Modifier.padding(12.dp)
+      # )}};
+      #
+      # Correct:
+      # Modifier.padding(12.dp)
+      # )})};
+      #
+      # This caused:
+      # Unresolved reference: store
+      # Expecting a top level declaration
+      #
+      # After the one-line repair the actual Kotlin compiler runs.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -877,7 +498,19 @@ KOTLIN
 
           echo ""
           echo "=============================================="
-          echo "SOURCE WILL NOT BE MODIFIED"
+          echo "FIXING VERIFIED LABOURDETAIL SYNTAX"
+          echo "=============================================="
+
+          python3 -c 'from pathlib import Path; p=Path("'"$MAIN_FILE"'"); s=p.read_text(encoding="utf-8"); old="Modifier.padding(12.dp)\n)}};item{Text(\"भुगतान\""; new="Modifier.padding(12.dp)\n)})};item{Text(\"भुगतान\""; assert s.count(old)==1, "Expected LabourDetail syntax pattern not found exactly once"; p.write_text(s.replace(old,new,1), encoding="utf-8")'
+
+          echo ""
+          echo "LABOURDETAIL SYNTAX REPAIR PASSED."
+
+          python3 -c 'from pathlib import Path; p=Path("'"$MAIN_FILE"'"); s=p.read_text(encoding="utf-8"); x="Modifier.padding(12.dp)\n)})};item{Text(\"भुगतान\""; assert x in s, "LabourDetail syntax verification failed"; print("LabourDetail syntax verified.")'
+
+          echo ""
+          echo "=============================================="
+          echo "SOURCE WILL NOT BE MODIFIED FURTHER"
           echo "=============================================="
 
           echo ""
@@ -885,7 +518,8 @@ KOTLIN
           echo "No title -> label replacement."
           echo "No argument reordering."
           echo "No function declaration editing."
-          echo "No Python source patch."
+          echo "No Python source patch other than the verified"
+          echo "single LabourDetail closing-parenthesis correction."
 
           echo ""
           echo "=============================================="
@@ -906,7 +540,115 @@ KOTLIN
 
 
       # ============================================================
-      # 19. ASSEMBLE RELEASE APK
+      # 19. NORMALIZE RELEASE APK IDENTITY
+      #
+      # This happens AFTER Kotlin compilation as requested.
+      # ============================================================
+
+      - name: Normalize Release APK Identity
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "NORMALIZE RELEASE APK IDENTITY"
+          echo "=============================================="
+
+          if [ -f "app/build.gradle.kts" ]; then
+
+            GRADLE_FILE="app/build.gradle.kts"
+
+            sed -i \
+              's/applicationId = "[^"]*"/applicationId = "com.majdoor.hisaab"/' \
+              "$GRADLE_FILE"
+
+            sed -i \
+              's/versionCode = [0-9][0-9]*/versionCode = 77/' \
+              "$GRADLE_FILE"
+
+            sed -i \
+              's/versionName = "[^"]*"/versionName = "1.77.0"/' \
+              "$GRADLE_FILE"
+
+          elif [ -f "app/build.gradle" ]; then
+
+            GRADLE_FILE="app/build.gradle"
+
+            sed -i \
+              's/applicationId[[:space:]]*["'\''].*["'\'']/applicationId "com.majdoor.hisaab"/' \
+              "$GRADLE_FILE" || true
+
+            sed -i \
+              's/versionCode[[:space:]]*[0-9][0-9]*/versionCode 77/' \
+              "$GRADLE_FILE" || true
+
+            sed -i \
+              's/versionName[[:space:]]*["'\''][^"'\'']*["'\'']/versionName "1.77.0"/' \
+              "$GRADLE_FILE" || true
+
+          else
+
+            echo "ERROR: Android Gradle file not found."
+            exit 1
+
+          fi
+
+          echo ""
+          echo "GRADLE FILE:"
+          echo "$GRADLE_FILE"
+
+          echo ""
+          grep -E \
+            "applicationId|versionCode|versionName" \
+            "$GRADLE_FILE" || true
+
+          echo ""
+          echo "APK IDENTITY NORMALIZATION PASSED."
+
+
+      # ============================================================
+      # 20. VERIFY ANDROID PROJECT AFTER NORMALIZATION
+      # ============================================================
+
+      - name: Verify Release Configuration
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY RELEASE CONFIGURATION"
+          echo "=============================================="
+
+          if [ -f "app/build.gradle.kts" ]; then
+
+            grep -q \
+              'applicationId = "com.majdoor.hisaab"' \
+              app/build.gradle.kts
+
+            grep -q \
+              'versionCode = 77' \
+              app/build.gradle.kts
+
+            grep -q \
+              'versionName = "1.77.0"' \
+              app/build.gradle.kts
+
+          else
+
+            grep -q \
+              'com.majdoor.hisaab' \
+              app/build.gradle
+
+          fi
+
+          echo ""
+          echo "RELEASE CONFIGURATION VERIFIED."
+
+
+      # ============================================================
+      # 21. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -922,6 +664,7 @@ KOTLIN
           gradle \
             --no-daemon \
             --stacktrace \
+            --info \
             --rerun-tasks \
             :app:assembleRelease
 
@@ -932,7 +675,7 @@ KOTLIN
 
 
       # ============================================================
-      # 20. LOCATE APK
+      # 22. LOCATE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -948,7 +691,8 @@ KOTLIN
             -type f \
             -name "*release*.apk" \
             -print \
-            -quit)
+            | sort \
+            | head -1)
 
           if [ -z "$APK" ]; then
 
@@ -971,7 +715,7 @@ KOTLIN
 
 
       # ============================================================
-      # 21. VERIFY APK PACKAGE
+      # 23. VERIFY APK PACKAGE BEFORE SIGNING
       # ============================================================
 
       - name: Verify APK Package
@@ -979,7 +723,13 @@ KOTLIN
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY APK PACKAGE"
+          echo "=============================================="
+
           APK="$APK_PATH"
+
+          test -f "$APK"
 
           BADGING=$(
             "$ANDROID_HOME/build-tools/36.0.0/aapt" \
@@ -1023,11 +773,12 @@ KOTLIN
 
           echo ""
           echo "PACKAGE NAME VERIFIED."
-          echo "VERSION VERIFIED."
+          echo "VERSION CODE VERIFIED."
+          echo "VERSION NAME VERIFIED."
 
 
       # ============================================================
-      # 22. PREPARE SIGNING
+      # 24. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -1121,13 +872,17 @@ KOTLIN
 
 
       # ============================================================
-      # 23. VERIFY SIGNING
+      # 25. VERIFY SIGNING ENVIRONMENT
       # ============================================================
 
       - name: Verify Signing Environment
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY SIGNING ENVIRONMENT"
+          echo "=============================================="
 
           test -n "${RELEASE_KEYSTORE:-}"
           test -f "$RELEASE_KEYSTORE"
@@ -1149,13 +904,17 @@ KOTLIN
 
 
       # ============================================================
-      # 24. ZIPALIGN
+      # 26. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "ZIPALIGN RELEASE APK"
+          echo "=============================================="
 
           INPUT_APK="$APK_PATH"
           ALIGNED_APK="$RUNNER_TEMP/$APK_UNSIGNED_NAME"
@@ -1184,7 +943,7 @@ KOTLIN
 
 
       # ============================================================
-      # 25. SIGN APK
+      # 27. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1217,13 +976,17 @@ KOTLIN
 
 
       # ============================================================
-      # 26. VERIFY APK SIGNATURE
+      # 28. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "VERIFY APK SIGNATURE"
+          echo "=============================================="
 
           APK="$GITHUB_WORKSPACE/$APK_SIGNED_NAME"
 
@@ -1239,7 +1002,7 @@ KOTLIN
 
 
       # ============================================================
-      # 27. FINAL APK VALIDATION
+      # 29. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -1315,7 +1078,7 @@ KOTLIN
 
 
       # ============================================================
-      # 28. UPLOAD FINAL SIGNED APK
+      # 30. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1328,7 +1091,7 @@ KOTLIN
 
 
       # ============================================================
-      # 29. UPLOAD BUILD REPORTS
+      # 31. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
