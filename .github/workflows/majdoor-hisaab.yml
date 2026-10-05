@@ -425,27 +425,23 @@ jobs:
 
 
       # ============================================================
-      # 12. AUDITED KOTLIN SOURCE FIX + COMPILE
+      # 12. AUDITED KOTLIN FIX + ACTUAL COMPILER
       #
-      # THIS IS THE ONLY SOURCE-MODIFYING STEP.
+      # IMPORTANT:
       #
-      # FIXED FROM ACTUAL v11 ZIP AUDIT:
+      # This is the ONLY source-modifying step.
       #
-      # 1. mapList() parser syntax
+      # NO generic brace repair.
+      # NO brace balance guessing.
+      # NO ChoiceField modification.
       #
-      # 2. LabourDetail() brace placement
-      #    One brace is moved from BEFORE if(edit)
-      #    to the END of the function.
+      # Fixes:
+      #   1. mapList syntax
+      #   2. LabourDetail brace placement
+      #   3. ExpenseDialog argument order
+      #   4. SaleDialog argument order
       #
-      # 3. ExpenseDialog() argument order
-      #
-      # 4. SaleDialog() argument order
-      #
-      # 5. ChoiceField() missing closing braces
-      #
-      # NO GENERIC BRACE REPAIR.
-      # NO AUTOMATIC BRACE DELETION.
-      # NO GUESSING.
+      # The Kotlin compiler is the final authority.
       # ============================================================
 
       - name: Compile Release Kotlin
@@ -488,33 +484,21 @@ jobs:
 
           # ==========================================================
           # FIX 1
-          #
-          # mapList()
-          #
-          # ACTUAL BAD SOURCE:
-          #
-          # private fun <T> JSONArray.mapList(
-          #     mapper:(JSONObject)->T
-          # ):List<T>=(0 until length()).map{...}
-          #
-          # The `>=` parser ambiguity after generic return type
-          # causes:
-          #
-          # expecting a '>'
-          # expecting member declaration
-          #
+          # mapList Kotlin parser syntax
           # ==========================================================
 
           bad_map = (
               "private fun <T> JSONArray.mapList"
               "(mapper:(JSONObject)->T):List<T>="
-              "(0 until length()).map{mapper(getJSONObject(it))}"
+              "(0 until length()).map"
+              "{mapper(getJSONObject(it))}"
           )
 
           good_map = (
               "private fun <T> JSONArray.mapList"
               "(mapper:(JSONObject)->T): List<T> = "
-              "(0 until length()).map { mapper(getJSONObject(it)) }"
+              "(0 until length()).map "
+              "{ mapper(getJSONObject(it)) }"
           )
 
           map_count = source.count(bad_map)
@@ -539,29 +523,19 @@ jobs:
           else:
 
               print(
-                  "ERROR: mapList pattern appears more than once."
+                  "ERROR: mapList pattern found more than once."
               )
 
               raise SystemExit(1)
 
 
           # ==========================================================
-          # FIX 2
+          # FIX 2A
+          # LabourDetail early closing brace
           #
-          # LabourDetail brace placement.
-          #
-          # ACTUAL SOURCE HAD:
-          #
-          # ...tint=Color(...))}}}}};if(edit)...
-          #
-          # One brace was closing LabourDetail too early.
-          #
-          # We REMOVE ONE brace from this boundary.
-          #
-          # Then ADD ONE brace at the true end of LabourDetail.
-          #
-          # This preserves total brace count while restoring
-          # correct Kotlin function scope.
+          # One existing brace is removed from the early boundary.
+          # The same logical brace is restored at the actual function
+          # end below.
           # ==========================================================
 
           boundary_before = (
@@ -580,7 +554,7 @@ jobs:
 
           print("")
           print(
-              "FIX 2 - LabourDetail boundary count:",
+              "FIX 2A - LabourDetail boundary count:",
               boundary_count
           )
 
@@ -593,7 +567,7 @@ jobs:
               )
 
               print(
-                  "FIX 2A APPLIED: LabourDetail boundary."
+                  "FIX 2A APPLIED."
               )
 
           elif boundary_count == 0:
@@ -605,7 +579,7 @@ jobs:
           else:
 
               print(
-                  "ERROR: LabourDetail boundary appears "
+                  "ERROR: LabourDetail boundary found "
                   "more than once."
               )
 
@@ -614,22 +588,10 @@ jobs:
 
           # ==========================================================
           # FIX 2B
-          #
-          # Close LabourDetail AFTER its dialog calls.
-          #
-          # ACTUAL END:
-          #
-          # ...delPay?.let{ConfirmDialog(...)}
-          #
-          # Correct:
-          #
-          # ...delPay?.let{ConfirmDialog(...)}}
-          #
-          # One final brace is required for the remaining
-          # LabourDetail function scope.
+          # LabourDetail actual ending
           # ==========================================================
 
-          end_before = (
+          labour_end = (
               'delPay?.let{ConfirmDialog('
               '"भुगतान हटाएँ?",'
               '"यह payment record हट जाएगा।",'
@@ -637,7 +599,7 @@ jobs:
               '{delPay=null})}'
           )
 
-          end_after = (
+          labour_end_fixed = (
               'delPay?.let{ConfirmDialog('
               '"भुगतान हटाएँ?",'
               '"यह payment record हट जाएगा।",'
@@ -645,27 +607,29 @@ jobs:
               '{delPay=null})}}'
           )
 
-          end_count = source.count(end_before)
+          labour_end_count = source.count(
+              labour_end
+          )
 
           print("")
           print(
               "FIX 2B - LabourDetail end count:",
-              end_count
+              labour_end_count
           )
 
-          if end_count == 1:
+          if labour_end_count == 1:
 
               source = source.replace(
-                  end_before,
-                  end_after,
+                  labour_end,
+                  labour_end_fixed,
                   1
               )
 
               print(
-                  "FIX 2B APPLIED: LabourDetail closed correctly."
+                  "FIX 2B APPLIED."
               )
 
-          elif end_count == 0:
+          elif labour_end_count == 0:
 
               print(
                   "FIX 2B already applied."
@@ -674,7 +638,7 @@ jobs:
           else:
 
               print(
-                  "ERROR: LabourDetail end pattern appears "
+                  "ERROR: LabourDetail end pattern found "
                   "more than once."
               )
 
@@ -683,24 +647,7 @@ jobs:
 
           # ==========================================================
           # FIX 3
-          #
-          # ExpenseDialog argument order.
-          #
-          # Original:
-          #
-          # ExpenseDialog(..., edit!=null){...}
-          #
-          # Signature:
-          #
-          # ExpenseDialog(
-          #   store,
-          #   existing,
-          #   onClose,
-          #   isEdit
-          # )
-          #
-          # Therefore Boolean was being passed where onClose was
-          # expected.
+          # ExpenseDialog argument order
           # ==========================================================
 
           bad_expense = (
@@ -744,7 +691,9 @@ jobs:
                   1
               )
 
-              print("FIX 3 APPLIED.")
+              print(
+                  "FIX 3 APPLIED."
+              )
 
           elif expense_count == 0:
 
@@ -755,7 +704,7 @@ jobs:
           else:
 
               print(
-                  "ERROR: ExpenseDialog pattern appears "
+                  "ERROR: ExpenseDialog pattern found "
                   "more than once."
               )
 
@@ -764,8 +713,7 @@ jobs:
 
           # ==========================================================
           # FIX 4
-          #
-          # SaleDialog argument order.
+          # SaleDialog argument order
           # ==========================================================
 
           bad_sale = (
@@ -809,7 +757,9 @@ jobs:
                   1
               )
 
-              print("FIX 4 APPLIED.")
+              print(
+                  "FIX 4 APPLIED."
+              )
 
           elif sale_count == 0:
 
@@ -820,74 +770,11 @@ jobs:
           else:
 
               print(
-                  "ERROR: SaleDialog pattern appears "
+                  "ERROR: SaleDialog pattern found "
                   "more than once."
               )
 
               raise SystemExit(1)
-
-
-          # ==========================================================
-          # FIX 5
-          #
-          # ChoiceField()
-          #
-          # Actual audited source is short one final pair of
-          # closing braces.
-          #
-          # IMPORTANT:
-          # We only touch the exact ChoiceField declaration.
-          # ==========================================================
-
-          lines = source.splitlines()
-
-          choice_indexes = [
-              i
-              for i, line in enumerate(lines)
-              if line.startswith(
-                  "@Composable private fun ChoiceField("
-              )
-          ]
-
-          print("")
-          print(
-              "FIX 5 - ChoiceField declarations:",
-              len(choice_indexes)
-          )
-
-          if len(choice_indexes) != 1:
-
-              print(
-                  "ERROR: Expected exactly one ChoiceField."
-              )
-
-              raise SystemExit(1)
-
-          choice_index = choice_indexes[0]
-
-          choice_line = lines[choice_index]
-
-          if not choice_line.endswith(
-              "}}}"
-          ):
-
-              print(
-                  "ERROR: ChoiceField source does not match "
-                  "audited v11 structure."
-              )
-
-              raise SystemExit(1)
-
-          # Add the two audited closing braces.
-          lines[choice_index] = (
-              choice_line + "}}"
-          )
-
-          source = "\n".join(lines) + "\n"
-
-          print(
-              "FIX 5 APPLIED: ChoiceField closing braces."
-          )
 
 
           # ==========================================================
@@ -903,7 +790,7 @@ jobs:
 
               print("")
               print(
-                  "AUDITED KOTLIN SOURCE WRITTEN."
+                  "AUDITED KOTLIN FIXES WRITTEN."
               )
 
           else:
@@ -915,67 +802,47 @@ jobs:
 
 
           # ==========================================================
-          # FINAL EXACT SOURCE CHECKS
+          # VERIFY ONLY THE AUDITED CHANGES
           # ==========================================================
 
           final_source = path.read_text(
               encoding="utf-8"
           )
 
-          # mapList old syntax must disappear
           if bad_map in final_source:
 
               print(
-                  "ERROR: Old mapList syntax remains."
+                  "ERROR: Old mapList syntax still exists."
               )
 
               raise SystemExit(1)
 
 
-          # LabourDetail must not have old early boundary
           if boundary_before in final_source:
 
               print(
-                  "ERROR: Old LabourDetail boundary remains."
+                  "ERROR: Old LabourDetail boundary "
+                  "still exists."
               )
 
               raise SystemExit(1)
 
 
-          # Old ExpenseDialog call must disappear
           if bad_expense in final_source:
 
               print(
-                  "ERROR: Old ExpenseDialog call remains."
+                  "ERROR: Old ExpenseDialog call "
+                  "still exists."
               )
 
               raise SystemExit(1)
 
 
-          # Old SaleDialog call must disappear
           if bad_sale in final_source:
 
               print(
-                  "ERROR: Old SaleDialog call remains."
-              )
-
-              raise SystemExit(1)
-
-
-          # ChoiceField exact final line
-          final_lines = final_source.splitlines()
-
-          final_choice = final_lines[
-              choice_index
-          ]
-
-          if not final_choice.endswith(
-              "}}}}}"
-          ):
-
-              print(
-                  "ERROR: ChoiceField final closure "
-                  "verification failed."
+                  "ERROR: Old SaleDialog call "
+                  "still exists."
               )
 
               raise SystemExit(1)
@@ -983,199 +850,56 @@ jobs:
 
           print("")
           print(
-              "ALL AUDITED KOTLIN SOURCE FIXES VERIFIED."
+              "ALL AUDITED KOTLIN FIXES VERIFIED."
+          )
+
+          print("")
+          print(
+              "IMPORTANT: ChoiceField was NOT modified."
           )
           PY
 
 
           echo ""
           echo "=============================================="
-          echo "KOTLIN STRUCTURE AUDIT"
-          echo "=============================================="
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-
-          source = path.read_text(
-              encoding="utf-8"
-          )
-
-          balance = 0
-
-          in_string = False
-          in_char = False
-          escape = False
-          block_comment = False
-
-          negative_line = None
-
-          for line_no, line in enumerate(
-              source.splitlines(),
-              1
-          ):
-
-              i = 0
-
-              while i < len(line):
-
-                  c = line[i]
-
-                  n = (
-                      line[i + 1]
-                      if i + 1 < len(line)
-                      else ""
-                  )
-
-
-                  if block_comment:
-
-                      if c == "*" and n == "/":
-                          block_comment = False
-                          i += 2
-                          continue
-
-                      i += 1
-                      continue
-
-
-                  if in_string:
-
-                      if escape:
-                          escape = False
-
-                      elif c == "\\":
-                          escape = True
-
-                      elif c == '"':
-                          in_string = False
-
-                      i += 1
-                      continue
-
-
-                  if in_char:
-
-                      if escape:
-                          escape = False
-
-                      elif c == "\\":
-                          escape = True
-
-                      elif c == "'":
-                          in_char = False
-
-                      i += 1
-                      continue
-
-
-                  if c == "/" and n == "/":
-                      break
-
-
-                  if c == "/" and n == "*":
-                      block_comment = True
-                      i += 2
-                      continue
-
-
-                  if c == '"':
-                      in_string = True
-                      i += 1
-                      continue
-
-
-                  if c == "'":
-                      in_char = True
-                      i += 1
-                      continue
-
-
-                  if c == "{":
-
-                      balance += 1
-
-                  elif c == "}":
-
-                      balance -= 1
-
-                      if balance < 0:
-
-                          negative_line = line_no
-                          break
-
-                  i += 1
-
-
-              if negative_line is not None:
-                  break
-
-
-          if negative_line is not None:
-
-              echo="ERROR: negative Kotlin brace balance"
-
-              print("")
-              print(echo)
-              print(
-                  "LINE:",
-                  negative_line
-              )
-
-              raise SystemExit(1)
-
-
-          print("")
-          print(
-              "FINAL KOTLIN BRACE BALANCE:",
-              balance
-          )
-
-          if balance != 0:
-
-              print("")
-              print(
-                  "ERROR: Kotlin braces are not balanced."
-              )
-
-              raise SystemExit(1)
-
-          print("")
-          print(
-              "KOTLIN BRACE BALANCE PASSED."
-          )
-          PY
-
-
-          echo ""
-          echo "=============================================="
-          echo "VERIFY TOP-LEVEL FUNCTION BOUNDARIES"
+          echo "SHOW RELEVANT KOTLIN FUNCTIONS"
           echo "=============================================="
 
           grep -n \
             "@Composable private fun LabourDetail" \
-            "$MAIN_FILE"
+            "$MAIN_FILE" \
+            || true
 
           grep -n \
             "@Composable private fun PaymentDialog" \
-            "$MAIN_FILE"
+            "$MAIN_FILE" \
+            || true
 
           grep -n \
             "@Composable private fun RateDialog" \
-            "$MAIN_FILE"
+            "$MAIN_FILE" \
+            || true
 
           grep -n \
-            "@Composable private fun CropDetail" \
-            "$MAIN_FILE"
+            "@Composable private fun ExpenseDialog" \
+            "$MAIN_FILE" \
+            || true
+
+          grep -n \
+            "@Composable private fun SaleDialog" \
+            "$MAIN_FILE" \
+            || true
 
           grep -n \
             "@Composable private fun ChoiceField" \
-            "$MAIN_FILE"
+            "$MAIN_FILE" \
+            || true
+
 
           echo ""
-          echo "FUNCTION DECLARATIONS FOUND AT TOP LEVEL."
+          echo "=============================================="
+          echo "KOTLIN SOURCE PRE-COMPILER CHECK COMPLETE"
+          echo "=============================================="
 
 
           echo ""
@@ -1465,7 +1189,7 @@ jobs:
             echo "RELEASE_KEYSTORE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
             echo "RELEASE_KEYSTORE_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
             echo "RELEASE_KEY_ALIAS=$TEMP_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD"
+            echo "RELEASE_KEY_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
 
           fi
 
