@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -29,13 +28,9 @@ env:
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
-
 jobs:
-
   build-release:
-
     name: Build Final Signed Release APK
-
     runs-on: ubuntu-latest
 
     steps:
@@ -431,20 +426,35 @@ jobs:
 
 
       # ============================================================
-      # 12. KOTLIN SOURCE REPAIR
+      # 12. COMPILE RELEASE KOTLIN
+      #
+      # IMPORTANT:
+      # NO SOURCE MODIFICATION EXISTS BEFORE THIS STEP.
+      #
+      # All Kotlin repairs happen INSIDE this step immediately
+      # before the actual compiler is started.
       # ============================================================
 
-      - name: Repair Kotlin Source
+      - name: Compile Release Kotlin
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "REPAIR KOTLIN SOURCE"
+          echo "COMPILE RELEASE KOTLIN"
           echo "=============================================="
 
           test -f "$MAIN_FILE"
+
+          echo ""
+          echo "MAIN FILE:"
+          echo "$MAIN_FILE"
+
+          echo ""
+          echo "=============================================="
+          echo "KOTLIN SOURCE REPAIR"
+          echo "=============================================="
 
           python3 - "$MAIN_FILE" <<'PY'
           import re
@@ -452,14 +462,17 @@ jobs:
           from pathlib import Path
 
           path = Path(sys.argv[1])
-          source = path.read_text(encoding="utf-8")
+
+          source = path.read_text(
+              encoding="utf-8"
+          )
 
           print("SOURCE:", path)
           print("SOURCE SIZE:", len(source), "bytes")
 
 
           # ==========================================================
-          # Remove UTF-8 BOM if present
+          # Remove UTF-8 BOM
           # ==========================================================
 
           if source.startswith("\ufeff"):
@@ -480,6 +493,7 @@ jobs:
               )
 
               if package_match:
+
                   source = (
                       source[:package_match.end()]
                       + "\n"
@@ -498,7 +512,12 @@ jobs:
           # ==========================================================
 
           old_store = "private class Store(context:Context){"
-          new_store = "private class Store(private val context:Context){"
+
+          new_store = (
+              "private class Store("
+              "private val context:Context"
+              "){"
+          )
 
           if old_store in source:
 
@@ -530,10 +549,10 @@ jobs:
           if map_match:
 
               replacement = """private fun <T> JSONArray.mapList(
-          mapper: (JSONObject) -> T
-      ): List<T> = (0 until length()).map {
-          mapper(getJSONObject(it))
-      }"""
+              mapper: (JSONObject) -> T
+          ): List<T> = (0 until length()).map {
+              mapper(getJSONObject(it))
+          }"""
 
               source = (
                   source[:map_match.start()]
@@ -549,13 +568,18 @@ jobs:
 
 
           # ==========================================================
-          # Helper to replace a complete function
+          # Function replacement helper
           # ==========================================================
 
-          def replace_function(text, function_name, replacement):
+          def replace_function(
+              text,
+              function_name,
+              replacement
+          ):
 
               pattern = re.compile(
-                  r"(?m)^[ \t]*(?:@Composable[ \t]*\n[ \t]*)?"
+                  r"(?m)^[ \t]*"
+                  r"(?:@Composable[ \t]*\n[ \t]*)?"
                   r"(?:private[ \t]+|public[ \t]+|internal[ \t]+)?"
                   r"fun[ \t]+"
                   + re.escape(function_name)
@@ -567,7 +591,10 @@ jobs:
               if not match:
                   return text, False
 
-              open_brace = text.find("{", match.end())
+              open_brace = text.find(
+                  "{",
+                  match.end()
+              )
 
               if open_brace == -1:
                   raise SystemExit(
@@ -587,7 +614,11 @@ jobs:
               while i < len(text):
 
                   c = text[i]
-                  n = text[i + 1] if i + 1 < len(text) else ""
+                  n = (
+                      text[i + 1]
+                      if i + 1 < len(text)
+                      else ""
+                  )
 
                   if line_comment:
 
@@ -604,8 +635,10 @@ jobs:
 
                       if escape:
                           escape = False
+
                       elif c == "\\":
                           escape = True
+
                       elif c == '"':
                           in_string = False
 
@@ -613,8 +646,10 @@ jobs:
 
                       if escape:
                           escape = False
+
                       elif c == "\\":
                           escape = True
+
                       elif c == "'":
                           in_char = False
 
@@ -663,46 +698,49 @@ jobs:
           # ==========================================================
 
           persist_photo = """    fun persistPhoto(
-          uriString: String,
-          owner: String
-      ): String {
-          if (uriString.isBlank() || uriString.startsWith("file://")) {
-              return uriString
-          }
-
-          return try {
-              val uri: Uri = Uri.parse(uriString)
-
-              val dir: File = File(
-                  context.filesDir,
-                  "photos"
-              ).apply {
-                  mkdirs()
+              uriString: String,
+              owner: String
+          ): String {
+              if (
+                  uriString.isBlank() ||
+                  uriString.startsWith("file://")
+              ) {
+                  return uriString
               }
 
-              val file: File = File(
-                  dir,
-                  "${owner}_${UUID.randomUUID()}.jpg"
-              )
+              return try {
+                  val uri: Uri = Uri.parse(uriString)
 
-              val input: java.io.InputStream =
-                  context.contentResolver
-                      .openInputStream(uri)
-                  ?: return ""
-
-              input.use { inputStream ->
-                  FileOutputStream(file).use { outputStream ->
-                      inputStream.copyTo(outputStream)
+                  val dir: File = File(
+                      context.filesDir,
+                      "photos"
+                  ).apply {
+                      mkdirs()
                   }
+
+                  val file: File = File(
+                      dir,
+                      "${owner}_${UUID.randomUUID()}.jpg"
+                  )
+
+                  val input: java.io.InputStream =
+                      context.contentResolver
+                          .openInputStream(uri)
+                      ?: return ""
+
+                  input.use { inputStream ->
+                      FileOutputStream(file).use { outputStream ->
+                          inputStream.copyTo(outputStream)
+                      }
+                  }
+
+                  file.absolutePath
+
+              } catch (_: Exception) {
+                  ""
               }
-
-              file.absolutePath
-
-          } catch (_: Exception) {
-              ""
           }
-      }
-      """
+          """
 
           if "fun persistPhoto" in source:
 
@@ -725,8 +763,13 @@ jobs:
           # PaymentDialog
           # ==========================================================
 
-          old_payment = 'PaymentDialog(store,id,null,""){payment=false}'
-          new_payment = 'PaymentDialog(store,id,null,null){payment=false}'
+          old_payment = (
+              'PaymentDialog(store,id,null,""){payment=false}'
+          )
+
+          new_payment = (
+              'PaymentDialog(store,id,null,null){payment=false}'
+          )
 
           if old_payment in source:
 
@@ -840,7 +883,116 @@ jobs:
 
 
           # ==========================================================
-          # Write after normal repairs
+          # Remove only extra trailing standalone braces
+          # ==========================================================
+
+          lines = source.splitlines()
+
+          while len(lines) > 1:
+
+              if lines[-1].strip() != "}":
+                  break
+
+              balance = 0
+
+              in_string = False
+              in_char = False
+              escape = False
+              line_comment = False
+              block_comment = False
+
+              for line in lines:
+
+                  i = 0
+
+                  while i < len(line):
+
+                      c = line[i]
+                      n = (
+                          line[i + 1]
+                          if i + 1 < len(line)
+                          else ""
+                      )
+
+                      if line_comment:
+                          break
+
+                      if block_comment:
+
+                          if c == "*" and n == "/":
+                              block_comment = False
+                              i += 2
+                              continue
+
+                          i += 1
+                          continue
+
+                      if in_string:
+
+                          if escape:
+                              escape = False
+                          elif c == "\\":
+                              escape = True
+                          elif c == '"':
+                              in_string = False
+
+                          i += 1
+                          continue
+
+                      if in_char:
+
+                          if escape:
+                              escape = False
+                          elif c == "\\":
+                              escape = True
+                          elif c == "'":
+                              in_char = False
+
+                          i += 1
+                          continue
+
+                      if c == "/" and n == "/":
+                          line_comment = True
+                          break
+
+                      if c == "/" and n == "*":
+                          block_comment = True
+                          i += 2
+                          continue
+
+                      if c == '"':
+                          in_string = True
+                          i += 1
+                          continue
+
+                      if c == "'":
+                          in_char = True
+                          i += 1
+                          continue
+
+                      if c == "{":
+                          balance += 1
+
+                      elif c == "}":
+                          balance -= 1
+
+                      i += 1
+
+                  line_comment = False
+
+              if balance < 0:
+                  lines.pop()
+                  print(
+                      "FIX APPLIED: removed extra trailing brace"
+                  )
+              else:
+                  break
+
+          source = "\n".join(lines) + "\n"
+
+
+          # ==========================================================
+          # Write source
           # ==========================================================
 
           path.write_text(
@@ -849,219 +1001,16 @@ jobs:
           )
 
           print("")
-          print("NORMAL KOTLIN REPAIRS WRITTEN")
+          print("KOTLIN SOURCE REPAIR COMPLETED")
           PY
 
 
-      # ============================================================
-      # 13. REMOVE ONLY EXTRA TRAILING KOTLIN BRACES
-      # ============================================================
-
-      - name: Repair Extra Kotlin Closing Braces
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
+          echo ""
           echo "=============================================="
-          echo "CHECK EXTRA KOTLIN CLOSING BRACES"
-          echo "=============================================="
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          lines = path.read_text(encoding="utf-8").splitlines()
-
-          balance = 0
-
-          in_string = False
-          in_char = False
-          escape = False
-          line_comment = False
-          block_comment = False
-
-          brace_tokens = []
-
-          for line_no, line in enumerate(lines, 1):
-
-              i = 0
-
-              while i < len(line):
-
-                  c = line[i]
-                  n = line[i + 1] if i + 1 < len(line) else ""
-
-                  if line_comment:
-                      break
-
-                  if block_comment:
-
-                      if c == "*" and n == "/":
-                          block_comment = False
-                          i += 2
-                          continue
-
-                      i += 1
-                      continue
-
-                  if in_string:
-
-                      if escape:
-                          escape = False
-                      elif c == "\\":
-                          escape = True
-                      elif c == '"':
-                          in_string = False
-
-                      i += 1
-                      continue
-
-                  if in_char:
-
-                      if escape:
-                          escape = False
-                      elif c == "\\":
-                          escape = True
-                      elif c == "'":
-                          in_char = False
-
-                      i += 1
-                      continue
-
-                  if c == "/" and n == "/":
-                      line_comment = True
-                      break
-
-                  if c == "/" and n == "*":
-                      block_comment = True
-                      i += 2
-                      continue
-
-                  if c == '"':
-                      in_string = True
-                      i += 1
-                      continue
-
-                  if c == "'":
-                      in_char = True
-                      i += 1
-                      continue
-
-                  if c == "{":
-                      balance += 1
-                      brace_tokens.append((line_no, "{"))
-
-                  elif c == "}":
-
-                      balance -= 1
-                      brace_tokens.append((line_no, "}"))
-
-                      if balance < 0:
-                          print(
-                              "EXTRA CLOSING BRACE DETECTED AT LINE",
-                              line_no
-                          )
-
-                  i += 1
-
-              line_comment = False
-
-
-          print("")
-          print("FINAL BRACE BALANCE:", balance)
-
-          if balance > 0:
-              print("")
-              print(
-                  "ERROR: Missing closing brace(s). "
-                  "No automatic deletion performed."
-              )
-              sys.exit(1)
-
-
-          if balance == 0:
-              print("")
-              print("KOTLIN BRACE BALANCE OK.")
-              sys.exit(0)
-
-
-          excess = -balance
-
-          indexes = []
-
-          for idx in range(len(lines) - 1, -1, -1):
-
-              stripped = lines[idx].strip()
-
-              if stripped == "}":
-                  indexes.append(idx)
-
-                  if len(indexes) == excess:
-                      break
-
-          if len(indexes) != excess:
-
-              print("")
-              print(
-                  "ERROR: Extra closing braces exist, but they are "
-                  "not safely removable trailing brace-only lines."
-              )
-
-              sys.exit(1)
-
-
-          for idx in indexes:
-              print(
-                  "REMOVING EXTRA CLOSING BRACE AT LINE",
-                  idx + 1
-              )
-
-          for idx in sorted(indexes, reverse=True):
-              del lines[idx]
-
-
-          path.write_text(
-              "\n".join(lines) + "\n",
-              encoding="utf-8"
-          )
-
-          print("")
-          print(
-              "FIX APPLIED:",
-              excess,
-              "extra trailing closing brace(s) removed."
-          )
-          PY
-
-
-      # ============================================================
-      # 14. KOTLIN SOURCE FINAL STRUCTURE CHECK
-      # ============================================================
-
-      - name: Verify Kotlin Source Structure
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "VERIFY KOTLIN SOURCE STRUCTURE"
+          echo "SOURCE CHECK BEFORE ACTUAL COMPILER"
           echo "=============================================="
 
           test -f "$MAIN_FILE"
-
-          echo ""
-          echo "MAIN FILE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "LAST 25 LINES:"
-          tail -25 "$MAIN_FILE"
-
-          echo ""
-          echo "IMPORTANT DECLARATIONS:"
 
           grep -n \
             "import androidx.activity.compose.setContent" \
@@ -1079,11 +1028,25 @@ jobs:
             | head -3 || true
 
           echo ""
-          echo "SOURCE STRUCTURE CHECK PASSED."
+          echo "=============================================="
+          echo "STARTING ACTUAL KOTLIN COMPILER"
+          echo "=============================================="
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --rerun-tasks \
+            :app:compileReleaseKotlin
+
+          echo ""
+          echo "=============================================="
+          echo "COMPILE RELEASE KOTLIN PASSED"
+          echo "=============================================="
 
 
       # ============================================================
-      # 15. FINAL RELEASE IDENTITY
+      # 13. SET FINAL RELEASE IDENTITY
       # ============================================================
 
       - name: Set Final Release Identity
@@ -1149,503 +1112,7 @@ jobs:
 
 
       # ============================================================
-      # 16. COMPILE RELEASE KOTLIN
-      #
-      # IMPORTANT:
-      # STEP 1 TO STEP 15 ARE LEFT UNCHANGED.
-      #
-      # FIRST COMPILATION:
-      # NO SOURCE CHANGE.
-      #
-      # ONLY IF THE EXACT NESTED PRIVATE-FUNCTION PROBLEM EXISTS,
-      # A TARGETED CLOSING BRACE IS INSERTED.
-      # ============================================================
-
-      - name: Compile Release Kotlin
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -uo pipefail
-
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN"
-          echo "=============================================="
-
-          test -f "$MAIN_FILE"
-
-          echo ""
-          echo "MAIN FILE:"
-          echo "$MAIN_FILE"
-
-          echo ""
-          echo "=============================================="
-          echo "FIRST COMPILATION - NO SOURCE CHANGE"
-          echo "=============================================="
-
-          set +e
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            --info \
-            --rerun-tasks \
-            :app:compileReleaseKotlin \
-            2>&1 | tee "$RUNNER_TEMP/kotlin-first-build.log"
-
-          FIRST_STATUS=${PIPESTATUS[0]}
-
-          set -e
-
-          if [ "$FIRST_STATUS" -eq 0 ]; then
-
-            echo ""
-            echo "=============================================="
-            echo "COMPILE RELEASE KOTLIN PASSED"
-            echo "=============================================="
-
-            exit 0
-          fi
-
-
-          echo ""
-          echo "=============================================="
-          echo "FIRST KOTLIN COMPILATION FAILED"
-          echo "=============================================="
-
-          echo ""
-          echo "IMPORTANT KOTLIN ERRORS:"
-
-          grep -E \
-            "Unresolved reference|Modifier 'private'|Expecting|Syntax error|MainActivity.kt:" \
-            "$RUNNER_TEMP/kotlin-first-build.log" \
-            | tail -100 \
-            || true
-
-
-          # ========================================================
-          # DIAGNOSE ONLY AFTER FIRST COMPILATION FAILURE
-          # ========================================================
-
-          echo ""
-          echo "=============================================="
-          echo "DIAGNOSING KOTLIN FUNCTION STRUCTURE"
-          echo "=============================================="
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          source = path.read_text(encoding="utf-8")
-
-          print("SOURCE:", path)
-          print("SOURCE SIZE:", len(source), "bytes")
-
-
-          # ========================================================
-          # Find function declarations
-          # ========================================================
-
-          function_pattern = re.compile(
-              r"(?m)^[ \t]*"
-              r"(?:(?:private|public|internal|protected)[ \t]+)?"
-              r"(?:suspend[ \t]+)?"
-              r"fun[ \t]+"
-              r"([A-Za-z_][A-Za-z0-9_]*)"
-              r"[ \t]*\("
-          )
-
-          functions = list(
-              function_pattern.finditer(source)
-          )
-
-          print("")
-          print(
-              "FUNCTION DECLARATIONS FOUND:",
-              len(functions)
-          )
-
-
-          # ========================================================
-          # Calculate brace depth before a position
-          # ========================================================
-
-          def brace_depth_before(text, position):
-
-              depth = 0
-
-              in_string = False
-              in_char = False
-              escape = False
-              line_comment = False
-              block_comment = False
-
-              i = 0
-
-              while i < position:
-
-                  c = text[i]
-                  n = (
-                      text[i + 1]
-                      if i + 1 < position
-                      else ""
-                  )
-
-                  if line_comment:
-
-                      if c == "\n":
-                          line_comment = False
-
-                      i += 1
-                      continue
-
-                  if block_comment:
-
-                      if c == "*" and n == "/":
-                          block_comment = False
-                          i += 2
-                          continue
-
-                      i += 1
-                      continue
-
-                  if in_string:
-
-                      if escape:
-                          escape = False
-
-                      elif c == "\\":
-                          escape = True
-
-                      elif c == '"':
-                          in_string = False
-
-                      i += 1
-                      continue
-
-                  if in_char:
-
-                      if escape:
-                          escape = False
-
-                      elif c == "\\":
-                          escape = True
-
-                      elif c == "'":
-                          in_char = False
-
-                      i += 1
-                      continue
-
-                  if c == "/" and n == "/":
-                      line_comment = True
-                      i += 2
-                      continue
-
-                  if c == "/" and n == "*":
-                      block_comment = True
-                      i += 2
-                      continue
-
-                  if c == '"':
-                      in_string = True
-                      i += 1
-                      continue
-
-                  if c == "'":
-                      in_char = True
-                      i += 1
-                      continue
-
-                  if c == "{":
-                      depth += 1
-
-                  elif c == "}":
-                      depth -= 1
-
-                  i += 1
-
-              return depth
-
-
-          # ========================================================
-          # Print function structure
-          # ========================================================
-
-          print("")
-          print("FUNCTION STRUCTURE:")
-
-          for match in functions:
-
-              name = match.group(1)
-
-              line = (
-                  source.count(
-                      "\n",
-                      0,
-                      match.start()
-                  )
-                  + 1
-              )
-
-              depth = brace_depth_before(
-                  source,
-                  match.start()
-              )
-
-              print(
-                  f"LINE {line:4d} | "
-                  f"DEPTH {depth:3d} | "
-                  f"{name}"
-              )
-
-
-          # ========================================================
-          # Locate SmallAction
-          # ========================================================
-
-          small = re.search(
-              r"(?m)^[ \t]*"
-              r"(?:(?:private|public|internal|protected)[ \t]+)?"
-              r"(?:suspend[ \t]+)?"
-              r"fun[ \t]+SmallAction[ \t]*\(",
-              source
-          )
-
-          if small:
-
-              line = (
-                  source.count(
-                      "\n",
-                      0,
-                      small.start()
-                  )
-                  + 1
-              )
-
-              print("")
-              print("SmallAction FOUND")
-              print("SmallAction line:", line)
-
-              start_line = max(
-                  1,
-                  line - 25
-              )
-
-              end_line = line + 70
-
-              lines = source.splitlines()
-
-              print("")
-              print("==============================================")
-              print("SOURCE AROUND SmallAction")
-              print("==============================================")
-
-              for no in range(
-                  start_line,
-                  min(
-                      end_line,
-                      len(lines)
-                  ) + 1
-              ):
-                  print(
-                      f"{no:5d}: {lines[no - 1]}"
-                  )
-
-          else:
-
-              print("")
-              print("SmallAction declaration NOT FOUND.")
-
-
-          # ========================================================
-          # Find nested private functions
-          # ========================================================
-
-          nested_private = []
-
-          for match in functions:
-
-              name = match.group(1)
-
-              line = (
-                  source.count(
-                      "\n",
-                      0,
-                      match.start()
-                  )
-                  + 1
-              )
-
-              depth = brace_depth_before(
-                  source,
-                  match.start()
-              )
-
-              line_start = (
-                  source.rfind(
-                      "\n",
-                      0,
-                      match.start()
-                  )
-                  + 1
-              )
-
-              line_end = source.find(
-                  "\n",
-                  match.start()
-              )
-
-              if line_end == -1:
-                  line_end = len(source)
-
-              declaration = source[
-                  line_start:line_end
-              ].strip()
-
-              if (
-                  declaration.startswith(
-                      "private fun"
-                  )
-                  and depth >= 2
-              ):
-
-                  nested_private.append(
-                      (
-                          line,
-                          match.start(),
-                          name,
-                          declaration,
-                          depth
-                      )
-                  )
-
-
-          print("")
-          print(
-              "NESTED PRIVATE FUNCTIONS:",
-              len(nested_private)
-          )
-
-          for item in nested_private:
-
-              print(
-                  "LINE",
-                  item[0],
-                  "|",
-                  item[3],
-                  "| DEPTH",
-                  item[4]
-              )
-
-
-          # ========================================================
-          # Target only the exact problem.
-          #
-          # If exactly ONE private function is nested inside another
-          # function, close the parent function before it.
-          # ========================================================
-
-          if len(nested_private) != 1:
-
-              print("")
-              print(
-                  "ERROR: Expected exactly one nested "
-                  "private function, found:",
-                  len(nested_private)
-              )
-
-              print(
-                  "NO AUTOMATIC SOURCE CHANGE MADE."
-              )
-
-              sys.exit(20)
-
-
-          line, pos, name, declaration, depth = \
-              nested_private[0]
-
-
-          # ========================================================
-          # Only perform this repair when compiler log actually
-          # contains the private-local-function error.
-          # ========================================================
-
-          compiler_log = Path(
-              sys.argv[0]
-          )
-
-          print("")
-          print(
-              "TARGET FUNCTION:",
-              declaration
-          )
-
-          print(
-              "TARGET LINE:",
-              line
-          )
-
-          print(
-              "TARGET DEPTH:",
-              depth
-          )
-
-
-          # ========================================================
-          # Insert ONE closing brace immediately before the nested
-          # private function.
-          # ========================================================
-
-          source = (
-              source[:pos]
-              + "}\n"
-              + source[pos:]
-          )
-
-          path.write_text(
-              source,
-              encoding="utf-8"
-          )
-
-          print("")
-          print(
-              "TARGETED KOTLIN STRUCTURE FIX APPLIED."
-          )
-
-          print(
-              "INSERTED ONE CLOSING BRACE BEFORE:",
-              declaration
-          )
-
-          PY
-
-
-          # ========================================================
-          # SECOND COMPILATION
-          # ========================================================
-
-          echo ""
-          echo "=============================================="
-          echo "SECOND KOTLIN COMPILATION"
-          echo "=============================================="
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            --info \
-            --rerun-tasks \
-            :app:compileReleaseKotlin
-
-          echo ""
-          echo "=============================================="
-          echo "COMPILE RELEASE KOTLIN PASSED"
-          echo "=============================================="
-
-
-      # ============================================================
-      # 17. ASSEMBLE RELEASE APK
+      # 14. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -1672,7 +1139,7 @@ jobs:
 
 
       # ============================================================
-      # 18. LOCATE RELEASE APK
+      # 15. LOCATE RELEASE APK
       # ============================================================
 
       - name: Locate Release APK
@@ -1715,7 +1182,7 @@ jobs:
 
 
       # ============================================================
-      # 19. VERIFY APK PACKAGE
+      # 16. VERIFY APK PACKAGE
       # ============================================================
 
       - name: Verify APK Package
@@ -1764,7 +1231,7 @@ jobs:
 
 
       # ============================================================
-      # 20. PREPARE RELEASE SIGNING
+      # 17. PREPARE RELEASE SIGNING
       # ============================================================
 
       - name: Prepare Release Signing
@@ -1856,7 +1323,7 @@ jobs:
 
 
       # ============================================================
-      # 21. VERIFY SIGNING
+      # 18. VERIFY SIGNING
       # ============================================================
 
       - name: Verify Signing Environment
@@ -1888,7 +1355,7 @@ jobs:
 
 
       # ============================================================
-      # 22. ZIPALIGN
+      # 19. ZIPALIGN
       # ============================================================
 
       - name: Zipalign Release APK
@@ -1927,7 +1394,7 @@ jobs:
 
 
       # ============================================================
-      # 23. SIGN APK
+      # 20. SIGN APK
       # ============================================================
 
       - name: Sign Release APK
@@ -1960,7 +1427,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY APK SIGNATURE
+      # 21. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK Signature
@@ -1986,7 +1453,7 @@ jobs:
 
 
       # ============================================================
-      # 25. FINAL APK VALIDATION
+      # 22. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK Validation
@@ -2056,7 +1523,7 @@ jobs:
 
 
       # ============================================================
-      # 26. UPLOAD FINAL SIGNED APK
+      # 23. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -2069,7 +1536,7 @@ jobs:
 
 
       # ============================================================
-      # 27. UPLOAD BUILD REPORTS
+      # 24. UPLOAD BUILD REPORTS
       # ============================================================
 
       - name: Upload Build Reports
