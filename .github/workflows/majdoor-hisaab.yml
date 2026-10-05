@@ -454,7 +454,7 @@ jobs:
 
 
       # ============================================================
-      # 15. COMPILE + BUILD RELEASE APK
+      # 15. FIX VERIFIED KOTLIN SOURCE + BUILD RELEASE APK
       # ============================================================
       - name: Compile Release Kotlin and Build APK
         shell: bash
@@ -472,11 +472,134 @@ jobs:
           fi
 
           echo "=========================================="
-          echo "KOTLIN SOURCE FOUND"
+          echo "VERIFYING MAINACTIVITY SOURCE"
           echo "=========================================="
 
           echo "MainActivity.kt:"
           echo "$MAIN_KT"
+
+          echo ""
+          echo "Line count before repair:"
+          wc -l "$MAIN_KT"
+
+          # --------------------------------------------------------
+          # IMPORTANT KOTLIN FIX
+          #
+          # Dashboard() had one missing closing brace after the
+          # Dashboard LazyColumn. Because of that, functions such
+          # as Stat(), money(), validDate(), DetailTopBar() and
+          # SmallAction() were being parsed inside Dashboard().
+          #
+          # This exact repair closes Dashboard() before
+          # DashboardStat().
+          # --------------------------------------------------------
+
+          python3 - "$MAIN_KT" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          marker = (
+              "    }\n"
+              "}\n"
+              "\n"
+              "\n"
+              "@Composable private fun DashboardStat"
+          )
+
+          fixed_marker = (
+              "    }\n"
+              "}\n"
+              "}\n"
+              "\n"
+              "\n"
+              "@Composable private fun DashboardStat"
+          )
+
+          if fixed_marker in text:
+              print("Dashboard brace repair already present.")
+          elif marker in text:
+              text = text.replace(marker, fixed_marker, 1)
+              path.write_text(text, encoding="utf-8")
+              print("Dashboard missing closing brace repaired successfully.")
+          else:
+              print("ERROR: Expected Dashboard source marker was not found.")
+              sys.exit(1)
+          PY
+
+          echo ""
+          echo "=========================================="
+          echo "VERIFYING KOTLIN REPAIR"
+          echo "=========================================="
+
+          grep -n \
+            "private fun DashboardStat" \
+            "$MAIN_KT"
+
+          grep -n \
+            "private fun Stat" \
+            "$MAIN_KT"
+
+          grep -n \
+            "private fun money" \
+            "$MAIN_KT"
+
+          grep -n \
+            "private fun validDate" \
+            "$MAIN_KT"
+
+          grep -n \
+            "private fun DetailTopBar" \
+            "$MAIN_KT"
+
+          grep -n \
+            "private fun SmallAction" \
+            "$MAIN_KT"
+
+          echo ""
+          echo "Line count after repair:"
+          wc -l "$MAIN_KT"
+
+          echo ""
+          echo "=========================================="
+          echo "CHECKING KOTLIN BRACE BALANCE"
+          echo "=========================================="
+
+          python3 - "$MAIN_KT" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          depth = 0
+          minimum = 0
+
+          for line in text.splitlines():
+              line = re.sub(r'"(?:\\.|[^"\\])*"', '""', line)
+              line = re.sub(r'//.*', '', line)
+
+              depth += line.count("{")
+              depth -= line.count("}")
+
+              minimum = min(minimum, depth)
+
+          print(f"Final brace depth: {depth}")
+          print(f"Minimum brace depth: {minimum}")
+
+          if depth != 0:
+              print("ERROR: Kotlin braces are not balanced.")
+              sys.exit(1)
+
+          if minimum < 0:
+              print("ERROR: Kotlin brace depth went negative.")
+              sys.exit(1)
+
+          print("Kotlin brace balance OK.")
+          PY
 
           echo ""
           echo "=========================================="
