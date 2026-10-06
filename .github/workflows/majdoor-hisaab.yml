@@ -71,9 +71,7 @@ jobs:
       # ============================================================
       # 4. LOCATE ANDROID SDK
       #
-      # Do NOT use android-actions/setup-android@v3 here.
-      # This avoids the previous "Failed to find package tools"
-      # error.
+      # Do NOT use android-actions/setup-android@v3.
       # ============================================================
 
       - name: Locate Android SDK
@@ -98,10 +96,8 @@ jobs:
             SDK_ROOT="/usr/local/lib/android/sdk"
 
           else
-
             echo "::error::Android SDK not found."
             exit 1
-
           fi
 
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
@@ -134,9 +130,7 @@ jobs:
 
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
-          echo
-          echo "SDKMANAGER:"
-          echo "$SDKMANAGER"
+          echo "SDKMANAGER=$SDKMANAGER"
 
           "$SDKMANAGER" --version
 
@@ -157,10 +151,10 @@ jobs:
 
 
       # ============================================================
-      # 6. INSTALL ANDROID API 36
+      # 6. INSTALL API 36
       #
       # IMPORTANT:
-      # No obsolete "tools" package is requested.
+      # No obsolete "tools" package.
       # ============================================================
 
       - name: Install Android API 36 and Build Tools
@@ -188,13 +182,12 @@ jobs:
           test -x \
             "$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
 
-          echo
           echo "Android API ${ANDROID_API}: PASS"
           echo "Build Tools ${BUILD_TOOLS}: PASS"
 
 
       # ============================================================
-      # 7. VERIFY BUILD ENVIRONMENT
+      # 7. VERIFY ENVIRONMENT
       # ============================================================
 
       - name: Verify Java Gradle and Android
@@ -202,34 +195,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "=============================================="
-          echo "JAVA"
-          echo "=============================================="
+          echo "================ JAVA ================"
           java -version
 
           echo
-          echo "=============================================="
-          echo "GRADLE"
-          echo "=============================================="
+          echo "================ GRADLE ================"
           gradle --version
 
           echo
-          echo "=============================================="
-          echo "ANDROID SDK"
-          echo "=============================================="
+          echo "================ ANDROID ================"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           echo "ANDROID_HOME=$ANDROID_HOME"
 
           echo
-          echo "=============================================="
-          echo "AAPT2"
-          echo "=============================================="
+          echo "================ AAPT2 ================"
           "$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt2" version
 
           echo
-          echo "=============================================="
-          echo "APKSIGNER"
-          echo "=============================================="
+          echo "================ APKSIGNER ================"
           "$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner" --version
 
           echo
@@ -248,11 +231,8 @@ jobs:
           ZIP_PATH=""
 
           if [ -f "$GITHUB_WORKSPACE/${ZIP_NAME}" ]; then
-
             ZIP_PATH="$GITHUB_WORKSPACE/${ZIP_NAME}"
-
           else
-
             ZIP_PATH="$(
               find "$GITHUB_WORKSPACE" \
                 -type f \
@@ -261,40 +241,31 @@ jobs:
                 -quit \
                 2>/dev/null || true
             )"
-
           fi
 
           if [ -z "$ZIP_PATH" ]; then
-
             echo "::error::V9 project ZIP not found."
-
             echo
-            echo "Expected ZIP:"
+            echo "Expected:"
             echo "$ZIP_NAME"
-
             echo
             echo "Available ZIP files:"
-
             find "$GITHUB_WORKSPACE" \
               -type f \
               -iname "*.zip" \
               -print || true
-
             exit 1
-
           fi
 
           echo "PROJECT_ZIP=$ZIP_PATH" >> "$GITHUB_ENV"
 
           echo
-          echo "=============================================="
-          echo "V9 ZIP FOUND"
-          echo "=============================================="
+          echo "V9 ZIP:"
           echo "$ZIP_PATH"
 
 
       # ============================================================
-      # 9. VERIFY ZIP INTEGRITY
+      # 9. VERIFY ZIP
       # ============================================================
 
       - name: Verify V9 ZIP integrity
@@ -304,12 +275,11 @@ jobs:
 
           unzip -t "$PROJECT_ZIP"
 
-          echo
           echo "V9 ZIP integrity: PASS"
 
 
       # ============================================================
-      # 10. EXTRACT V9 ZIP
+      # 10. EXTRACT ZIP
       # ============================================================
 
       - name: Extract V9 project ZIP
@@ -320,7 +290,6 @@ jobs:
           EXTRACT_ROOT="$RUNNER_TEMP/majdoor-v9-project"
 
           rm -rf "$EXTRACT_ROOT"
-
           mkdir -p "$EXTRACT_ROOT"
 
           unzip -q \
@@ -329,20 +298,11 @@ jobs:
 
           echo "EXTRACT_ROOT=$EXTRACT_ROOT" >> "$GITHUB_ENV"
 
-          echo
           echo "V9 ZIP extraction: PASS"
-
-          echo
-          echo "Extracted files:"
-          find "$EXTRACT_ROOT" \
-            -maxdepth 4 \
-            -type f \
-            | sort \
-            | head -500
 
 
       # ============================================================
-      # 11. LOCATE ANDROID GRADLE PROJECT
+      # 11. LOCATE ANDROID PROJECT
       # ============================================================
 
       - name: Locate Android Gradle project
@@ -364,11 +324,8 @@ jobs:
           )"
 
           if [ -z "$SETTINGS_FILE" ]; then
-
             echo "::error::Gradle settings file not found."
-
             exit 1
-
           fi
 
           PROJECT_ROOT="$(dirname "$SETTINGS_FILE")"
@@ -376,14 +333,12 @@ jobs:
           echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
           echo
-          echo "=============================================="
-          echo "ANDROID PROJECT ROOT"
-          echo "=============================================="
+          echo "PROJECT_ROOT:"
           echo "$PROJECT_ROOT"
 
 
       # ============================================================
-      # 12. VERIFY ANDROID PROJECT STRUCTURE
+      # 12. VERIFY PROJECT STRUCTURE
       # ============================================================
 
       - name: Verify Android project
@@ -415,12 +370,11 @@ jobs:
           test -f \
             "$PROJECT_ROOT/app/src/main/res/xml/file_paths.xml"
 
-          echo
           echo "Android project structure: PASS"
 
 
       # ============================================================
-      # 13. VERIFY MAINACTIVITY KOTLIN
+      # 13. VERIFY MAINACTIVITY
       # ============================================================
 
       - name: Verify MainActivity Kotlin source
@@ -430,7 +384,7 @@ jobs:
 
           MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
-          echo "Checking MainActivity:"
+          echo "MainActivity:"
           echo "$MAIN"
 
           if grep -Fxq \
@@ -438,9 +392,7 @@ jobs:
             "$MAIN"; then
 
             echo "::error::Invalid lazy.item import found."
-
             exit 1
-
           fi
 
           if ! grep -Fxq \
@@ -448,9 +400,7 @@ jobs:
             "$MAIN"; then
 
             echo "::error::lazy.items import missing."
-
             exit 1
-
           fi
 
           REQUIRED_SYMBOLS="
@@ -487,16 +437,12 @@ jobs:
             fi
 
             if ! grep -q "$SYMBOL" "$MAIN"; then
-
               echo "::error::Required source symbol missing: $SYMBOL"
-
               exit 1
-
             fi
 
           done <<< "$REQUIRED_SYMBOLS"
 
-          echo
           echo "MainActivity source verification: PASS"
 
 
@@ -511,9 +457,6 @@ jobs:
 
           FILE="$PROJECT_ROOT/app/src/main/res/xml/file_paths.xml"
 
-          echo "FileProvider file:"
-          echo "$FILE"
-
           grep -q \
             "cache-path" \
             "$FILE"
@@ -522,12 +465,11 @@ jobs:
             'path="reports/"' \
             "$FILE"
 
-          echo
           echo "FileProvider reports path: PASS"
 
 
       # ============================================================
-      # 15. VERIFY PACKAGE / VERSION / SDK
+      # 15. VERIFY APP CONFIG
       # ============================================================
 
       - name: Verify application configuration
@@ -540,20 +482,12 @@ jobs:
           echo "Application configuration:"
           echo
 
-          grep -n \
-            "applicationId" \
-            "$APP_GRADLE" \
-            || true
-
-          grep -n \
-            "versionCode" \
-            "$APP_GRADLE" \
-            || true
-
-          grep -n \
-            "versionName" \
-            "$APP_GRADLE" \
-            || true
+          grep -n "applicationId" "$APP_GRADLE" || true
+          grep -n "versionCode" "$APP_GRADLE" || true
+          grep -n "versionName" "$APP_GRADLE" || true
+          grep -n "compileSdk" "$APP_GRADLE" || true
+          grep -n "targetSdk" "$APP_GRADLE" || true
+          grep -n "minSdk" "$APP_GRADLE" || true
 
           echo
 
@@ -585,12 +519,11 @@ jobs:
             "JavaVersion.VERSION_17" \
             "$APP_GRADLE"
 
-          echo
           echo "Package/version/SDK verification: PASS"
 
 
       # ============================================================
-      # 16. CONFIGURE ANDROID SDK
+      # 16. CONFIGURE SDK
       # ============================================================
 
       - name: Configure Android SDK
@@ -598,21 +531,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          printf \
-            'sdk.dir=%s\n' \
+          printf 'sdk.dir=%s\n' \
             "$ANDROID_SDK_ROOT" \
             > "$PROJECT_ROOT/local.properties"
 
-          echo "local.properties:"
           cat "$PROJECT_ROOT/local.properties"
 
 
       # ============================================================
-      # 17. CHECK EXISTING PERMANENT SIGNING SECRETS
+      # 17. CHECK PERMANENT SIGNING SECRETS
       #
-      # IMPORTANT:
-      #
-      # These are the EXACT names visible in your GitHub screenshot:
+      # EXACT SECRET NAMES FROM YOUR GITHUB SCREENSHOT:
       #
       # RELEASE_KEYSTORE_BASE64
       # RELEASE_KEYSTORE_PASSWORD
@@ -635,35 +564,23 @@ jobs:
           MISSING=0
 
           if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ]; then
-
             echo "::error::Missing secret: RELEASE_KEYSTORE_BASE64"
-
             MISSING=1
-
           fi
 
           if [ -z "${RELEASE_KEYSTORE_PASSWORD:-}" ]; then
-
             echo "::error::Missing secret: RELEASE_KEYSTORE_PASSWORD"
-
             MISSING=1
-
           fi
 
           if [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
-
             echo "::error::Missing secret: RELEASE_KEY_ALIAS"
-
             MISSING=1
-
           fi
 
           if [ -z "${RELEASE_KEY_PASSWORD:-}" ]; then
-
             echo "::error::Missing secret: RELEASE_KEY_PASSWORD"
-
             MISSING=1
-
           fi
 
           if [ "$MISSING" -ne 0 ]; then
@@ -674,28 +591,25 @@ jobs:
             echo "=============================================="
 
             echo
-            echo "Required existing secrets:"
-            echo "RELEASE_KEYSTORE_BASE64"
-            echo "RELEASE_KEYSTORE_PASSWORD"
-            echo "RELEASE_KEY_ALIAS"
-            echo "RELEASE_KEY_PASSWORD"
+            echo "Required repository secrets:"
+            echo "1. RELEASE_KEYSTORE_BASE64"
+            echo "2. RELEASE_KEYSTORE_PASSWORD"
+            echo "3. RELEASE_KEY_ALIAS"
+            echo "4. RELEASE_KEY_PASSWORD"
 
             echo
-            echo "No temporary keystore will be generated."
+            echo "NO temporary keystore will be generated."
 
             exit 1
-
           fi
 
-          echo
           echo "All permanent signing secrets are PRESENT."
 
 
       # ============================================================
       # 18. PREPARE PERMANENT PRODUCTION KEYSTORE
       #
-      # NO NEW KEY IS GENERATED.
-      # Existing production key is used.
+      # NEVER generate a new key here.
       # ============================================================
 
       - name: Prepare permanent production signing keystore
@@ -704,14 +618,11 @@ jobs:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
 
         run: |
           set -euo pipefail
 
           KEYSTORE_FILE="$RUNNER_TEMP/majdoor-hisaab-pro-production.p12"
-
-          echo "Decoding permanent production keystore..."
 
           printf '%s' \
             "$RELEASE_KEYSTORE_BASE64" \
@@ -722,9 +633,6 @@ jobs:
 
           test -s "$KEYSTORE_FILE"
 
-          echo
-          echo "Verifying keystore and alias..."
-
           keytool \
             -list \
             -storetype PKCS12 \
@@ -732,13 +640,6 @@ jobs:
             -storepass "$RELEASE_KEYSTORE_PASSWORD" \
             -alias "$RELEASE_KEY_ALIAS" \
             >/dev/null
-
-          echo "Keystore verification: PASS"
-
-
-          # --------------------------------------------------------
-          # Get certificate SHA-256 from permanent keystore.
-          # --------------------------------------------------------
 
           CERT_SHA256="$(
             keytool \
@@ -748,30 +649,19 @@ jobs:
               -keystore "$KEYSTORE_FILE" \
               -storepass "$RELEASE_KEYSTORE_PASSWORD" \
               -alias "$RELEASE_KEY_ALIAS" \
-              | awk -F': ' \
-                '/SHA256:/{print $2; exit}' \
+              | awk -F': ' '/SHA256:/{print $2; exit}' \
               | tr -d ' :\r\n' \
               | tr '[:lower:]' '[:upper:]'
           )"
 
           if [ -z "$CERT_SHA256" ]; then
-
             echo "::error::Could not read production certificate SHA-256."
-
             exit 1
-
           fi
 
-          echo
-          echo "Production certificate fingerprint found."
+          echo "KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "RELEASE_CERT_SHA256=$CERT_SHA256" >> "$GITHUB_ENV"
 
-          echo "KEYSTORE_FILE=$KEYSTORE_FILE" \
-            >> "$GITHUB_ENV"
-
-          echo "RELEASE_CERT_SHA256=$CERT_SHA256" \
-            >> "$GITHUB_ENV"
-
-          echo
           echo "Permanent production keystore: PASS"
 
 
@@ -794,30 +684,23 @@ jobs:
 
 
       # ============================================================
-      # 20. BUILD SIGNED RELEASE APK
+      # 20. BUILD RELEASE APK
       #
-      # The existing permanent production keystore is supplied
-      # through environment variables.
+      # We build first.
+      # Then below we determine whether Gradle already signed it.
+      #
+      # If unsigned:
+      #   ZIPALIGN -> APKSIGNER -> permanent production key
+      #
+      # If already signed:
+      #   certificate MUST match permanent production key.
       # ============================================================
 
-      - name: Build signed Release APK
+      - name: Build Release APK
         working-directory: ${{ env.PROJECT_ROOT }}
         shell: bash
-        env:
-          KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
-          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-
         run: |
           set -euo pipefail
-
-          test -f "$KEYSTORE_FILE"
-
-          echo
-          echo "=============================================="
-          echo "BUILDING SIGNED RELEASE APK"
-          echo "=============================================="
 
           gradle \
             :app:assembleRelease \
@@ -825,20 +708,19 @@ jobs:
             --stacktrace \
             --info
 
-          echo
-          echo "Signed Release APK build: PASS"
+          echo "Release APK build: PASS"
 
 
       # ============================================================
-      # 21. LOCATE FINAL APK
+      # 21. LOCATE RAW APK
       # ============================================================
 
-      - name: Locate final APK
+      - name: Locate Release APK
         shell: bash
         run: |
           set -euo pipefail
 
-          APK_PATH="$(
+          RAW_APK="$(
             find \
               "$PROJECT_ROOT/app/build/outputs/apk/release" \
               -type f \
@@ -848,42 +730,134 @@ jobs:
               2>/dev/null || true
           )"
 
-          if [ -z "$APK_PATH" ]; then
-
+          if [ -z "$RAW_APK" ]; then
             echo "::error::Release APK not found."
-
-            echo
-            echo "APK directory:"
-            find \
-              "$PROJECT_ROOT/app/build/outputs/apk" \
-              -type f \
-              -print \
-              2>/dev/null || true
-
             exit 1
+          fi
+
+          echo "RAW_APK=$RAW_APK" >> "$GITHUB_ENV"
+
+          echo
+          echo "RAW APK:"
+          echo "$RAW_APK"
+
+          ls -lh "$RAW_APK"
+
+
+      # ============================================================
+      # 22. SIGN / VERIFY WITH PERMANENT KEY
+      # ============================================================
+
+      - name: Sign Release APK with permanent production key
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+        run: |
+          set -euo pipefail
+
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/apksigner"
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/zipalign"
+
+          FINAL_APK="$RUNNER_TEMP/$APK_NAME"
+          ALIGNED_APK="$RUNNER_TEMP/aligned-release.apk"
+
+          # --------------------------------------------------------
+          # CASE 1:
+          # Gradle already produced a signed APK.
+          # --------------------------------------------------------
+
+          if "$APKSIGNER" verify "$RAW_APK" >/dev/null 2>&1; then
+
+            echo "Gradle APK is already signed."
+
+            ACTUAL_CERT="$(
+              "$APKSIGNER" \
+                verify \
+                --print-certs \
+                "$RAW_APK" \
+                2>&1 \
+                | awk -F': ' \
+                  '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' \
+                | tr -d ' :\r\n' \
+                | tr '[:lower:]' '[:upper:]'
+            )"
+
+            EXPECTED_CERT="$(
+              printf '%s' "$RELEASE_CERT_SHA256" \
+                | tr -d ' :\r\n' \
+                | tr '[:lower:]' '[:upper:]'
+            )"
+
+            echo "Expected certificate:"
+            echo "$EXPECTED_CERT"
+
+            echo "APK certificate:"
+            echo "$ACTUAL_CERT"
+
+            if [ -z "$ACTUAL_CERT" ]; then
+              echo "::error::Could not read APK certificate."
+              exit 1
+            fi
+
+            if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+              echo "::error::APK is signed with a different certificate."
+              echo "::error::Permanent production certificate mismatch."
+              exit 1
+            fi
+
+            cp "$RAW_APK" "$FINAL_APK"
+
+            echo "Existing permanent signature: VERIFIED."
+
+          else
+
+            # ------------------------------------------------------
+            # CASE 2:
+            # APK is unsigned.
+            # Align and sign using permanent production key.
+            # ------------------------------------------------------
+
+            echo "APK is unsigned."
+            echo "Signing with permanent production keystore."
+
+            rm -f "$ALIGNED_APK"
+
+            "$ZIPALIGN" \
+              -f \
+              -P 16 \
+              4 \
+              "$RAW_APK" \
+              "$ALIGNED_APK"
+
+            "$APKSIGNER" sign \
+              --ks "$KEYSTORE_FILE" \
+              --ks-type PKCS12 \
+              --ks-pass env:RELEASE_KEYSTORE_PASSWORD \
+              --key-pass env:RELEASE_KEY_PASSWORD \
+              --ks-key-alias "$RELEASE_KEY_ALIAS" \
+              --min-sdk-version 23 \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out "$FINAL_APK" \
+              "$ALIGNED_APK"
+
+            echo "Permanent production signing: PASS."
 
           fi
 
-          FINAL_APK="$RUNNER_TEMP/$APK_NAME"
+          echo "FINAL_APK=$FINAL_APK" >> "$GITHUB_ENV"
 
-          cp \
-            "$APK_PATH" \
-            "$FINAL_APK"
-
-          echo "FINAL_APK=$FINAL_APK" \
-            >> "$GITHUB_ENV"
-
-          echo
-          echo "=============================================="
-          echo "FINAL APK"
-          echo "=============================================="
-          echo "$FINAL_APK"
+          test -f "$FINAL_APK"
 
           ls -lh "$FINAL_APK"
 
 
       # ============================================================
-      # 22. VERIFY APK SIGNATURE
+      # 23. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -904,10 +878,7 @@ jobs:
 
 
       # ============================================================
-      # 23. VERIFY FINAL APK CERTIFICATE
-      #
-      # Compares APK certificate against the certificate obtained
-      # directly from the permanent production keystore.
+      # 24. VERIFY PRODUCTION CERTIFICATE
       # ============================================================
 
       - name: Verify final production certificate
@@ -937,15 +908,12 @@ jobs:
           )"
 
           if [ -z "$ACTUAL" ]; then
-
             echo "::error::Could not read final APK certificate."
-
             exit 1
-
           fi
 
           echo
-          echo "Permanent production certificate:"
+          echo "Production certificate:"
           echo "$EXPECTED"
 
           echo
@@ -953,14 +921,8 @@ jobs:
           echo "$ACTUAL"
 
           if [ "$EXPECTED" != "$ACTUAL" ]; then
-
-            echo
             echo "::error::FINAL APK CERTIFICATE MISMATCH."
-
-            echo "APK was NOT signed with the permanent production key."
-
             exit 1
-
           fi
 
           echo
@@ -968,7 +930,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY APK ALIGNMENT
+      # 25. VERIFY APK ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -984,12 +946,11 @@ jobs:
             4 \
             "$FINAL_APK"
 
-          echo
           echo "APK alignment verification: PASS"
 
 
       # ============================================================
-      # 25. VERIFY APK PACKAGE AND VERSION
+      # 26. VERIFY PACKAGE AND VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -998,7 +959,6 @@ jobs:
           set -euo pipefail
 
           AAPT2="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}/aapt2"
-
           BADGING="$RUNNER_TEMP/badging.txt"
 
           "$AAPT2" \
@@ -1007,7 +967,6 @@ jobs:
             "$FINAL_APK" \
             > "$BADGING"
 
-          echo
           echo "=============================================="
           echo "APK BADGING"
           echo "=============================================="
@@ -1015,9 +974,7 @@ jobs:
           cat "$BADGING"
 
           echo
-          echo "=============================================="
-          echo "PACKAGE CHECK"
-          echo "=============================================="
+          echo "Checking package..."
 
           grep -q \
             "package: name='${PACKAGE_NAME}'" \
@@ -1025,11 +982,8 @@ jobs:
 
           echo "Package: PASS"
 
-
           echo
-          echo "=============================================="
-          echo "VERSION CODE CHECK"
-          echo "=============================================="
+          echo "Checking version code..."
 
           grep -q \
             "versionCode='${VERSION_CODE}'" \
@@ -1037,11 +991,8 @@ jobs:
 
           echo "Version Code: PASS"
 
-
           echo
-          echo "=============================================="
-          echo "VERSION NAME CHECK"
-          echo "=============================================="
+          echo "Checking version name..."
 
           grep -q \
             "versionName='${VERSION_NAME}'" \
@@ -1049,13 +1000,12 @@ jobs:
 
           echo "Version Name: PASS"
 
-
           echo
           echo "FINAL APK PACKAGE/VERSION: PASS"
 
 
       # ============================================================
-      # 26. FINAL APK SHA256
+      # 27. SHA256
       # ============================================================
 
       - name: Calculate final APK SHA256
@@ -1063,7 +1013,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo
           echo "=============================================="
           echo "FINAL APK SHA256"
           echo "=============================================="
@@ -1072,7 +1021,11 @@ jobs:
 
 
       # ============================================================
-      # 27. CREATE FINAL RELEASE REPORT
+      # 28. CREATE FINAL RELEASE REPORT
+      #
+      # IMPORTANT:
+      # NO YAML HEREDOC.
+      # This avoids the previous line-1100 YAML error.
       # ============================================================
 
       - name: Create final release report
@@ -1083,7 +1036,6 @@ jobs:
           RELEASE_DIR="$RUNNER_TEMP/release"
 
           rm -rf "$RELEASE_DIR"
-
           mkdir -p "$RELEASE_DIR"
 
           cp \
@@ -1095,66 +1047,65 @@ jobs:
             | awk '{print $1}'
           )"
 
-          cat > \
-            "$RELEASE_DIR/BUILD-REPORT.txt" <<EOF
-MAJDOOR HISAAB PRO V82
-FINAL SIGNED RELEASE APK
-
-==============================================
-
-Package:
-${PACKAGE_NAME}
-
-Version:
-${VERSION_NAME}
-
-Version Code:
-${VERSION_CODE}
-
-Java:
-${JAVA_VERSION}
-
-Gradle:
-${GRADLE_VERSION}
-
-Android API:
-${ANDROID_API}
-
-Build Tools:
-${BUILD_TOOLS}
-
-ZIP:
-${ZIP_NAME}
-
-APK:
-${APK_NAME}
-
-Signing:
-PERMANENT PRODUCTION KEYSTORE
-
-APK Signature:
-VERIFIED
-
-Production Certificate:
-VERIFIED
-
-APK Alignment:
-VERIFIED
-
-Package:
-VERIFIED
-
-Version:
-VERIFIED
-
-APK SHA256:
-${APK_SHA256}
-
-BUILD STATUS:
-SUCCESS
-
-==============================================
-EOF
+          printf '%s\n' \
+            "MAJDOOR HISAAB PRO V82" \
+            "FINAL SIGNED RELEASE APK" \
+            "" \
+            "==============================================" \
+            "" \
+            "Package:" \
+            "${PACKAGE_NAME}" \
+            "" \
+            "Version:" \
+            "${VERSION_NAME}" \
+            "" \
+            "Version Code:" \
+            "${VERSION_CODE}" \
+            "" \
+            "Java:" \
+            "${JAVA_VERSION}" \
+            "" \
+            "Gradle:" \
+            "${GRADLE_VERSION}" \
+            "" \
+            "Android API:" \
+            "${ANDROID_API}" \
+            "" \
+            "Build Tools:" \
+            "${BUILD_TOOLS}" \
+            "" \
+            "ZIP:" \
+            "${ZIP_NAME}" \
+            "" \
+            "APK:" \
+            "${APK_NAME}" \
+            "" \
+            "Signing:" \
+            "PERMANENT PRODUCTION KEYSTORE" \
+            "" \
+            "APK Signature:" \
+            "VERIFIED" \
+            "" \
+            "Production Certificate:" \
+            "VERIFIED" \
+            "" \
+            "APK Alignment:" \
+            "VERIFIED" \
+            "" \
+            "Package:" \
+            "VERIFIED" \
+            "" \
+            "Version:" \
+            "VERIFIED" \
+            "" \
+            "APK SHA256:" \
+            "${APK_SHA256}" \
+            "" \
+            "BUILD STATUS:" \
+            "SUCCESS" \
+            "" \
+            "==============================================" \
+            > "$RELEASE_DIR/BUILD-REPORT.txt"
 
           printf '%s  %s\n' \
             "$APK_SHA256" \
@@ -1174,7 +1125,7 @@ EOF
 
 
       # ============================================================
-      # 28. UPLOAD FINAL SIGNED APK
+      # 29. UPLOAD FINAL APK
       # ============================================================
 
       - name: Upload Final Signed APK
@@ -1190,16 +1141,18 @@ EOF
 
 
       # ============================================================
-      # 29. FINAL SUCCESS SUMMARY
+      # 30. FINAL SUCCESS SUMMARY
       # ============================================================
 
       - name: Final success summary
         shell: bash
         run: |
+          set -euo pipefail
+
           echo
           echo "================================================"
-          echo "        MAJDOOR HISAAB PRO V82"
-          echo "        FINAL BUILD SUCCESS"
+          echo "       MAJDOOR HISAAB PRO V82"
+          echo "       FINAL BUILD SUCCESS"
           echo "================================================"
           echo
           echo "Package:"
@@ -1227,19 +1180,18 @@ EOF
 
 
       # ============================================================
-      # 30. CLEANUP
+      # 31. CLEANUP
       # ============================================================
 
       - name: Cleanup signing material
         if: always()
         shell: bash
         run: |
-          if [ -n "${KEYSTORE_FILE:-}" ]; then
-            rm -f "$KEYSTORE_FILE" || true
-          fi
-
           rm -f \
+            "${KEYSTORE_FILE:-}" \
             "${FINAL_APK:-}" \
+            "${RAW_APK:-}" \
+            "${RUNNER_TEMP:-}/aligned-release.apk" \
             2>/dev/null || true
 
           echo "Temporary signing material cleaned."
