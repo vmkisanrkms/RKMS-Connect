@@ -112,7 +112,7 @@ jobs:
 
 
       # ============================================================
-      # 5. SDKMANAGER
+      # 5. LOCATE SDKMANAGER
       # ============================================================
 
       - name: Locate sdkmanager
@@ -211,7 +211,7 @@ jobs:
 
 
       # ============================================================
-      # 9. JAVA
+      # 9. VERIFY JAVA
       # ============================================================
 
       - name: Verify Java
@@ -225,7 +225,7 @@ jobs:
 
 
       # ============================================================
-      # 10. GRADLE
+      # 10. VERIFY GRADLE
       # ============================================================
 
       - name: Verify Gradle
@@ -258,7 +258,7 @@ jobs:
 
 
       # ============================================================
-      # 12. FIND MAJDOOR HISAAB ZIP
+      # 12. LOCATE MAJDOOR HISAAB ZIP
       # ============================================================
 
       - name: Locate Majdoor Hisaab ZIP
@@ -287,7 +287,8 @@ jobs:
 
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
 
-          echo "FOUND:"
+          echo
+          echo "FOUND ZIP:"
           echo "$ZIP_PATH"
 
 
@@ -329,7 +330,7 @@ jobs:
 
 
       # ============================================================
-      # 15. FIND GRADLE PROJECT ROOT
+      # 15. LOCATE GRADLE PROJECT ROOT
       # ============================================================
 
       - name: Locate Gradle project root
@@ -385,6 +386,7 @@ jobs:
 
           test -f "$MAIN"
 
+          echo
           echo "Android project structure PASSED."
 
 
@@ -407,60 +409,81 @@ jobs:
           python3 - "$MAIN" <<'PY'
           import sys
           from pathlib import Path
+          import re
 
           main = Path(sys.argv[1])
 
-          text = main.read_text(encoding="utf-8")
+          text = main.read_text(
+              encoding="utf-8"
+          )
 
-          print("MainActivity:", main)
+          print("==============================================")
+          print("MAINACTIVITY KOTLIN SOURCE REPAIR")
+          print("==============================================")
+          print("File:", main)
           print("Original lines:", len(text.splitlines()))
 
-          # ========================================================
+          # --------------------------------------------------------
           # FIX 1
           #
-          # This import is invalid:
+          # Remove ONLY this exact invalid import:
           #
           # import androidx.compose.foundation.lazy.item
           #
-          # LazyColumn's item{} is available through LazyListScope.
-          # No standalone import is required.
-          # ========================================================
+          # IMPORTANT:
+          # lazy.item is a prefix of lazy.items, therefore substring
+          # matching must NOT be used.
+          # --------------------------------------------------------
 
-          bad_import = "import androidx.compose.foundation.lazy.item\n"
-
-          if bad_import in text:
-              text = text.replace(bad_import, "")
-              print("FIXED: Removed invalid lazy.item import.")
-          else:
-              print("OK: Invalid lazy.item import not present.")
-
-          # Also remove CRLF variant if present.
-          text = text.replace(
-              "import androidx.compose.foundation.lazy.item\r\n",
-              ""
+          invalid_import = (
+              "import androidx.compose.foundation.lazy.item"
           )
 
-          # ========================================================
+          correct_import = (
+              "import androidx.compose.foundation.lazy.items"
+          )
+
+          original_lines = text.splitlines()
+
+          fixed_lines = []
+
+          removed_invalid = False
+
+          for line in original_lines:
+              if line.strip() == invalid_import:
+                  removed_invalid = True
+                  continue
+
+              fixed_lines.append(line)
+
+          if removed_invalid:
+              print("FIXED: Removed exact lazy.item import.")
+          else:
+              print("OK: Exact lazy.item import not present.")
+
+          text = "\n".join(fixed_lines) + "\n"
+
+          # --------------------------------------------------------
           # FIX 2
           #
-          # Make sure the correct items import exists.
-          # ========================================================
+          # Correct import MUST exist.
+          # --------------------------------------------------------
 
-          required_import = "import androidx.compose.foundation.lazy.items"
-
-          if required_import not in text:
+          if not any(
+              line.strip() == correct_import
+              for line in fixed_lines
+          ):
               raise SystemExit(
-                  "ERROR: Correct androidx.compose.foundation.lazy.items "
-                  "import is missing."
+                  "ERROR: Correct lazy.items import is missing."
               )
 
-          # ========================================================
+          print("OK: lazy.items import verified.")
+
+          # --------------------------------------------------------
           # FIX 3
           #
-          # Check that MainActivity has the expected top-level
-          # functions. We do NOT modify arbitrary braces by line
-          # number.
-          # ========================================================
+          # Required source symbols.
+          # --------------------------------------------------------
 
           required_symbols = [
               "fun validDate",
@@ -487,23 +510,22 @@ jobs:
           for symbol in required_symbols:
               if symbol not in text:
                   raise SystemExit(
-                      f"ERROR: Required Kotlin symbol missing: {symbol}"
+                      "ERROR: Required Kotlin symbol missing: "
+                      + symbol
                   )
 
-          # ========================================================
+          print("OK: Required Kotlin symbols verified.")
+
+          # --------------------------------------------------------
           # FIX 4
           #
-          # Basic lexical brace check.
+          # Basic brace balance.
           #
-          # Strings and comments are removed before counting so
-          # braces appearing inside UI text do not interfere.
-          # ========================================================
-
-          import re
+          # Comments and strings are removed before counting.
+          # --------------------------------------------------------
 
           cleaned = text
 
-          # Remove block comments.
           cleaned = re.sub(
               r"/\*.*?\*/",
               "",
@@ -511,21 +533,18 @@ jobs:
               flags=re.S
           )
 
-          # Remove line comments.
           cleaned = re.sub(
               r"//.*",
               "",
               cleaned
           )
 
-          # Remove normal Kotlin strings.
           cleaned = re.sub(
               r'"(?:\\.|[^"\\])*"',
               '""',
               cleaned
           )
 
-          # Remove character literals.
           cleaned = re.sub(
               r"'(?:\\.|[^'\\])*'",
               "''",
@@ -543,48 +562,95 @@ jobs:
                   "ERROR: MainActivity Kotlin braces are unbalanced."
               )
 
-          # ========================================================
+          # --------------------------------------------------------
           # WRITE FIXED SOURCE
-          # ========================================================
+          # --------------------------------------------------------
 
           main.write_text(
               text,
               encoding="utf-8"
           )
 
-          # ========================================================
-          # FINAL CHECK
-          # ========================================================
+          # --------------------------------------------------------
+          # FINAL EXACT IMPORT CHECK
+          # --------------------------------------------------------
 
-          final_text = main.read_text(encoding="utf-8")
+          final_lines = main.read_text(
+              encoding="utf-8"
+          ).splitlines()
 
-          if "import androidx.compose.foundation.lazy.item" in final_text:
-              raise SystemExit(
-                  "ERROR: Invalid lazy.item import still exists."
-              )
-
-          if (
-              "import androidx.compose.foundation.lazy.items"
-              not in final_text
+          if any(
+              line.strip() == invalid_import
+              for line in final_lines
           ):
               raise SystemExit(
-                  "ERROR: lazy.items import missing after repair."
+                  "ERROR: Exact lazy.item import still exists."
+              )
+
+          if not any(
+              line.strip() == correct_import
+              for line in final_lines
+          ):
+              raise SystemExit(
+                  "ERROR: Exact lazy.items import is missing."
+              )
+
+          # --------------------------------------------------------
+          # FINAL BRACE CHECK
+          # --------------------------------------------------------
+
+          final_text = "\n".join(final_lines)
+
+          final_cleaned = re.sub(
+              r"/\*.*?\*/",
+              "",
+              final_text,
+              flags=re.S
+          )
+
+          final_cleaned = re.sub(
+              r"//.*",
+              "",
+              final_cleaned
+          )
+
+          final_cleaned = re.sub(
+              r'"(?:\\.|[^"\\])*"',
+              '""',
+              final_cleaned
+          )
+
+          final_cleaned = re.sub(
+              r"'(?:\\.|[^'\\])*'",
+              "''",
+              final_cleaned
+          )
+
+          final_open = final_cleaned.count("{")
+          final_close = final_cleaned.count("}")
+
+          print("Final brace { count:", final_open)
+          print("Final brace } count:", final_close)
+
+          if final_open != final_close:
+              raise SystemExit(
+                  "ERROR: Final MainActivity braces are unbalanced."
               )
 
           print("")
           print("==============================================")
           print("MAINACTIVITY KOTLIN SOURCE FIX PASSED")
           print("==============================================")
-          print("Invalid lazy.item import : REMOVED")
-          print("lazy.items import        : VERIFIED")
-          print("Required symbols         : VERIFIED")
-          print("Brace balance            : VERIFIED")
+          print("lazy.item exact import : REMOVED")
+          print("lazy.items exact import: VERIFIED")
+          print("Required symbols       : VERIFIED")
+          print("Brace balance          : VERIFIED")
           print("==============================================")
           PY
 
 
       # ============================================================
-      # 18. SHOW IMPORTANT SOURCE LINES
+      # 18. SHOW IMPORTANT SOURCE
       # ============================================================
 
       - name: Show MainActivity source verification
@@ -611,16 +677,41 @@ jobs:
           wc -l "$MAIN"
 
           echo
-          echo "Invalid import search:"
-          if grep -n \
+          echo "Exact lazy.item verification:"
+
+          if grep -Fxq \
             "import androidx.compose.foundation.lazy.item" \
             "$MAIN"; then
 
-            echo "::error::Invalid lazy.item import still found."
+            echo "::error::Invalid exact lazy.item import found."
             exit 1
+
           else
-            echo "No invalid lazy.item import found."
+
+            echo "OK: Exact lazy.item import NOT found."
+
           fi
+
+          echo
+          echo "Exact lazy.items verification:"
+
+          if grep -Fxq \
+            "import androidx.compose.foundation.lazy.items" \
+            "$MAIN"; then
+
+            echo "OK: Exact lazy.items import found."
+
+          else
+
+            echo "::error::lazy.items import missing."
+            exit 1
+
+          fi
+
+          echo
+          echo "=============================================="
+          echo "SOURCE VERIFICATION PASSED"
+          echo "=============================================="
 
 
       # ============================================================
@@ -638,25 +729,33 @@ jobs:
           grep -q "fun today" "$MAIN"
           grep -q "fun money" "$MAIN"
           grep -q "fun displayDate" "$MAIN"
+
           grep -q "BackHandler" "$MAIN"
           grep -q "PhotoThumb" "$MAIN"
           grep -q "AttendanceScreen" "$MAIN"
           grep -q "DeviceCredentialDeleteGate" "$MAIN"
+
           grep -q "fun Stat" "$MAIN"
           grep -q "fun DashboardStat" "$MAIN"
           grep -q "fun DashboardModule" "$MAIN"
 
-          if grep -q \
+          if grep -Fxq \
             "import androidx.compose.foundation.lazy.item" \
             "$MAIN"; then
+
             echo "::error::Invalid lazy.item import found."
             exit 1
           fi
 
-          grep -q \
+          if ! grep -Fxq \
             "import androidx.compose.foundation.lazy.items" \
-            "$MAIN"
+            "$MAIN"; then
 
+            echo "::error::lazy.items import missing."
+            exit 1
+          fi
+
+          echo
           echo "Kotlin source checks PASSED."
 
 
@@ -779,13 +878,19 @@ jobs:
 
           echo
           echo "Kotlin files:"
+
           find "$PROJECT_ROOT/app/src" \
             -type f \
-            \( -name "*.kt" -o -name "*.kts" \) \
+            \( \
+              -name "*.kt" \
+              -o \
+              -name "*.kts" \
+            \) \
             -print
 
           echo
           echo "Java files:"
+
           find "$PROJECT_ROOT/app/src" \
             -type f \
             -name "*.java" \
@@ -880,12 +985,13 @@ jobs:
 
           echo "APK_UNSIGNED_PATH=$APK_PATH" >> "$GITHUB_ENV"
 
+          echo
           echo "RELEASE APK:"
           echo "$APK_PATH"
 
 
       # ============================================================
-      # 27. PREPARE APK
+      # 27. PREPARE APK DIRECTORY
       # ============================================================
 
       - name: Prepare APK directory
@@ -977,6 +1083,7 @@ jobs:
             --out "$RUNNER_TEMP/apk/$APK_SIGNED_NAME" \
             "$RUNNER_TEMP/apk/aligned.apk"
 
+          echo
           echo "APK SIGNING PASSED."
 
 
@@ -996,6 +1103,7 @@ jobs:
             --print-certs \
             "$RUNNER_TEMP/apk/$APK_SIGNED_NAME"
 
+          echo
           echo "SIGNATURE VERIFICATION PASSED."
 
 
@@ -1016,6 +1124,7 @@ jobs:
             4 \
             "$RUNNER_TEMP/apk/$APK_SIGNED_NAME"
 
+          echo
           echo "ALIGNMENT VERIFICATION PASSED."
 
 
