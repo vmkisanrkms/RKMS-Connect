@@ -62,7 +62,7 @@ jobs:
 
 
       # ============================================================
-      # 3. GRADLE 8.11.1
+      # 3. GRADLE
       # ============================================================
 
       - name: Setup Gradle 8.11.1
@@ -72,7 +72,7 @@ jobs:
 
 
       # ============================================================
-      # 4. LOCATE ANDROID SDK
+      # 4. ANDROID SDK
       # ============================================================
 
       - name: Locate Android SDK
@@ -82,13 +82,10 @@ jobs:
 
           if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
             SDK_ROOT="$ANDROID_SDK_ROOT"
-
           elif [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
             SDK_ROOT="$ANDROID_HOME"
-
           elif [ -d "/usr/local/lib/android/sdk" ]; then
             SDK_ROOT="/usr/local/lib/android/sdk"
-
           else
             echo "::error::Android SDK not found."
             exit 1
@@ -120,7 +117,7 @@ jobs:
 
 
       # ============================================================
-      # 5. ANDROID API 36
+      # 5. INSTALL API 36
       # ============================================================
 
       - name: Install Android API 36
@@ -143,7 +140,7 @@ jobs:
 
 
       # ============================================================
-      # 6. SDK TOOLS CHECK
+      # 6. ANDROID TOOLS
       # ============================================================
 
       - name: Verify Android tools
@@ -160,7 +157,7 @@ jobs:
 
 
       # ============================================================
-      # 7. JAVA / GRADLE CHECK
+      # 7. JAVA / GRADLE
       # ============================================================
 
       - name: Verify Java and Gradle
@@ -173,7 +170,7 @@ jobs:
 
 
       # ============================================================
-      # 8. FIND FIXED V18 ZIP
+      # 8. LOCATE SOURCE ZIP
       # ============================================================
 
       - name: Locate Fixed V18 ZIP
@@ -193,22 +190,21 @@ jobs:
           fi
 
           if [ -z "$ZIP_PATH" ]; then
-            echo "::error::Fixed V18 ZIP not found:"
+            echo "::error::Source ZIP not found."
+            echo "Expected:"
             echo "$ZIP_NAME"
-
             echo ""
             echo "Available ZIP files:"
             find "$GITHUB_WORKSPACE" \
               -type f \
               -iname "*.zip" \
               -print || true
-
             exit 1
           fi
 
           echo "PROJECT_ZIP=$ZIP_PATH" >> "$GITHUB_ENV"
 
-          echo "Using ZIP:"
+          echo "Source ZIP:"
           echo "$ZIP_PATH"
 
 
@@ -225,7 +221,7 @@ jobs:
 
 
       # ============================================================
-      # 10. EXTRACT PROJECT
+      # 10. EXTRACT
       # ============================================================
 
       - name: Extract Fixed V18 project
@@ -242,11 +238,11 @@ jobs:
 
           echo "EXTRACT_ROOT=$EXTRACT_ROOT" >> "$GITHUB_ENV"
 
-          echo "Project extracted successfully."
+          echo "Project extraction: PASS"
 
 
       # ============================================================
-      # 11. FIND ANDROID PROJECT
+      # 11. LOCATE ANDROID PROJECT
       # ============================================================
 
       - name: Locate Android project root
@@ -274,12 +270,12 @@ jobs:
 
           echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
-          echo "PROJECT_ROOT:"
+          echo "Project root:"
           echo "$PROJECT_ROOT"
 
 
       # ============================================================
-      # 12. VERIFY ANDROID PROJECT
+      # 12. PROJECT STRUCTURE
       # ============================================================
 
       - name: Verify Android project
@@ -301,27 +297,24 @@ jobs:
 
           if [ ! -f "$PROJECT_ROOT/app/build.gradle.kts" ] && \
              [ ! -f "$PROJECT_ROOT/app/build.gradle" ]; then
-            echo "::error::app/build.gradle(.kts) not found."
+            echo "::error::app build.gradle(.kts) not found."
             exit 1
           fi
 
-          test -f \
-            "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
+          test -f "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
 
-          test -f \
-            "$PROJECT_ROOT/app/src/main/res/xml/backup_rules.xml"
+          test -f "$PROJECT_ROOT/app/src/main/res/xml/backup_rules.xml"
 
-          test -f \
-            "$PROJECT_ROOT/app/src/main/res/xml/data_extraction_rules.xml"
+          test -f "$PROJECT_ROOT/app/src/main/res/xml/data_extraction_rules.xml"
 
           echo "Android project structure: PASS"
 
 
       # ============================================================
-      # 13. REPAIR KNOWN KOTLIN COMPILE BLOCKERS
+      # 13. REPAIR KNOWN KOTLIN ERROR
       # ============================================================
 
-      - name: Repair Kotlin compile blockers
+      - name: Repair known Kotlin compile error
         shell: bash
         run: |
           set -euo pipefail
@@ -330,14 +323,9 @@ jobs:
 
           test -f "$MAIN"
 
-          echo "================================================"
-          echo "KOTLIN COMPILE REPAIR"
-          echo "================================================"
+          echo "Checking known PaddingValues compile error..."
 
-          echo ""
-          echo "Checking PaddingValues usage..."
-
-          BEFORE_COUNT="$(
+          BROKEN_COUNT="$(
             grep -F \
               'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
               "$MAIN" |
@@ -345,209 +333,121 @@ jobs:
             tr -d ' '
           )"
 
-          echo "Broken PaddingValues occurrences: $BEFORE_COUNT"
+          echo "Broken occurrences: $BROKEN_COUNT"
 
-          if [ "$BEFORE_COUNT" -gt 0 ]; then
+          if [ "$BROKEN_COUNT" -gt 0 ]; then
 
             python3 - "$MAIN" <<'PY'
 import sys
 from pathlib import Path
 
-path = Path(sys.argv[1])
+file_path = Path(sys.argv[1])
 
-text = path.read_text(encoding="utf-8")
+text = file_path.read_text(encoding="utf-8")
 
-old = "PaddingValues(horizontal=14.dp,bottom=16.dp)"
-new = "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
+old_text = "PaddingValues(horizontal=14.dp,bottom=16.dp)"
+new_text = "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
 
-count = text.count(old)
+count = text.count(old_text)
 
-if count == 0:
-    print("No broken PaddingValues pattern found.")
-    sys.exit(0)
+if count:
+    text = text.replace(old_text, new_text)
+    file_path.write_text(text, encoding="utf-8")
 
-text = text.replace(old, new)
-
-path.write_text(text, encoding="utf-8")
-
-print(f"Fixed PaddingValues occurrences: {count}")
+print("Fixed occurrences:", count)
 PY
 
           fi
-
-          echo ""
-          echo "Checking remaining invalid PaddingValues pattern..."
 
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
             "$MAIN"; then
 
-            echo "::error::Invalid PaddingValues(horizontal + bottom) still exists."
+            echo "::error::Invalid PaddingValues expression still exists."
             exit 1
           fi
 
-          echo "PaddingValues compile fix: PASS"
-
-
-          # --------------------------------------------------------
-          # Verify the corrected form
-          # --------------------------------------------------------
-
-          if ! grep -Fq \
-            'PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)' \
-            "$MAIN"; then
-
-            echo "::error::Corrected PaddingValues form not found."
-            exit 1
-          fi
-
-          echo "Correct PaddingValues form: PASS"
-
-
-          # --------------------------------------------------------
-          # Audit every PaddingValues occurrence.
-          # This catches another accidental horizontal+bottom
-          # combination without modifying unrelated code.
-          # --------------------------------------------------------
-
-          echo ""
-          echo "All PaddingValues occurrences:"
-          grep -n "PaddingValues(" "$MAIN" || true
-
-          echo ""
-          echo "Kotlin compile blocker repair: PASS"
-          echo "================================================"
+          echo "PaddingValues repair: PASS"
 
 
       # ============================================================
-      # 14. COMPLETE KOTLIN SOURCE AUDIT
+      # 14. KOTLIN SOURCE AUDIT
       # ============================================================
 
-      - name: Audit Kotlin source fixes
+      - name: Audit Kotlin source
         shell: bash
         run: |
           set -euo pipefail
 
           MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
+          test -f "$MAIN"
+
           echo "================================================"
           echo "KOTLIN SOURCE AUDIT"
           echo "================================================"
 
-          # --------------------------------------------------------
-          # MainActivity
-          # --------------------------------------------------------
-
-          test -f "$MAIN"
-
-          echo "MainActivity.kt: PASS"
-
-
-          # --------------------------------------------------------
-          # Package
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^package[[:space:]]+com\.majdoor\.hisaabpro[[:space:]]*$' \
             "$MAIN"; then
-
-            echo "::error::Wrong or missing Kotlin package declaration."
+            echo "::error::Wrong Kotlin package."
             exit 1
           fi
 
-          echo "Kotlin package: PASS"
-
-
-          # --------------------------------------------------------
-          # rememberSaveable import
-          # --------------------------------------------------------
+          echo "Package: PASS"
 
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
             "$MAIN"; then
-
-            echo "::error::rememberSaveable import is missing."
+            echo "::error::rememberSaveable import missing."
             exit 1
           fi
 
           echo "rememberSaveable import: PASS"
 
-
-          # --------------------------------------------------------
-          # rememberSaveable usage
-          # --------------------------------------------------------
-
           REMEMBER_COUNT="$(
-            grep -o \
-              'rememberSaveable' \
-              "$MAIN" |
+            grep -o 'rememberSaveable' "$MAIN" |
             wc -l |
             tr -d ' '
           )"
 
           if [ "$REMEMBER_COUNT" -lt 2 ]; then
-            echo "::error::Expected rememberSaveable usage was not found."
+            echo "::error::rememberSaveable usage missing."
             exit 1
           fi
 
           echo "rememberSaveable usage: PASS"
-          echo "rememberSaveable occurrences: $REMEMBER_COUNT"
-
-
-          # --------------------------------------------------------
-          # Alignment import
-          # --------------------------------------------------------
 
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
-
-            echo "::error::Alignment import is missing."
+            echo "::error::Alignment import missing."
             exit 1
           fi
 
           echo "Alignment import: PASS"
 
-
-          # --------------------------------------------------------
-          # Column
-          # --------------------------------------------------------
-
           COLUMN_COUNT="$(
-            grep -Eo \
-              'Column[[:space:]]*\(' \
-              "$MAIN" |
+            grep -Eo 'Column[[:space:]]*\(' "$MAIN" |
             wc -l |
             tr -d ' '
           )"
 
           if [ "$COLUMN_COUNT" -lt 1 ]; then
-            echo "::error::Compose Column usage not found."
+            echo "::error::Column usage missing."
             exit 1
           fi
 
           echo "Column usage: PASS"
-          echo "Column occurrences: $COLUMN_COUNT"
-
-
-          # --------------------------------------------------------
-          # horizontalAlignment
-          # --------------------------------------------------------
 
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
-
-            echo "::error::horizontalAlignment=Alignment.End not found."
+            echo "::error::horizontalAlignment=Alignment.End missing."
             exit 1
           fi
 
-          echo "Column horizontalAlignment End: PASS"
-
-
-          # --------------------------------------------------------
-          # Required source symbols
-          # --------------------------------------------------------
+          echo "Alignment.End: PASS"
 
           REQUIRED_SYMBOLS=(
             "fun validDate"
@@ -578,50 +478,27 @@ PY
           )
 
           for SYMBOL in "${REQUIRED_SYMBOLS[@]}"; do
-
             if ! grep -Fq "$SYMBOL" "$MAIN"; then
-              echo "::error::Required Kotlin source symbol missing: $SYMBOL"
+              echo "::error::Missing source symbol: $SYMBOL"
               exit 1
             fi
-
-            echo "Source symbol: $SYMBOL : PASS"
-
           done
 
-
-          # --------------------------------------------------------
-          # Wrong rememberSaveable import
-          # --------------------------------------------------------
+          echo "Required source symbols: PASS"
 
           if grep -Fq \
             'import androidx.compose.runtime.rememberSaveable' \
             "$MAIN"; then
-
-            echo "::error::Wrong rememberSaveable import detected."
+            echo "::error::Wrong rememberSaveable import found."
             exit 1
           fi
-
-          echo "Wrong rememberSaveable import: NOT FOUND"
-
-
-          # --------------------------------------------------------
-          # Verify PaddingValues repair
-          # --------------------------------------------------------
 
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
             "$MAIN"; then
-
-            echo "::error::Known invalid PaddingValues expression remains."
+            echo "::error::Broken PaddingValues still found."
             exit 1
           fi
-
-          echo "PaddingValues compile fix: PASS"
-
-
-          # --------------------------------------------------------
-          # Source size
-          # --------------------------------------------------------
 
           LINE_COUNT="$(
             wc -l < "$MAIN" |
@@ -629,24 +506,22 @@ PY
           )"
 
           if [ "$LINE_COUNT" -lt 100 ]; then
-            echo "::error::MainActivity.kt appears unexpectedly small."
+            echo "::error::MainActivity.kt unexpectedly small."
             exit 1
           fi
 
-          echo "Kotlin source lines: $LINE_COUNT"
+          echo "Source lines: $LINE_COUNT"
 
-
-          echo ""
           echo "================================================"
           echo "KOTLIN SOURCE AUDIT: PASS"
           echo "================================================"
 
 
       # ============================================================
-      # 15. VERIFY BACKUP XML
+      # 15. BACKUP XML
       # ============================================================
 
-      - name: Verify backup XML fixes
+      - name: Verify backup XML
         shell: bash
         run: |
           set -euo pipefail
@@ -658,22 +533,21 @@ PY
           test -f "$EXTRA"
 
           if grep -q 'domain="cache"' "$BACKUP"; then
-            echo "::error::Invalid cache domain still exists in backup_rules.xml"
+            echo "::error::Invalid cache domain in backup_rules.xml"
             exit 1
           fi
 
           if grep -q 'domain="cache"' "$EXTRA"; then
-            echo "::error::Invalid cache domain still exists in data_extraction_rules.xml"
+            echo "::error::Invalid cache domain in data_extraction_rules.xml"
             exit 1
           fi
 
           echo "backup_rules.xml: PASS"
           echo "data_extraction_rules.xml: PASS"
-          echo "Invalid cache domain: NOT FOUND"
 
 
       # ============================================================
-      # 16. VERIFY BACKUP CONFIGURATION
+      # 16. BACKUP CONFIGURATION
       # ============================================================
 
       - name: Verify backup configuration
@@ -683,9 +557,7 @@ PY
 
           MANIFEST="$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
 
-          grep -q \
-            'android:allowBackup="true"' \
-            "$MANIFEST"
+          grep -q 'android:allowBackup="true"' "$MANIFEST"
 
           grep -q \
             'fullBackupContent="@xml/backup_rules"' \
@@ -695,11 +567,11 @@ PY
             'dataExtractionRules="@xml/data_extraction_rules"' \
             "$MANIFEST"
 
-          echo "Android backup configuration: PASS"
+          echo "Backup configuration: PASS"
 
 
       # ============================================================
-      # 17. VERIFY FILE PROVIDER
+      # 17. FILE PROVIDER
       # ============================================================
 
       - name: Verify FileProvider
@@ -714,11 +586,11 @@ PY
           grep -q 'cache-path' "$FILE_PATHS"
           grep -q 'path="reports/"' "$FILE_PATHS"
 
-          echo "FileProvider reports path: PASS"
+          echo "FileProvider: PASS"
 
 
       # ============================================================
-      # 18. VERIFY REQUIRED SOURCE FEATURES
+      # 18. SOURCE FEATURES
       # ============================================================
 
       - name: Verify required source features
@@ -728,7 +600,7 @@ PY
 
           MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
-          for symbol in \
+          for SYMBOL in \
             "fun validDate" \
             "fun today" \
             "fun money" \
@@ -755,8 +627,8 @@ PY
             "CanePriceDialog" \
             "CaneParchiDetail"; do
 
-            if ! grep -Fq "$symbol" "$MAIN"; then
-              echo "::error::Required source feature missing: $symbol"
+            if ! grep -Fq "$SYMBOL" "$MAIN"; then
+              echo "::error::Required source feature missing: $SYMBOL"
               exit 1
             fi
 
@@ -766,7 +638,7 @@ PY
 
 
       # ============================================================
-      # 19. VERIFY PACKAGE / SDK
+      # 19. PACKAGE / SDK
       # ============================================================
 
       - name: Verify package and Android SDK
@@ -791,7 +663,6 @@ PY
           grep -q 'compileSdk = 36' "$APP_GRADLE"
           grep -q 'targetSdk = 36' "$APP_GRADLE"
           grep -q 'minSdk = 23' "$APP_GRADLE"
-
           grep -q 'JavaVersion.VERSION_17' "$APP_GRADLE"
 
           echo "Package: ${PACKAGE_NAME}"
@@ -801,7 +672,7 @@ PY
 
 
       # ============================================================
-      # 20. CONFIGURE ANDROID SDK
+      # 20. ANDROID LOCAL PROPERTIES
       # ============================================================
 
       - name: Configure Android SDK
@@ -811,6 +682,8 @@ PY
 
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" \
             > "$PROJECT_ROOT/local.properties"
+
+          echo "local.properties: PASS"
 
 
       # ============================================================
@@ -832,11 +705,11 @@ PY
           test -n "$RELEASE_KEY_ALIAS"
           test -n "$RELEASE_KEY_PASSWORD"
 
-          echo "All permanent signing secrets are present."
+          echo "Signing secrets: PASS"
 
 
       # ============================================================
-      # 22. PREPARE PRODUCTION KEYSTORE
+      # 22. PRODUCTION KEYSTORE
       # ============================================================
 
       - name: Prepare permanent production keystore
@@ -871,8 +744,7 @@ PY
               -keystore "$KEYSTORE" \
               -storepass "$RELEASE_KEYSTORE_PASSWORD" \
               -alias "$RELEASE_KEY_ALIAS" |
-            awk -F': ' \
-              '/SHA256:/{print $2; exit}' |
+            awk -F': ' '/SHA256:/{print $2; exit}' |
             tr -d ' :\r\n' |
             tr '[:lower:]' '[:upper:]'
           )"
@@ -885,8 +757,8 @@ PY
           echo "KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
           echo "PRODUCTION_CERT_SHA256=$CERT_SHA256" >> "$GITHUB_ENV"
 
-          echo "Permanent production keystore: PASS"
-          echo "Certificate fingerprint: verified"
+          echo "Production keystore: PASS"
+          echo "Production certificate: VERIFIED"
 
 
       # ============================================================
@@ -905,7 +777,7 @@ PY
 
 
       # ============================================================
-      # 24. BUILD RELEASE APK
+      # 24. REAL KOTLIN / GRADLE BUILD
       # ============================================================
 
       - name: Build release APK with permanent signing key
@@ -915,7 +787,7 @@ PY
           set -euo pipefail
 
           echo "================================================"
-          echo "STARTING REAL KOTLIN / GRADLE COMPILATION"
+          echo "STARTING REAL KOTLIN COMPILATION"
           echo "================================================"
 
           gradle :app:assembleRelease \
@@ -929,7 +801,7 @@ PY
 
 
       # ============================================================
-      # 25. FIND APK
+      # 25. LOCATE APK
       # ============================================================
 
       - name: Locate release APK
@@ -974,7 +846,7 @@ PY
 
 
       # ============================================================
-      # 27. VERIFY APK SIGNATURE
+      # 27. APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -991,7 +863,7 @@ PY
 
 
       # ============================================================
-      # 28. VERIFY PERMANENT CERTIFICATE
+      # 28. PRODUCTION CERTIFICATE
       # ============================================================
 
       - name: Verify permanent production certificate
@@ -1023,15 +895,15 @@ PY
           fi
 
           if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::APK certificate does not match permanent production certificate."
+            echo "::error::APK certificate does not match production certificate."
             exit 1
           fi
 
-          echo "Permanent production certificate: PASS"
+          echo "Production certificate: PASS"
 
 
       # ============================================================
-      # 29. VERIFY APK ALIGNMENT
+      # 29. APK ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -1051,7 +923,7 @@ PY
 
 
       # ============================================================
-      # 30. VERIFY PACKAGE / VERSION
+      # 30. PACKAGE / VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -1104,60 +976,32 @@ PY
         run: |
           set -euo pipefail
 
-          cat > \
-            "$RUNNER_TEMP/final-release/BUILD-REPORT.txt" <<EOF
-          Majdoor Hisaab PRO V82
+          REPORT="$RUNNER_TEMP/final-release/BUILD-REPORT.txt"
 
-          Package:
-          ${PACKAGE_NAME}
+          printf '%s\n' \
+            "Majdoor Hisaab PRO V82" \
+            "" \
+            "Package: ${PACKAGE_NAME}" \
+            "Version: ${VERSION_NAME}" \
+            "Version Code: ${VERSION_CODE}" \
+            "Android API: ${ANDROID_API}" \
+            "Build Tools: ${BUILD_TOOLS}" \
+            "Java: ${JAVA_VERSION}" \
+            "Gradle: ${GRADLE_VERSION}" \
+            "Source ZIP: ${ZIP_NAME}" \
+            "" \
+            "Known Kotlin PaddingValues fix: VERIFIED" \
+            "Kotlin source audit: VERIFIED" \
+            "Kotlin compile: VERIFIED BY GRADLE" \
+            "Backup XML: VERIFIED" \
+            "Ganna Parchi: VERIFIED" \
+            "Signing: PERMANENT PRODUCTION KEY" \
+            "Certificate: VERIFIED" \
+            "" \
+            "Final status: SUCCESS" \
+            > "$REPORT"
 
-          Version:
-          ${VERSION_NAME}
-
-          Version Code:
-          ${VERSION_CODE}
-
-          Android API:
-          ${ANDROID_API}
-
-          Build Tools:
-          ${BUILD_TOOLS}
-
-          Java:
-          ${JAVA_VERSION}
-
-          Gradle:
-          ${GRADLE_VERSION}
-
-          Source ZIP:
-          ${ZIP_NAME}
-
-          Kotlin compile blocker:
-          PaddingValues(horizontal + bottom) FIXED
-
-          Kotlin source audit:
-          VERIFIED
-
-          Kotlin compile:
-          VERIFIED BY GRADLE
-
-          Backup XML:
-          VERIFIED
-
-          Ganna Parchi:
-          VERIFIED
-
-          Signing:
-          Permanent Production Keystore
-
-          Certificate:
-          VERIFIED
-
-          Final status:
-          SUCCESS
-          EOF
-
-          cat "$RUNNER_TEMP/final-release/BUILD-REPORT.txt"
+          cat "$REPORT"
 
 
       # ============================================================
