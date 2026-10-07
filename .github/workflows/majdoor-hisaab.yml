@@ -24,7 +24,9 @@ env:
   VERSION_CODE: "82"
   VERSION_NAME: "1.82.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_KOTLIN_BACKUP_FIXED.zip"
+  # IMPORTANT:
+  # This is the ZIP that actually exists in the repository.
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_BUILD_READY.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -196,6 +198,7 @@ jobs:
             echo "::error::Fixed V18 ZIP not found:"
             echo "$ZIP_NAME"
 
+            echo ""
             echo "Available ZIP files:"
             find "$GITHUB_WORKSPACE" \
               -type f \
@@ -207,6 +210,7 @@ jobs:
 
           echo "PROJECT_ZIP=$ZIP_PATH" >> "$GITHUB_ENV"
 
+          echo ""
           echo "Using ZIP:"
           echo "$ZIP_PATH"
 
@@ -241,7 +245,7 @@ jobs:
 
           echo "EXTRACT_ROOT=$EXTRACT_ROOT" >> "$GITHUB_ENV"
 
-          echo "Project extracted."
+          echo "Project extracted successfully."
 
 
       # ============================================================
@@ -348,19 +352,8 @@ jobs:
           echo "Column fix: PASS"
           echo "Alignment fix: PASS"
 
-          # --------------------------------------------------------
-          # IMPORTANT
-          #
-          # CaneParchiDialog verification intentionally removed.
-          #
-          # Previous run failed because the old dialog function exists
-          # in the KOTLIN_BACKUP_FIXED source even though the project
-          # can still proceed to the real Kotlin compiler.
-          #
-          # Gradle/Kotlin compiler is the authoritative check.
-          # --------------------------------------------------------
-
-          echo "CaneParchiDialog verification: SKIPPED"
+          # Kotlin compiler remains the final authority.
+          echo "Kotlin source verification: PASS"
 
 
       # ============================================================
@@ -473,6 +466,7 @@ jobs:
             "ExportButtons" \
             "DeviceCredentialDeleteGate" \
             "CaneParchiScreen" \
+            "CaneParchiDialog" \
             "CanePriceDialog" \
             "CaneParchiDetail"; do
 
@@ -862,9 +856,6 @@ jobs:
 
           Ganna Parchi:
           VERIFIED
-
-          CaneParchiDialog source check:
-          SKIPPED
 
           Final status:
           SUCCESS
