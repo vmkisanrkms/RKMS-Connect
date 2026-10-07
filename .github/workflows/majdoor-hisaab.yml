@@ -348,13 +348,13 @@ jobs:
             "$MAIN"
 
           # --------------------------------------------------------
-          # OLD DIALOG:
-          # Only reject an actual function declaration.
-          # A simple string/reference/comment must not fail the build.
+          # OLD DIALOG
+          # Only reject an actual Kotlin function declaration.
+          # References/comments/text containing the name are allowed.
           # --------------------------------------------------------
 
           if grep -Eq \
-            '^[[:space:]]*(private[[:space:]]+)?(fun|suspend[[:space:]]+fun)[[:space:]]+CaneParchiDialog[[:space:]]*\(' \
+            '^[[:space:]]*((private|public|internal|protected)[[:space:]]+)*(suspend[[:space:]]+)?fun[[:space:]]+CaneParchiDialog[[:space:]]*\(' \
             "$MAIN"; then
 
             echo "::error::Old CaneParchiDialog function still exists."
@@ -488,9 +488,12 @@ jobs:
 
           done
 
-          # Only reject an actual old Dialog function.
+          # --------------------------------------------------------
+          # Only reject an actual old Dialog function declaration.
+          # --------------------------------------------------------
+
           if grep -Eq \
-            '^[[:space:]]*(private[[:space:]]+)?(fun|suspend[[:space:]]+fun)[[:space:]]+CaneParchiDialog[[:space:]]*\(' \
+            '^[[:space:]]*((private|public|internal|protected)[[:space:]]+)*(suspend[[:space:]]+)?fun[[:space:]]+CaneParchiDialog[[:space:]]*\(' \
             "$MAIN"; then
 
             echo "::error::Old CaneParchiDialog function still exists."
