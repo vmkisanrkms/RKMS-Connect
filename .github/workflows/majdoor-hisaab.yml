@@ -24,7 +24,7 @@ env:
   VERSION_CODE: "82"
   VERSION_NAME: "1.82.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_BUILD_READY.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_FINAL_FIXED_V3.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -247,7 +247,7 @@ jobs:
 
 
       # ============================================================
-      # 11. LOCATE ANDROID PROJECT
+      # 11. LOCATE ANDROID PROJECT ROOT
       # ============================================================
 
       - name: Locate Android project root
@@ -381,10 +381,6 @@ jobs:
           echo "KOTLIN SOURCE AUDIT"
           echo "================================================"
 
-          # --------------------------------------------------------
-          # Package
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^package[[:space:]]+com\.majdoor\.hisaabpro[[:space:]]*$' \
             "$MAIN"; then
@@ -395,11 +391,6 @@ jobs:
 
           echo "Package: PASS"
 
-
-          # --------------------------------------------------------
-          # rememberSaveable import
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
             "$MAIN"; then
@@ -409,11 +400,6 @@ jobs:
           fi
 
           echo "rememberSaveable import: PASS"
-
-
-          # --------------------------------------------------------
-          # rememberSaveable usage
-          # --------------------------------------------------------
 
           REMEMBER_COUNT="$(
             grep -o \
@@ -431,11 +417,6 @@ jobs:
           echo "rememberSaveable usage: PASS"
           echo "rememberSaveable occurrences: $REMEMBER_COUNT"
 
-
-          # --------------------------------------------------------
-          # Alignment
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
@@ -445,11 +426,6 @@ jobs:
           fi
 
           echo "Alignment import: PASS"
-
-
-          # --------------------------------------------------------
-          # Column
-          # --------------------------------------------------------
 
           COLUMN_COUNT="$(
             grep -Eo \
@@ -467,11 +443,6 @@ jobs:
           echo "Column usage: PASS"
           echo "Column occurrences: $COLUMN_COUNT"
 
-
-          # --------------------------------------------------------
-          # Alignment.End
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
@@ -481,11 +452,6 @@ jobs:
           fi
 
           echo "Alignment.End: PASS"
-
-
-          # --------------------------------------------------------
-          # Required source symbols
-          # --------------------------------------------------------
 
           REQUIRED_SYMBOLS=(
             "fun validDate"
@@ -526,11 +492,6 @@ jobs:
 
           done
 
-
-          # --------------------------------------------------------
-          # Wrong rememberSaveable import
-          # --------------------------------------------------------
-
           if grep -Fq \
             'import androidx.compose.runtime.rememberSaveable' \
             "$MAIN"; then
@@ -541,11 +502,6 @@ jobs:
 
           echo "Wrong rememberSaveable import: NOT FOUND"
 
-
-          # --------------------------------------------------------
-          # Broken PaddingValues must be gone
-          # --------------------------------------------------------
-
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
             "$MAIN"; then
@@ -555,11 +511,6 @@ jobs:
           fi
 
           echo "PaddingValues fix: PASS"
-
-
-          # --------------------------------------------------------
-          # Source size
-          # --------------------------------------------------------
 
           LINE_COUNT="$(
             wc -l < "$MAIN" |
@@ -572,7 +523,6 @@ jobs:
           fi
 
           echo "Source lines: $LINE_COUNT"
-
 
           echo "================================================"
           echo "KOTLIN SOURCE AUDIT: PASS"
