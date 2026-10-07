@@ -20,7 +20,10 @@ env:
   ANDROID_API: "36"
   BUILD_TOOLS: "36.0.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_FINAL_FIXED_V3_GOOGLE_DRIVE_DIRECT_API_FANDI_V3.zip"
+  # ============================================================
+  # ACTUAL ZIP NAME PRESENT IN THE GITHUB REPOSITORY
+  # ============================================================
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_FINAL_FIXED_V3_GOOGLE_DRIVE_DIRECT_API_FANDI_V3_FIXED_CORRECTED.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -40,11 +43,11 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. CHECKOUT
+      # 1. CHECKOUT REPOSITORY
       # ============================================================
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
@@ -54,7 +57,7 @@ jobs:
       # ============================================================
 
       - name: Setup Java 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -64,11 +67,8 @@ jobs:
       # 3. ANDROID SDK
       #
       # IMPORTANT:
-      # setup-android v4 is used.
-      # packages is intentionally empty.
-      #
-      # The old "tools" SDK package is obsolete and must NOT
-      # be requested.
+      # Do NOT install obsolete "tools" package.
+      # Android SDK command-line tools are already provided.
       # ============================================================
 
       - name: Setup Android SDK
@@ -80,7 +80,7 @@ jobs:
 
 
       # ============================================================
-      # 4. INSTALL EXACT ANDROID 36 SDK
+      # 4. INSTALL ANDROID API 36
       # ============================================================
 
       - name: Install Android SDK 36
@@ -89,9 +89,9 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "Installing Android SDK"
-          echo "API Level     : ${ANDROID_API}"
-          echo "Build Tools   : ${BUILD_TOOLS}"
+          echo "INSTALLING ANDROID SDK"
+          echo "API LEVEL   : ${ANDROID_API}"
+          echo "BUILD TOOLS : ${BUILD_TOOLS}"
           echo "=============================================="
 
           sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" \
@@ -99,19 +99,21 @@ jobs:
             "platforms;android-${ANDROID_API}" \
             "build-tools;${BUILD_TOOLS}"
 
-          yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
+          yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --licenses \
+            >/dev/null 2>&1 || true
 
           echo ""
-          echo "Installed SDK platforms:"
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --list_installed | \
-            grep -E "platforms;android|build-tools" || true
+          echo "Installed Android SDK packages:"
+
+          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --list_installed \
+            | grep -E "platform-tools|platforms;android|build-tools" || true
 
           echo ""
-          echo "Android SDK 36 installed successfully."
+          echo "Android SDK 36 installation completed."
 
 
       # ============================================================
-      # 5. VERIFY SDK
+      # 5. VERIFY ANDROID SDK
       # ============================================================
 
       - name: Verify Android SDK
@@ -132,10 +134,6 @@ jobs:
           echo ""
           echo "Android SDK verification PASSED."
 
-          echo ""
-          echo "Available build tools:"
-          ls -la "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}" | head -30
-
 
       # ============================================================
       # 6. VERIFY SOURCE ZIP
@@ -146,6 +144,11 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "VERIFY SOURCE ZIP"
+          echo "=============================================="
+
+          echo ""
           echo "Looking for:"
           echo "${ZIP_NAME}"
 
@@ -153,13 +156,29 @@ jobs:
             echo ""
             echo "ERROR: Required ZIP file was not found."
             echo ""
-            echo "Files in repository:"
-            find . -maxdepth 3 -type f | sort | head -200
+            echo "ZIP files currently present in repository:"
+
+            find . \
+              -maxdepth 3 \
+              -type f \
+              -iname "*.zip" \
+              -print \
+              | sort
+
+            echo ""
+            echo "All repository files:"
+            find . \
+              -maxdepth 3 \
+              -type f \
+              -not -path "./.git/*" \
+              | sort \
+              | head -300
+
             exit 1
           fi
 
           echo ""
-          echo "Source ZIP found successfully."
+          echo "SOURCE ZIP FOUND SUCCESSFULLY."
 
           ls -lh "${ZIP_NAME}"
 
@@ -174,6 +193,7 @@ jobs:
           set -e
 
           rm -rf build-source
+
           mkdir -p build-source
 
           echo "Build directory prepared."
@@ -188,17 +208,27 @@ jobs:
         run: |
           set -e
 
+          echo "=============================================="
+          echo "EXTRACT SOURCE ZIP"
+          echo "=============================================="
+
           unzip -q "${ZIP_NAME}" -d build-source
 
-          echo "ZIP extracted."
+          echo ""
+          echo "ZIP extraction completed."
 
           echo ""
-          echo "Top-level extracted files:"
-          find build-source -maxdepth 3 -type f | sort | head -200
+          echo "Extracted project files:"
+
+          find build-source \
+            -maxdepth 4 \
+            -type f \
+            | sort \
+            | head -250
 
 
       # ============================================================
-      # 9. LOCATE GRADLE PROJECT
+      # 9. LOCATE ANDROID GRADLE PROJECT
       # ============================================================
 
       - name: Locate Android Gradle project
@@ -207,26 +237,36 @@ jobs:
         run: |
           set -e
 
-          echo "Searching for gradlew..."
+          echo "=============================================="
+          echo "LOCATE ANDROID GRADLE PROJECT"
+          echo "=============================================="
 
-          GRADLEW="$(find build-source \
-            -type f \
-            -name "gradlew" \
-            -not -path "*/node_modules/*" \
-            -not -path "*/.gradle/*" \
-            | head -1)"
+          GRADLEW="$(
+            find build-source \
+              -type f \
+              -name "gradlew" \
+              -not -path "*/node_modules/*" \
+              -not -path "*/.gradle/*" \
+              | head -1
+          )"
 
           if [ -z "$GRADLEW" ]; then
+
             echo ""
             echo "ERROR: gradlew was not found."
+
             echo ""
-            echo "Possible project files:"
-            find build-source -maxdepth 5 -type f \
-              \( -name "settings.gradle" \
-              -o -name "settings.gradle.kts" \
-              -o -name "build.gradle" \
-              -o -name "build.gradle.kts" \
-              -o -name "gradlew" \) \
+            echo "Possible Gradle project files:"
+
+            find build-source \
+              -type f \
+              \( \
+                -name "gradlew" \
+                -o -name "settings.gradle" \
+                -o -name "settings.gradle.kts" \
+                -o -name "build.gradle" \
+                -o -name "build.gradle.kts" \
+              \) \
               | sort
 
             exit 1
@@ -236,15 +276,20 @@ jobs:
 
           chmod +x "$GRADLEW"
 
-          echo "gradlew=$GRADLEW"
-          echo "android_dir=$ANDROID_DIR"
+          echo ""
+          echo "gradlew:"
+          echo "$GRADLEW"
+
+          echo ""
+          echo "Android project:"
+          echo "$ANDROID_DIR"
 
           echo "gradlew=$GRADLEW" >> "$GITHUB_OUTPUT"
           echo "android_dir=$ANDROID_DIR" >> "$GITHUB_OUTPUT"
 
 
       # ============================================================
-      # 10. SHOW PROJECT STRUCTURE
+      # 10. VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -254,33 +299,41 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "ANDROID PROJECT"
+          echo "ANDROID PROJECT VERIFICATION"
           echo "=============================================="
 
-          pwd
-
           echo ""
-          echo "Project files:"
-          find . -maxdepth 3 -type f \
-            \( -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \
-            -o -name "build.gradle" \
-            -o -name "build.gradle.kts" \
-            -o -name "gradle-wrapper.properties" \
-            -o -name "AndroidManifest.xml" \) \
-            | sort | head -200
+          echo "Project directory:"
+          pwd
 
           echo ""
           echo "Gradle wrapper:"
           ls -la ./gradlew
 
           echo ""
-          echo "Gradle wrapper version:"
+          echo "Important project files:"
+
+          find . \
+            -maxdepth 4 \
+            -type f \
+            \( \
+              -name "settings.gradle" \
+              -o -name "settings.gradle.kts" \
+              -o -name "build.gradle" \
+              -o -name "build.gradle.kts" \
+              -o -name "gradle-wrapper.properties" \
+              -o -name "AndroidManifest.xml" \
+            \) \
+            | sort \
+            | head -250
+
+          echo ""
+          echo "Gradle version:"
           ./gradlew --version
 
 
       # ============================================================
-      # 11. FORCE GRADLE VERSION 8.11.1
+      # 11. ENFORCE GRADLE 8.11.1
       # ============================================================
 
       - name: Enforce Gradle 8.11.1
@@ -298,6 +351,7 @@ jobs:
 
             python3 - "$WRAPPER_FILE" "${GRADLE_VERSION}" <<'PY'
           import sys
+          import re
           from pathlib import Path
 
           file = Path(sys.argv[1])
@@ -305,13 +359,20 @@ jobs:
 
           text = file.read_text()
 
-          import re
-
-          text = re.sub(
-              r'distributionUrl=.*',
-              f'distributionUrl=https\\://services.gradle.org/distributions/gradle-{version}-bin.zip',
-              text
+          new_url = (
+              "distributionUrl=https\\://services.gradle.org/"
+              f"distributions/gradle-{version}-bin.zip"
           )
+
+          if "distributionUrl=" in text:
+              text = re.sub(
+                  r"^distributionUrl=.*$",
+                  new_url,
+                  text,
+                  flags=re.MULTILINE
+              )
+          else:
+              text += "\n" + new_url + "\n"
 
           file.write_text(text)
           PY
@@ -321,12 +382,14 @@ jobs:
             cat "$WRAPPER_FILE"
 
           else
+
             echo "WARNING: gradle-wrapper.properties not found."
+
           fi
 
 
       # ============================================================
-      # 12. CLEAN
+      # 12. GRADLE CLEAN
       # ============================================================
 
       - name: Gradle clean
@@ -363,7 +426,7 @@ jobs:
 
 
       # ============================================================
-      # 14. ASSEMBLE RELEASE
+      # 14. ASSEMBLE RELEASE APK
       # ============================================================
 
       - name: Assemble Release APK
@@ -382,14 +445,16 @@ jobs:
             --warning-mode all
 
           echo ""
-          echo "Release APK search:"
-          find . -type f \
+          echo "Release APK files:"
+
+          find . \
+            -type f \
             -path "*/build/outputs/apk/release/*.apk" \
             -print
 
 
       # ============================================================
-      # 15. LOCATE APK
+      # 15. LOCATE GENERATED APK
       # ============================================================
 
       - name: Locate generated Release APK
@@ -399,34 +464,47 @@ jobs:
         run: |
           set -e
 
-          APK="$(find . \
-            -type f \
-            -path "*/build/outputs/apk/release/*.apk" \
-            -not -name "*unsigned*" \
-            | head -1)"
-
-          if [ -z "$APK" ]; then
-            APK="$(find . \
+          APK="$(
+            find . \
               -type f \
               -path "*/build/outputs/apk/release/*.apk" \
-              | head -1)"
+              -not -name "*unsigned*" \
+              | head -1
+          )"
+
+          if [ -z "$APK" ]; then
+
+            APK="$(
+              find . \
+                -type f \
+                -path "*/build/outputs/apk/release/*.apk" \
+                | head -1
+            )"
+
           fi
 
           if [ -z "$APK" ]; then
-            echo "ERROR: Release APK not found."
 
-            find . -type f -name "*.apk" -print || true
+            echo "ERROR: Release APK was not found."
+
+            find . \
+              -type f \
+              -name "*.apk" \
+              -print || true
 
             exit 1
+
           fi
 
-          echo "APK=$APK"
+          echo ""
+          echo "Generated APK:"
+          echo "$APK"
 
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
 
 
       # ============================================================
-      # 16. COPY APK TO FINAL DIRECTORY
+      # 16. PREPARE FINAL DIRECTORY
       # ============================================================
 
       - name: Prepare final APK
@@ -436,17 +514,20 @@ jobs:
           set -e
 
           rm -rf final
+
           mkdir -p final
 
           cp "${{ steps.locate_apk.outputs.apk }}" \
-             "final/${APK_UNSIGNED_NAME}"
+            "final/${APK_UNSIGNED_NAME}"
 
-          echo "Unsigned/unaligned source APK copied:"
+          echo ""
+          echo "APK copied to final directory:"
+
           ls -lh "final/${APK_UNSIGNED_NAME}"
 
 
       # ============================================================
-      # 17. VERIFY PACKAGE NAME
+      # 17. VERIFY APK PACKAGE NAME
       # ============================================================
 
       - name: Verify APK package name
@@ -455,17 +536,19 @@ jobs:
         run: |
           set -e
 
-          APK="final/${APK_UNSIGNED_NAME}"
-
           AAPT="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/aapt"
 
-          echo "Inspecting APK:"
-          echo "$APK"
+          APK="final/${APK_UNSIGNED_NAME}"
+
+          echo "=============================================="
+          echo "VERIFY APK PACKAGE"
+          echo "=============================================="
 
           test -f "$APK"
 
           echo ""
           echo "APK badging:"
+
           "$AAPT" dump badging "$APK" | head -20
 
           PACKAGE_NAME="$(
@@ -475,19 +558,27 @@ jobs:
           )"
 
           echo ""
+          echo "Expected package:"
+          echo "$EXPECTED_PACKAGE"
+
+          echo ""
           echo "Detected package:"
           echo "$PACKAGE_NAME"
 
           if [ "$PACKAGE_NAME" != "$EXPECTED_PACKAGE" ]; then
+
             echo ""
             echo "ERROR: Wrong package name."
+
             echo "Expected: $EXPECTED_PACKAGE"
-            echo "Found   : $PACKAGE_NAME"
+            echo "Found:    $PACKAGE_NAME"
+
             exit 1
+
           fi
 
           echo ""
-          echo "Package name verification PASSED."
+          echo "PACKAGE NAME VERIFICATION PASSED."
 
 
       # ============================================================
@@ -505,7 +596,9 @@ jobs:
           INPUT_APK="final/${APK_UNSIGNED_NAME}"
           ALIGNED_APK="final/aligned-release.apk"
 
-          echo "Running zipalign..."
+          echo "=============================================="
+          echo "ZIPALIGN RELEASE APK"
+          echo "=============================================="
 
           "$ZIPALIGN" \
             -f \
@@ -514,19 +607,20 @@ jobs:
             "$INPUT_APK" \
             "$ALIGNED_APK"
 
-          "$ZIPALIGN" -c -P 16 -v 4 "$ALIGNED_APK"
+          "$ZIPALIGN" \
+            -c \
+            -P 16 \
+            -v 4 \
+            "$ALIGNED_APK"
 
           echo ""
-          echo "Zipalign verification PASSED."
+          echo "ZIPALIGN VERIFICATION PASSED."
 
           ls -lh "$ALIGNED_APK"
 
 
       # ============================================================
-      # 19. GENERATE TEMPORARY SIGNING KEY
-      #
-      # This creates a release-signed APK for testing/distribution.
-      # For Play Store updates, use a permanent GitHub secret keystore.
+      # 19. PREPARE SIGNING KEY
       # ============================================================
 
       - name: Prepare signing key
@@ -543,12 +637,13 @@ jobs:
 
             echo "Using GitHub signing keystore secret."
 
-            echo "${{ secrets.MAJDOOR_KEYSTORE_BASE64 }}" | \
-              base64 --decode > "$KEYSTORE"
+            echo "${{ secrets.MAJDOOR_KEYSTORE_BASE64 }}" \
+              | base64 --decode > "$KEYSTORE"
 
           else
 
-            echo "No permanent keystore secret found."
+            echo "No permanent keystore secret configured."
+
             echo "Generating temporary release keystore."
 
             keytool \
@@ -568,20 +663,21 @@ jobs:
 
           test -f "$KEYSTORE"
 
+          echo ""
           echo "Signing keystore ready."
 
 
       # ============================================================
-      # 20. SIGN APK
+      # 20. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign Release APK
         working-directory: ${{ steps.find_android.outputs.android_dir }}
-        shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.MAJDOOR_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.MAJDOOR_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MAJDOOR_KEY_ALIAS }}
+        shell: bash
         run: |
           set -e
 
@@ -594,11 +690,9 @@ jobs:
           SIGNED_APK="final/${APK_SIGNED_NAME}"
 
           echo "=============================================="
-          echo "SIGNING RELEASE APK"
+          echo "SIGN RELEASE APK"
           echo "=============================================="
 
-          # If permanent secrets are not configured,
-          # use the temporary key generated above.
           if [ -z "$KEYSTORE_PASSWORD" ]; then
             KEYSTORE_PASSWORD="MajdoorHisaabV82"
           fi
@@ -622,7 +716,8 @@ jobs:
           test -f "$SIGNED_APK"
 
           echo ""
-          echo "Signed APK created:"
+          echo "SIGNED APK CREATED."
+
           ls -lh "$SIGNED_APK"
 
 
@@ -653,7 +748,7 @@ jobs:
 
 
       # ============================================================
-      # 22. FINAL APK PACKAGE CHECK
+      # 22. FINAL APK VALIDATION
       # ============================================================
 
       - name: Final APK validation
@@ -663,6 +758,7 @@ jobs:
           set -e
 
           AAPT="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/aapt"
+
           APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner"
 
           SIGNED_APK="final/${APK_SIGNED_NAME}"
@@ -674,19 +770,24 @@ jobs:
           test -f "$SIGNED_APK"
 
           echo ""
-          echo "File:"
+          echo "APK file:"
           ls -lh "$SIGNED_APK"
 
           echo ""
-          echo "Package:"
+          echo "APK package:"
+
           "$AAPT" dump badging "$SIGNED_APK" | head -1
 
           echo ""
-          echo "Signature:"
-          "$APKSIGNER" verify --verbose "$SIGNED_APK"
+          echo "APK signature:"
+
+          "$APKSIGNER" verify \
+            --verbose \
+            "$SIGNED_APK"
 
           echo ""
-          echo "SHA256:"
+          echo "APK SHA256:"
+
           sha256sum "$SIGNED_APK"
 
           echo ""
@@ -696,8 +797,7 @@ jobs:
       # ============================================================
       # 23. CREATE BUILD INFORMATION
       #
-      # printf is intentionally used instead of an unindented
-      # heredoc so YAML parsing cannot break.
+      # printf is used instead of an unindented heredoc.
       # ============================================================
 
       - name: Create build information
@@ -723,9 +823,9 @@ jobs:
             printf '%s\n' ""
             printf '%s\n' "APK: ${APK_SIGNED_NAME}"
             printf '%s\n' ""
-            printf '%s\n' "Git commit: $GITHUB_SHA"
-            printf '%s\n' "Git ref: $GITHUB_REF"
-            printf '%s\n' "Run number: $GITHUB_RUN_NUMBER"
+            printf '%s\n' "Git commit: ${GITHUB_SHA}"
+            printf '%s\n' "Git ref: ${GITHUB_REF}"
+            printf '%s\n' "Run number: ${GITHUB_RUN_NUMBER}"
             printf '%s\n' ""
             printf '%s\n' "SHA256:"
             sha256sum "final/${APK_SIGNED_NAME}"
@@ -734,11 +834,12 @@ jobs:
             printf '%s\n' "=============================================="
           } > final/BUILD_INFO.txt
 
+          echo ""
           cat final/BUILD_INFO.txt
 
 
       # ============================================================
-      # 24. COPY SOURCE ZIP INTO FINAL
+      # 24. COPY SOURCE ZIP TO FINAL
       # ============================================================
 
       - name: Copy source ZIP to final output
@@ -748,15 +849,16 @@ jobs:
           set -e
 
           cp "${GITHUB_WORKSPACE}/${ZIP_NAME}" \
-             "final/${ZIP_NAME}"
+            "final/${ZIP_NAME}"
 
-          echo "Source ZIP copied to final directory."
+          echo ""
+          echo "Source ZIP copied."
 
           ls -lh final/
 
 
       # ============================================================
-      # 25. CREATE FINAL OUTPUT ZIP
+      # 25. CREATE FINAL RELEASE PACKAGE
       # ============================================================
 
       - name: Create final release package
@@ -775,16 +877,18 @@ jobs:
             "BUILD_INFO.txt"
 
           echo ""
-          echo "Final release package:"
-          ls -lh "Majdoor_Hisaab_PRO_V82_FINAL_RELEASE_PACKAGE.zip"
+          echo "Final release package created:"
+
+          ls -lh \
+            "Majdoor_Hisaab_PRO_V82_FINAL_RELEASE_PACKAGE.zip"
 
 
       # ============================================================
-      # 26. UPLOAD SIGNED APK
+      # 26. UPLOAD FINAL SIGNED APK
       # ============================================================
 
       - name: Upload Final Signed APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
           path: |
@@ -794,11 +898,11 @@ jobs:
 
 
       # ============================================================
-      # 27. UPLOAD COMPLETE RELEASE PACKAGE
+      # 27. UPLOAD FINAL RELEASE PACKAGE
       # ============================================================
 
       - name: Upload Final Release Package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-FINAL-RELEASE-PACKAGE
           path: |
@@ -813,7 +917,7 @@ jobs:
       # ============================================================
 
       - name: Upload Source ZIP
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-SOURCE-ZIP
           path: |
