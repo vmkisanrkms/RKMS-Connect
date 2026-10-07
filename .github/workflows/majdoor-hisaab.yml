@@ -24,7 +24,9 @@ env:
   VERSION_CODE: "82"
   VERSION_NAME: "1.82.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_SCREENLOCK_DATEWISE_PDF_V11.zip"
+  # IMPORTANT: CURRENT FINAL SOURCE ZIP
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18.zip"
+
   APK_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
 jobs:
@@ -81,18 +83,23 @@ jobs:
 
           if [ -n "${ANDROID_SDK_ROOT:-}" ] && \
              [ -d "$ANDROID_SDK_ROOT" ]; then
+
             SDK_ROOT="$ANDROID_SDK_ROOT"
 
           elif [ -n "${ANDROID_HOME:-}" ] && \
                [ -d "$ANDROID_HOME" ]; then
+
             SDK_ROOT="$ANDROID_HOME"
 
           elif [ -d "/usr/local/lib/android/sdk" ]; then
+
             SDK_ROOT="/usr/local/lib/android/sdk"
 
           else
+
             echo "::error::Android SDK not found."
             exit 1
+
           fi
 
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
@@ -105,6 +112,7 @@ jobs:
           fi
 
           if [ -z "$SDKMANAGER" ]; then
+
             SDKMANAGER="$(
               find "$SDK_ROOT/cmdline-tools" \
                 -type f \
@@ -113,6 +121,7 @@ jobs:
                 -quit \
                 2>/dev/null || true
             )"
+
           fi
 
           if [ -z "$SDKMANAGER" ]; then
@@ -130,7 +139,7 @@ jobs:
 
 
       # ============================================================
-      # 5. ANDROID LICENSES
+      # 5. ACCEPT ANDROID LICENSES
       # ============================================================
 
       - name: Accept Android SDK licenses
@@ -181,7 +190,7 @@ jobs:
       # 7. VERIFY ENVIRONMENT
       # ============================================================
 
-      - name: Verify Java Gradle and Android
+      - name: Verify Java Gradle Android
         shell: bash
         run: |
           set -euo pipefail
@@ -211,10 +220,10 @@ jobs:
 
 
       # ============================================================
-      # 8. LOCATE V11 PROJECT ZIP
+      # 8. LOCATE V18 SOURCE ZIP
       # ============================================================
 
-      - name: Locate V11 project ZIP
+      - name: Locate V18 project ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -222,8 +231,11 @@ jobs:
           ZIP_PATH=""
 
           if [ -f "$GITHUB_WORKSPACE/${ZIP_NAME}" ]; then
+
             ZIP_PATH="$GITHUB_WORKSPACE/${ZIP_NAME}"
+
           else
+
             ZIP_PATH="$(
               find "$GITHUB_WORKSPACE" \
                 -type f \
@@ -232,18 +244,19 @@ jobs:
                 -quit \
                 2>/dev/null || true
             )"
+
           fi
 
           if [ -z "$ZIP_PATH" ]; then
 
-            echo "::error::V11 project ZIP not found."
+            echo "::error::V18 project ZIP not found."
 
             echo
-            echo "Expected ZIP:"
+            echo "EXPECTED:"
             echo "$ZIP_NAME"
 
             echo
-            echo "Available ZIP files:"
+            echo "AVAILABLE ZIP FILES:"
 
             find "$GITHUB_WORKSPACE" \
               -type f \
@@ -251,13 +264,14 @@ jobs:
               -print || true
 
             exit 1
+
           fi
 
           echo "PROJECT_ZIP=$ZIP_PATH" >> "$GITHUB_ENV"
 
           echo
           echo "=============================================="
-          echo "V11 PROJECT ZIP FOUND"
+          echo "V18 PROJECT ZIP FOUND"
           echo "=============================================="
           echo "$ZIP_PATH"
 
@@ -265,10 +279,10 @@ jobs:
 
 
       # ============================================================
-      # 9. VERIFY V11 ZIP
+      # 9. VERIFY V18 ZIP
       # ============================================================
 
-      - name: Verify V11 ZIP integrity
+      - name: Verify V18 ZIP integrity
         shell: bash
         run: |
           set -euo pipefail
@@ -276,19 +290,19 @@ jobs:
           unzip -t "$PROJECT_ZIP"
 
           echo
-          echo "V11 ZIP integrity: PASS"
+          echo "V18 ZIP integrity: PASS"
 
 
       # ============================================================
-      # 10. EXTRACT V11 ZIP
+      # 10. EXTRACT V18 ZIP
       # ============================================================
 
-      - name: Extract V11 project ZIP
+      - name: Extract V18 project ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          EXTRACT_ROOT="$RUNNER_TEMP/majdoor-v11-project"
+          EXTRACT_ROOT="$RUNNER_TEMP/majdoor-v18-project"
 
           rm -rf "$EXTRACT_ROOT"
 
@@ -300,7 +314,7 @@ jobs:
 
           echo "EXTRACT_ROOT=$EXTRACT_ROOT" >> "$GITHUB_ENV"
 
-          echo "V11 ZIP extraction: PASS"
+          echo "V18 ZIP extraction: PASS"
 
 
       # ============================================================
@@ -376,7 +390,7 @@ jobs:
 
 
       # ============================================================
-      # 13. VERIFY MAINACTIVITY
+      # 13. VERIFY MAIN ACTIVITY
       # ============================================================
 
       - name: Verify MainActivity Kotlin source
@@ -392,6 +406,7 @@ jobs:
 
             echo "::error::Invalid lazy.item import found."
             exit 1
+
           fi
 
           if ! grep -Fxq \
@@ -400,6 +415,7 @@ jobs:
 
             echo "::error::lazy.items import missing."
             exit 1
+
           fi
 
           REQUIRED_SYMBOLS="
@@ -436,8 +452,11 @@ jobs:
             fi
 
             if ! grep -q "$SYMBOL" "$MAIN"; then
+
               echo "::error::Required source symbol missing: $SYMBOL"
+
               exit 1
+
             fi
 
           done <<< "$REQUIRED_SYMBOLS"
@@ -446,7 +465,7 @@ jobs:
 
 
       # ============================================================
-      # 14. FILE PROVIDER
+      # 14. VERIFY FILE PROVIDER
       # ============================================================
 
       - name: Verify FileProvider reports path
@@ -468,7 +487,7 @@ jobs:
 
 
       # ============================================================
-      # 15. PACKAGE / VERSION / SDK
+      # 15. VERIFY PACKAGE VERSION SDK
       # ============================================================
 
       - name: Verify application configuration
@@ -537,14 +556,6 @@ jobs:
 
       # ============================================================
       # 17. CHECK PERMANENT SIGNING SECRETS
-      #
-      # YOUR GITHUB REPOSITORY SECRETS:
-      #
-      # RELEASE_KEYSTORE_BASE64
-      # RELEASE_KEYSTORE_PASSWORD
-      # RELEASE_KEY_ALIAS
-      # RELEASE_KEY_PASSWORD
-      #
       # ============================================================
 
       - name: Check permanent signing secrets
@@ -584,27 +595,24 @@ jobs:
 
             echo
             echo "=============================================="
-            echo "PERMANENT SIGNING SECRETS ARE INCOMPLETE"
+            echo "PERMANENT SIGNING SECRETS INCOMPLETE"
             echo "=============================================="
 
-            echo
-            echo "Required:"
+            echo "Required secrets:"
             echo "RELEASE_KEYSTORE_BASE64"
             echo "RELEASE_KEYSTORE_PASSWORD"
             echo "RELEASE_KEY_ALIAS"
             echo "RELEASE_KEY_PASSWORD"
 
-            echo
-            echo "No temporary key will be generated."
-
             exit 1
+
           fi
 
           echo "All permanent signing secrets are PRESENT."
 
 
       # ============================================================
-      # 18. PREPARE PERMANENT PRODUCTION KEYSTORE
+      # 18. PREPARE PERMANENT KEYSTORE
       # ============================================================
 
       - name: Prepare permanent production signing keystore
@@ -657,12 +665,11 @@ jobs:
           echo "KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
           echo "RELEASE_CERT_SHA256=$CERT_SHA256" >> "$GITHUB_ENV"
 
-          echo
           echo "Permanent production keystore: PASS"
 
 
       # ============================================================
-      # 19. CREATE GRADLE PERMANENT SIGNING INIT SCRIPT
+      # 19. GRADLE SIGNING INIT SCRIPT
       # ============================================================
 
       - name: Configure Gradle release signing
@@ -728,8 +735,10 @@ jobs:
                           android.buildTypes.findByName("release")
 
                       if (releaseBuildType != null) {
+
                           releaseBuildType.signingConfig =
                               releaseConfig
+
                       }
 
                       println("")
@@ -741,7 +750,6 @@ jobs:
                       println("Password : CONFIGURED")
                       println("Release  : CONFIGURED")
                       println("==============================================")
-                      println("")
                   }
               }
           }
@@ -755,7 +763,7 @@ jobs:
 
 
       # ============================================================
-      # 20. CONFIGURE SIGNING ENVIRONMENT
+      # 20. SIGNING ENVIRONMENT
       # ============================================================
 
       - name: Configure signing environment
@@ -840,7 +848,7 @@ jobs:
             echo "=============================================="
 
             grep -nE \
-              'storePassword|keyPassword|storeFile|signingConfig|e: |Unresolved reference|Type mismatch|Compilation error|FAILED' \
+              'storePassword|keyPassword|storeFile|signingConfig|e: |Unresolved reference|Type mismatch|Compilation error|FAILED|FAILURE' \
               "$LOG_FILE" \
               | tail -n 300 || true
 
@@ -852,6 +860,7 @@ jobs:
             tail -n 300 "$LOG_FILE"
 
             exit "$BUILD_EXIT"
+
           fi
 
           echo
@@ -894,7 +903,7 @@ jobs:
 
 
       # ============================================================
-      # 24. VERIFY GRADLE SIGNATURE
+      # 24. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify Gradle release signature
@@ -915,7 +924,7 @@ jobs:
 
 
       # ============================================================
-      # 25. VERIFY PERMANENT PRODUCTION CERTIFICATE
+      # 25. VERIFY PERMANENT CERTIFICATE
       # ============================================================
 
       - name: Verify permanent production certificate
@@ -958,9 +967,12 @@ jobs:
           echo "$ACTUAL"
 
           if [ "$EXPECTED" != "$ACTUAL" ]; then
+
             echo "::error::PRODUCTION CERTIFICATE MISMATCH."
-            echo "::error::The APK was not signed with the permanent production key."
+            echo "::error::APK was not signed with permanent production key."
+
             exit 1
+
           fi
 
           echo
@@ -1018,7 +1030,7 @@ jobs:
 
 
       # ============================================================
-      # 28. VERIFY FINAL APK PACKAGE + VERSION
+      # 28. VERIFY PACKAGE VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -1042,32 +1054,17 @@ jobs:
 
           cat "$BADGING"
 
-          echo
-          echo "Checking package..."
-
           grep -q \
             "package: name='${PACKAGE_NAME}'" \
             "$BADGING"
-
-          echo "Package: PASS"
-
-          echo
-          echo "Checking version code..."
 
           grep -q \
             "versionCode='${VERSION_CODE}'" \
             "$BADGING"
 
-          echo "Version Code: PASS"
-
-          echo
-          echo "Checking version name..."
-
           grep -q \
             "versionName='${VERSION_NAME}'" \
             "$BADGING"
-
-          echo "Version Name: PASS"
 
           echo
           echo "FINAL APK PACKAGE/VERSION: PASS"
@@ -1095,7 +1092,7 @@ jobs:
 
 
       # ============================================================
-      # 30. SHA256
+      # 30. FINAL SHA256
       # ============================================================
 
       - name: Calculate final APK SHA256
@@ -1116,7 +1113,7 @@ jobs:
 
 
       # ============================================================
-      # 31. CREATE FINAL REPORT
+      # 31. FINAL RELEASE REPORT
       # ============================================================
 
       - name: Create final release report
@@ -1264,9 +1261,20 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f \
-            "${KEYSTORE_FILE:-}" \
-            "${GRADLE_SIGNING_INIT:-}" \
-            2>/dev/null || true
+          set -euo pipefail
+
+          if [ -n "${KEYSTORE_FILE:-}" ] && \
+             [ -f "$KEYSTORE_FILE" ]; then
+
+            rm -f "$KEYSTORE_FILE"
+
+          fi
+
+          if [ -n "${GRADLE_SIGNING_INIT:-}" ] && \
+             [ -f "$GRADLE_SIGNING_INIT" ]; then
+
+            rm -f "$GRADLE_SIGNING_INIT"
+
+          fi
 
           echo "Temporary signing material cleaned."
