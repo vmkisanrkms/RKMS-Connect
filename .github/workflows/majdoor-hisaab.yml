@@ -208,7 +208,6 @@ jobs:
 
           echo "PROJECT_ZIP=$ZIP_PATH" >> "$GITHUB_ENV"
 
-          echo ""
           echo "Using ZIP:"
           echo "$ZIP_PATH"
 
@@ -280,7 +279,7 @@ jobs:
 
 
       # ============================================================
-      # 12. PROJECT STRUCTURE
+      # 12. VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -319,7 +318,109 @@ jobs:
 
 
       # ============================================================
-      # 13. COMPLETE KOTLIN SOURCE AUDIT
+      # 13. REPAIR KNOWN KOTLIN COMPILE BLOCKERS
+      # ============================================================
+
+      - name: Repair Kotlin compile blockers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
+
+          test -f "$MAIN"
+
+          echo "================================================"
+          echo "KOTLIN COMPILE REPAIR"
+          echo "================================================"
+
+          echo ""
+          echo "Checking PaddingValues usage..."
+
+          BEFORE_COUNT="$(
+            grep -F \
+              'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
+              "$MAIN" |
+            wc -l |
+            tr -d ' '
+          )"
+
+          echo "Broken PaddingValues occurrences: $BEFORE_COUNT"
+
+          if [ "$BEFORE_COUNT" -gt 0 ]; then
+
+            python3 - "$MAIN" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+
+text = path.read_text(encoding="utf-8")
+
+old = "PaddingValues(horizontal=14.dp,bottom=16.dp)"
+new = "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
+
+count = text.count(old)
+
+if count == 0:
+    print("No broken PaddingValues pattern found.")
+    sys.exit(0)
+
+text = text.replace(old, new)
+
+path.write_text(text, encoding="utf-8")
+
+print(f"Fixed PaddingValues occurrences: {count}")
+PY
+
+          fi
+
+          echo ""
+          echo "Checking remaining invalid PaddingValues pattern..."
+
+          if grep -Fq \
+            'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
+            "$MAIN"; then
+
+            echo "::error::Invalid PaddingValues(horizontal + bottom) still exists."
+            exit 1
+          fi
+
+          echo "PaddingValues compile fix: PASS"
+
+
+          # --------------------------------------------------------
+          # Verify the corrected form
+          # --------------------------------------------------------
+
+          if ! grep -Fq \
+            'PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)' \
+            "$MAIN"; then
+
+            echo "::error::Corrected PaddingValues form not found."
+            exit 1
+          fi
+
+          echo "Correct PaddingValues form: PASS"
+
+
+          # --------------------------------------------------------
+          # Audit every PaddingValues occurrence.
+          # This catches another accidental horizontal+bottom
+          # combination without modifying unrelated code.
+          # --------------------------------------------------------
+
+          echo ""
+          echo "All PaddingValues occurrences:"
+          grep -n "PaddingValues(" "$MAIN" || true
+
+          echo ""
+          echo "Kotlin compile blocker repair: PASS"
+          echo "================================================"
+
+
+      # ============================================================
+      # 14. COMPLETE KOTLIN SOURCE AUDIT
       # ============================================================
 
       - name: Audit Kotlin source fixes
@@ -334,20 +435,16 @@ jobs:
           echo "================================================"
 
           # --------------------------------------------------------
-          # 1. MainActivity.kt
+          # MainActivity
           # --------------------------------------------------------
 
-          if [ ! -f "$MAIN" ]; then
-            echo "::error::MainActivity.kt not found:"
-            echo "$MAIN"
-            exit 1
-          fi
+          test -f "$MAIN"
 
           echo "MainActivity.kt: PASS"
 
 
           # --------------------------------------------------------
-          # 2. Package
+          # Package
           # --------------------------------------------------------
 
           if ! grep -Eq \
@@ -362,7 +459,7 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 3. rememberSaveable import
+          # rememberSaveable import
           # --------------------------------------------------------
 
           if ! grep -Eq \
@@ -377,13 +474,7 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 4. rememberSaveable usage
-          #
-          # Current source uses:
-          #
-          # rememberSaveable{...}
-          #
-          # so do NOT require spaces or parentheses.
+          # rememberSaveable usage
           # --------------------------------------------------------
 
           REMEMBER_COUNT="$(
@@ -396,7 +487,6 @@ jobs:
 
           if [ "$REMEMBER_COUNT" -lt 2 ]; then
             echo "::error::Expected rememberSaveable usage was not found."
-            echo "Found occurrences: $REMEMBER_COUNT"
             exit 1
           fi
 
@@ -405,14 +495,14 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 5. Alignment import
+          # Alignment import
           # --------------------------------------------------------
 
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
 
-            echo "::error::androidx.compose.ui.Alignment import is missing."
+            echo "::error::Alignment import is missing."
             exit 1
           fi
 
@@ -420,7 +510,7 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 6. Column usage
+          # Column
           # --------------------------------------------------------
 
           COLUMN_COUNT="$(
@@ -441,20 +531,14 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 7. horizontalAlignment
-          #
-          # Accept all valid Kotlin spacing:
-          #
-          # horizontalAlignment=Alignment.End
-          # horizontalAlignment = Alignment.End
-          # horizontalAlignment  =  Alignment.End
+          # horizontalAlignment
           # --------------------------------------------------------
 
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
 
-            echo "::error::Column horizontalAlignment=Alignment.End fix not found."
+            echo "::error::horizontalAlignment=Alignment.End not found."
             exit 1
           fi
 
@@ -462,10 +546,7 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 8. Required source symbols
-          #
-          # CaneParchiDialog is intentionally NOT required.
-          # It is not a function in the current audited source.
+          # Required source symbols
           # --------------------------------------------------------
 
           REQUIRED_SYMBOLS=(
@@ -509,7 +590,7 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 9. Wrong rememberSaveable import must NOT exist
+          # Wrong rememberSaveable import
           # --------------------------------------------------------
 
           if grep -Fq \
@@ -524,7 +605,22 @@ jobs:
 
 
           # --------------------------------------------------------
-          # 10. Source size sanity
+          # Verify PaddingValues repair
+          # --------------------------------------------------------
+
+          if grep -Fq \
+            'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
+            "$MAIN"; then
+
+            echo "::error::Known invalid PaddingValues expression remains."
+            exit 1
+          fi
+
+          echo "PaddingValues compile fix: PASS"
+
+
+          # --------------------------------------------------------
+          # Source size
           # --------------------------------------------------------
 
           LINE_COUNT="$(
@@ -534,34 +630,20 @@ jobs:
 
           if [ "$LINE_COUNT" -lt 100 ]; then
             echo "::error::MainActivity.kt appears unexpectedly small."
-            echo "Lines: $LINE_COUNT"
             exit 1
           fi
 
           echo "Kotlin source lines: $LINE_COUNT"
 
 
-          # --------------------------------------------------------
-          # FINAL SOURCE AUDIT
-          # --------------------------------------------------------
-
           echo ""
           echo "================================================"
           echo "KOTLIN SOURCE AUDIT: PASS"
           echo "================================================"
-          echo "MainActivity.kt: PASS"
-          echo "Package: PASS"
-          echo "rememberSaveable import: PASS"
-          echo "rememberSaveable usage: PASS"
-          echo "Column: PASS"
-          echo "Alignment: PASS"
-          echo "Required source symbols: PASS"
-          echo "Source structure: PASS"
-          echo "================================================"
 
 
       # ============================================================
-      # 14. VERIFY BACKUP XML FIX
+      # 15. VERIFY BACKUP XML
       # ============================================================
 
       - name: Verify backup XML fixes
@@ -591,7 +673,7 @@ jobs:
 
 
       # ============================================================
-      # 15. VERIFY BACKUP CONFIGURATION
+      # 16. VERIFY BACKUP CONFIGURATION
       # ============================================================
 
       - name: Verify backup configuration
@@ -617,7 +699,7 @@ jobs:
 
 
       # ============================================================
-      # 16. VERIFY FILE PROVIDER
+      # 17. VERIFY FILE PROVIDER
       # ============================================================
 
       - name: Verify FileProvider
@@ -636,7 +718,7 @@ jobs:
 
 
       # ============================================================
-      # 17. VERIFY REQUIRED SOURCE FEATURES
+      # 18. VERIFY REQUIRED SOURCE FEATURES
       # ============================================================
 
       - name: Verify required source features
@@ -684,7 +766,7 @@ jobs:
 
 
       # ============================================================
-      # 18. VERIFY PACKAGE / SDK
+      # 19. VERIFY PACKAGE / SDK
       # ============================================================
 
       - name: Verify package and Android SDK
@@ -719,7 +801,7 @@ jobs:
 
 
       # ============================================================
-      # 19. LOCAL PROPERTIES
+      # 20. CONFIGURE ANDROID SDK
       # ============================================================
 
       - name: Configure Android SDK
@@ -732,7 +814,7 @@ jobs:
 
 
       # ============================================================
-      # 20. SIGNING SECRETS
+      # 21. SIGNING SECRETS
       # ============================================================
 
       - name: Verify signing secrets
@@ -754,7 +836,7 @@ jobs:
 
 
       # ============================================================
-      # 21. PREPARE PRODUCTION KEYSTORE
+      # 22. PREPARE PRODUCTION KEYSTORE
       # ============================================================
 
       - name: Prepare permanent production keystore
@@ -808,7 +890,7 @@ jobs:
 
 
       # ============================================================
-      # 22. CLEAN
+      # 23. GRADLE CLEAN
       # ============================================================
 
       - name: Gradle clean
@@ -823,7 +905,7 @@ jobs:
 
 
       # ============================================================
-      # 23. BUILD RELEASE APK
+      # 24. BUILD RELEASE APK
       # ============================================================
 
       - name: Build release APK with permanent signing key
@@ -832,14 +914,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "================================================"
+          echo "STARTING REAL KOTLIN / GRADLE COMPILATION"
+          echo "================================================"
+
           gradle :app:assembleRelease \
             --no-daemon \
             --stacktrace \
             --info
 
+          echo "================================================"
+          echo "GRADLE RELEASE BUILD: PASS"
+          echo "================================================"
+
 
       # ============================================================
-      # 24. FIND APK
+      # 25. FIND APK
       # ============================================================
 
       - name: Locate release APK
@@ -866,7 +956,7 @@ jobs:
 
 
       # ============================================================
-      # 25. PREPARE FINAL APK
+      # 26. PREPARE FINAL APK
       # ============================================================
 
       - name: Prepare final APK
@@ -884,7 +974,7 @@ jobs:
 
 
       # ============================================================
-      # 26. VERIFY APK SIGNATURE
+      # 27. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -901,7 +991,7 @@ jobs:
 
 
       # ============================================================
-      # 27. VERIFY PERMANENT CERTIFICATE
+      # 28. VERIFY PERMANENT CERTIFICATE
       # ============================================================
 
       - name: Verify permanent production certificate
@@ -941,7 +1031,7 @@ jobs:
 
 
       # ============================================================
-      # 28. ZIPALIGN
+      # 29. VERIFY APK ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -961,7 +1051,7 @@ jobs:
 
 
       # ============================================================
-      # 29. VERIFY PACKAGE / VERSION
+      # 30. VERIFY PACKAGE / VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -991,7 +1081,7 @@ jobs:
 
 
       # ============================================================
-      # 30. SHA256
+      # 31. SHA256
       # ============================================================
 
       - name: Generate APK SHA256
@@ -1006,7 +1096,7 @@ jobs:
 
 
       # ============================================================
-      # 31. BUILD REPORT
+      # 32. BUILD REPORT
       # ============================================================
 
       - name: Create build report
@@ -1042,25 +1132,25 @@ jobs:
           Source ZIP:
           ${ZIP_NAME}
 
-          Signing:
-          Permanent Production Keystore
-
-          Certificate:
-          VERIFIED
+          Kotlin compile blocker:
+          PaddingValues(horizontal + bottom) FIXED
 
           Kotlin source audit:
           VERIFIED
 
           Kotlin compile:
-          VERIFIED ONLY AFTER GRADLE BUILD
+          VERIFIED BY GRADLE
 
           Backup XML:
           VERIFIED
 
-          Invalid cache backup domain:
-          REMOVED
-
           Ganna Parchi:
+          VERIFIED
+
+          Signing:
+          Permanent Production Keystore
+
+          Certificate:
           VERIFIED
 
           Final status:
@@ -1071,7 +1161,7 @@ jobs:
 
 
       # ============================================================
-      # 32. UPLOAD APK
+      # 33. UPLOAD APK
       # ============================================================
 
       - name: Upload final signed APK
@@ -1087,7 +1177,7 @@ jobs:
 
 
       # ============================================================
-      # 33. FINAL SUCCESS
+      # 34. FINAL SUCCESS
       # ============================================================
 
       - name: Final success
@@ -1101,16 +1191,14 @@ jobs:
           echo "Version Code: ${VERSION_CODE}"
           echo "APK: ${APK_SIGNED_NAME}"
           echo "Source ZIP: ${ZIP_NAME}"
-          echo "Signing: PERMANENT PRODUCTION KEY"
-          echo "Kotlin Source Audit: PASS"
           echo "Kotlin Compile: PASS"
-          echo "Backup XML: PASS"
-          echo "Ganna Parchi: PASS"
+          echo "APK Signing: PASS"
+          echo "APK Verification: PASS"
           echo "================================================"
 
 
       # ============================================================
-      # 34. CLEANUP
+      # 35. CLEANUP
       # ============================================================
 
       - name: Cleanup signing material
