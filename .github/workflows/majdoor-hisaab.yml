@@ -94,16 +94,20 @@ jobs:
             exit 1
           fi
 
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
-            -type f \
-            -name sdkmanager \
-            -print -quit 2>/dev/null || true)"
+          SDKMANAGER="$(
+            find "$SDK_ROOT/cmdline-tools" \
+              -type f \
+              -name sdkmanager \
+              -print -quit 2>/dev/null || true
+          )"
 
           if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "$SDK_ROOT" \
-              -type f \
-              -path '*/bin/sdkmanager' \
-              -print -quit 2>/dev/null || true)"
+            SDKMANAGER="$(
+              find "$SDK_ROOT" \
+                -type f \
+                -path '*/bin/sdkmanager' \
+                -print -quit 2>/dev/null || true
+            )"
           fi
 
           if [ -z "$SDKMANAGER" ]; then
@@ -186,10 +190,12 @@ jobs:
           if [ -f "$GITHUB_WORKSPACE/${ZIP_NAME}" ]; then
             ZIP_PATH="$GITHUB_WORKSPACE/${ZIP_NAME}"
           else
-            ZIP_PATH="$(find "$GITHUB_WORKSPACE" \
-              -type f \
-              -name "$ZIP_NAME" \
-              -print -quit || true)"
+            ZIP_PATH="$(
+              find "$GITHUB_WORKSPACE" \
+                -type f \
+                -name "$ZIP_NAME" \
+                -print -quit || true
+            )"
           fi
 
           if [ -z "$ZIP_PATH" ]; then
@@ -199,6 +205,7 @@ jobs:
 
             echo ""
             echo "Available ZIP files:"
+
             find "$GITHUB_WORKSPACE" \
               -type f \
               -iname "*.zip" \
@@ -316,10 +323,10 @@ jobs:
 
 
       # ============================================================
-      # 13. REPAIR KNOWN COMPOSE COMPILATION ERROR
+      # 13. REPAIR KNOWN COMPOSE COMPILATION ERRORS
       # ============================================================
 
-      - name: Repair known Compose compilation error
+      - name: Repair known Compose compilation errors
         shell: bash
         run: |
           set -euo pipefail
@@ -332,82 +339,71 @@ jobs:
           echo "REPAIRING KNOWN COMPOSE COMPILATION ERRORS"
           echo "================================================"
 
+          python3 - "$MAIN" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+
+          text = path.read_text(encoding="utf-8")
+
+          fixes = 0
+
           # --------------------------------------------------------
           # FIX 1
-          # PaddingValues invalid named argument
+          # PaddingValues(horizontal=14.dp,bottom=16.dp)
           # --------------------------------------------------------
 
-          BROKEN_PADDING="$(
-            grep -F \
-              'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
-              "$MAIN" |
-            wc -l |
-            tr -d ' '
-          )"
+          old_padding = (
+              "PaddingValues(horizontal=14.dp,bottom=16.dp)"
+          )
 
-          echo "Broken PaddingValues occurrences: $BROKEN_PADDING"
+          new_padding = (
+              "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
+          )
 
-          if [ "$BROKEN_PADDING" -gt 0 ]; then
-            python3 -c '
-import sys
-from pathlib import Path
+          count = text.count(old_padding)
 
-p = Path(sys.argv[1])
-t = p.read_text(encoding="utf-8")
+          if count:
+              text = text.replace(old_padding, new_padding)
+              fixes += count
 
-old = "PaddingValues(horizontal=14.dp,bottom=16.dp)"
-new = "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
-
-n = t.count(old)
-t = t.replace(old, new)
-
-p.write_text(t, encoding="utf-8")
-
-print("Fixed PaddingValues occurrences:", n)
-' "$MAIN"
-          fi
+          print("PaddingValues replacements:", count)
 
 
           # --------------------------------------------------------
           # FIX 2
-          # Compose trailingIcon nested lambda
+          # Broken Compose trailingIcon lambda
           # --------------------------------------------------------
 
-          BROKEN_TRAILING="$(
-            grep -F \
-              'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
-              "$MAIN" |
-            wc -l |
-            tr -d ' '
-          )"
+          old_trailing = (
+              'trailingIcon={if(query.isNotBlank())'
+              '({IconButton(onClick={query=""})'
+              '{Icon(Icons.Default.Clear,null)}}) else null}'
+          )
 
-          echo "Broken trailingIcon occurrences: $BROKEN_TRAILING"
+          new_trailing = (
+              'trailingIcon={if(query.isNotBlank())'
+              '{IconButton(onClick={query=""})'
+              '{Icon(Icons.Default.Clear,null)}} else null}'
+          )
 
-          if [ "$BROKEN_TRAILING" -gt 0 ]; then
-            python3 -c '
-import sys
-from pathlib import Path
+          count = text.count(old_trailing)
 
-p = Path(sys.argv[1])
-t = p.read_text(encoding="utf-8")
+          if count:
+              text = text.replace(old_trailing, new_trailing)
+              fixes += count
 
-old = """trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}"""
-
-new = """trailingIcon={if(query.isNotBlank()){IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}} else null}"""
-
-n = t.count(old)
-t = t.replace(old, new)
-
-p.write_text(t, encoding="utf-8")
-
-print("Fixed trailingIcon occurrences:", n)
-' "$MAIN"
-          fi
+          print("trailingIcon replacements:", count)
 
 
-          # --------------------------------------------------------
-          # VERIFY FIXES
-          # --------------------------------------------------------
+          path.write_text(text, encoding="utf-8")
+
+          print("Total source replacements:", fixes)
+          PY
+
+          echo ""
+          echo "Verifying repaired source..."
 
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
@@ -417,7 +413,6 @@ print("Fixed trailingIcon occurrences:", n)
             exit 1
           fi
 
-
           if grep -Fq \
             'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
             "$MAIN"; then
@@ -426,13 +421,12 @@ print("Fixed trailingIcon occurrences:", n)
             exit 1
           fi
 
+          echo "PaddingValues repair: PASS"
+          echo "trailingIcon repair: PASS"
 
           echo "================================================"
           echo "COMPOSE SOURCE REPAIR: PASS"
           echo "================================================"
-
-          echo "PaddingValues repair: PASS"
-          echo "trailingIcon repair: PASS"
 
 
       # ============================================================
@@ -452,6 +446,10 @@ print("Fixed trailingIcon occurrences:", n)
           echo "KOTLIN SOURCE AUDIT"
           echo "================================================"
 
+          # --------------------------------------------------------
+          # Package
+          # --------------------------------------------------------
+
           if ! grep -Eq \
             '^package[[:space:]]+com\.majdoor\.hisaabpro[[:space:]]*$' \
             "$MAIN"; then
@@ -463,6 +461,10 @@ print("Fixed trailingIcon occurrences:", n)
           echo "Package: PASS"
 
 
+          # --------------------------------------------------------
+          # rememberSaveable import
+          # --------------------------------------------------------
+
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
             "$MAIN"; then
@@ -473,6 +475,10 @@ print("Fixed trailingIcon occurrences:", n)
 
           echo "rememberSaveable import: PASS"
 
+
+          # --------------------------------------------------------
+          # rememberSaveable usage
+          # --------------------------------------------------------
 
           REMEMBER_COUNT="$(
             grep -o \
@@ -491,6 +497,10 @@ print("Fixed trailingIcon occurrences:", n)
           echo "rememberSaveable occurrences: $REMEMBER_COUNT"
 
 
+          # --------------------------------------------------------
+          # Alignment
+          # --------------------------------------------------------
+
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
@@ -501,6 +511,10 @@ print("Fixed trailingIcon occurrences:", n)
 
           echo "Alignment import: PASS"
 
+
+          # --------------------------------------------------------
+          # Column
+          # --------------------------------------------------------
 
           COLUMN_COUNT="$(
             grep -Eo \
@@ -519,6 +533,10 @@ print("Fixed trailingIcon occurrences:", n)
           echo "Column occurrences: $COLUMN_COUNT"
 
 
+          # --------------------------------------------------------
+          # Alignment.End
+          # --------------------------------------------------------
+
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
@@ -529,6 +547,10 @@ print("Fixed trailingIcon occurrences:", n)
 
           echo "Alignment.End: PASS"
 
+
+          # --------------------------------------------------------
+          # Required source symbols
+          # --------------------------------------------------------
 
           REQUIRED_SYMBOLS=(
             "fun validDate"
@@ -570,6 +592,10 @@ print("Fixed trailingIcon occurrences:", n)
           done
 
 
+          # --------------------------------------------------------
+          # Wrong rememberSaveable import
+          # --------------------------------------------------------
+
           if grep -Fq \
             'import androidx.compose.runtime.rememberSaveable' \
             "$MAIN"; then
@@ -580,6 +606,10 @@ print("Fixed trailingIcon occurrences:", n)
 
           echo "Wrong rememberSaveable import: NOT FOUND"
 
+
+          # --------------------------------------------------------
+          # PaddingValues fix
+          # --------------------------------------------------------
 
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
@@ -592,6 +622,10 @@ print("Fixed trailingIcon occurrences:", n)
           echo "PaddingValues fix: PASS"
 
 
+          # --------------------------------------------------------
+          # trailingIcon fix
+          # --------------------------------------------------------
+
           if grep -Fq \
             'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
             "$MAIN"; then
@@ -602,6 +636,10 @@ print("Fixed trailingIcon occurrences:", n)
 
           echo "trailingIcon Compose fix: PASS"
 
+
+          # --------------------------------------------------------
+          # Source size
+          # --------------------------------------------------------
 
           LINE_COUNT="$(
             wc -l < "$MAIN" |
