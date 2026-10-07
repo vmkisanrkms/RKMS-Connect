@@ -30,10 +30,11 @@ env:
   BUILD_TOOLS: "36.0.0"
 
   # ============================================================
-  # CORRECTED SOURCE ZIP
+  # SOURCE ZIP
+  # IMPORTANT: V3 ONLY
   # ============================================================
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_PADDING_FIXED_V2.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_PADDING_FIXED_V3.zip"
 
   # ============================================================
   # APK NAMES
@@ -206,7 +207,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "VERIFY CORRECTED SOURCE ZIP"
+          echo "VERIFY SOURCE ZIP"
           echo "=============================================="
 
           echo ""
@@ -233,7 +234,7 @@ jobs:
           fi
 
           echo ""
-          echo "CORRECTED SOURCE ZIP FOUND."
+          echo "SOURCE ZIP FOUND."
 
           ls -lh "${ZIP_NAME}"
 
@@ -924,10 +925,10 @@ jobs:
 
 
       # ==========================================================
-      # 26. COPY CORRECTED SOURCE ZIP
+      # 26. COPY SOURCE ZIP
       # ==========================================================
 
-      - name: Copy corrected source ZIP to final output
+      - name: Copy source ZIP to final output
         working-directory: ${{ steps.find_android.outputs.android_dir }}
         shell: bash
         run: |
@@ -938,7 +939,7 @@ jobs:
             "final/${ZIP_NAME}"
 
           echo ""
-          echo "Corrected source ZIP copied."
+          echo "Source ZIP copied."
 
           ls -lh final/
 
@@ -1000,13 +1001,13 @@ jobs:
 
 
       # ==========================================================
-      # 30. UPLOAD CORRECTED SOURCE ZIP
+      # 30. UPLOAD V3 SOURCE ZIP
       # ==========================================================
 
-      - name: Upload Corrected Source ZIP
+      - name: Upload V3 Source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-V82-PADDING-FIXED-V2-SOURCE-ZIP
+          name: Majdoor-Hisaab-PRO-V82-PADDING-FIXED-V3-SOURCE-ZIP
           path: |
             ${{ steps.find_android.outputs.android_dir }}/final/${{ env.ZIP_NAME }}
           if-no-files-found: error
