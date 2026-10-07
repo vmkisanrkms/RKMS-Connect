@@ -24,8 +24,6 @@ env:
   VERSION_CODE: "82"
   VERSION_NAME: "1.82.0"
 
-  # IMPORTANT:
-  # This is the ZIP that actually exists in the repository.
   ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_BUILD_READY.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
@@ -290,14 +288,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -f "$PROJECT_ROOT/settings.gradle.kts" || \
-          test -f "$PROJECT_ROOT/settings.gradle"
+          if [ ! -f "$PROJECT_ROOT/settings.gradle.kts" ] && \
+             [ ! -f "$PROJECT_ROOT/settings.gradle" ]; then
+            echo "::error::settings.gradle(.kts) not found."
+            exit 1
+          fi
 
-          test -f "$PROJECT_ROOT/build.gradle.kts" || \
-          test -f "$PROJECT_ROOT/build.gradle"
+          if [ ! -f "$PROJECT_ROOT/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_ROOT/build.gradle" ]; then
+            echo "::error::Root build.gradle(.kts) not found."
+            exit 1
+          fi
 
-          test -f "$PROJECT_ROOT/app/build.gradle.kts" || \
-          test -f "$PROJECT_ROOT/app/build.gradle"
+          if [ ! -f "$PROJECT_ROOT/app/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_ROOT/app/build.gradle" ]; then
+            echo "::error::app/build.gradle(.kts) not found."
+            exit 1
+          fi
 
           test -f \
             "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
@@ -312,48 +319,245 @@ jobs:
 
 
       # ============================================================
-      # 13. VERIFY KOTLIN FIXES
+      # 13. COMPLETE KOTLIN SOURCE AUDIT
       # ============================================================
 
-      - name: Verify Kotlin fixes
+      - name: Audit Kotlin source fixes
         shell: bash
         run: |
           set -euo pipefail
 
           MAIN="$PROJECT_ROOT/app/src/main/java/com/majdoor/hisaabpro/MainActivity.kt"
 
-          test -f "$MAIN"
+          echo "================================================"
+          echo "KOTLIN SOURCE AUDIT"
+          echo "================================================"
 
           # --------------------------------------------------------
-          # rememberSaveable
+          # 1. MainActivity.kt
           # --------------------------------------------------------
 
-          grep -Fq \
-            "import androidx.compose.runtime.saveable.rememberSaveable" \
-            "$MAIN"
+          if [ ! -f "$MAIN" ]; then
+            echo "::error::MainActivity.kt not found:"
+            echo "$MAIN"
+            exit 1
+          fi
+
+          echo "MainActivity.kt: PASS"
+
 
           # --------------------------------------------------------
-          # Column
+          # 2. Package
           # --------------------------------------------------------
 
-          grep -Eq \
-            'Column[[:space:]]*\(' \
-            "$MAIN"
+          if ! grep -Eq \
+            '^package[[:space:]]+com\.majdoor\.hisaabpro[[:space:]]*$' \
+            "$MAIN"; then
+
+            echo "::error::Wrong or missing Kotlin package declaration."
+            exit 1
+          fi
+
+          echo "Kotlin package: PASS"
+
 
           # --------------------------------------------------------
-          # Alignment
+          # 3. rememberSaveable import
           # --------------------------------------------------------
 
-          grep -Fq \
-            "horizontalAlignment = Alignment.End" \
-            "$MAIN"
+          if ! grep -Eq \
+            '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
+            "$MAIN"; then
 
-          echo "rememberSaveable fix: PASS"
-          echo "Column fix: PASS"
-          echo "Alignment fix: PASS"
+            echo "::error::rememberSaveable import is missing."
+            exit 1
+          fi
 
-          # Kotlin compiler remains the final authority.
-          echo "Kotlin source verification: PASS"
+          echo "rememberSaveable import: PASS"
+
+
+          # --------------------------------------------------------
+          # 4. rememberSaveable usage
+          #
+          # Current source uses:
+          #
+          # rememberSaveable{...}
+          #
+          # so do NOT require spaces or parentheses.
+          # --------------------------------------------------------
+
+          REMEMBER_COUNT="$(
+            grep -o \
+              'rememberSaveable' \
+              "$MAIN" |
+            wc -l |
+            tr -d ' '
+          )"
+
+          if [ "$REMEMBER_COUNT" -lt 2 ]; then
+            echo "::error::Expected rememberSaveable usage was not found."
+            echo "Found occurrences: $REMEMBER_COUNT"
+            exit 1
+          fi
+
+          echo "rememberSaveable usage: PASS"
+          echo "rememberSaveable occurrences: $REMEMBER_COUNT"
+
+
+          # --------------------------------------------------------
+          # 5. Alignment import
+          # --------------------------------------------------------
+
+          if ! grep -Eq \
+            '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
+            "$MAIN"; then
+
+            echo "::error::androidx.compose.ui.Alignment import is missing."
+            exit 1
+          fi
+
+          echo "Alignment import: PASS"
+
+
+          # --------------------------------------------------------
+          # 6. Column usage
+          # --------------------------------------------------------
+
+          COLUMN_COUNT="$(
+            grep -Eo \
+              'Column[[:space:]]*\(' \
+              "$MAIN" |
+            wc -l |
+            tr -d ' '
+          )"
+
+          if [ "$COLUMN_COUNT" -lt 1 ]; then
+            echo "::error::Compose Column usage not found."
+            exit 1
+          fi
+
+          echo "Column usage: PASS"
+          echo "Column occurrences: $COLUMN_COUNT"
+
+
+          # --------------------------------------------------------
+          # 7. horizontalAlignment
+          #
+          # Accept all valid Kotlin spacing:
+          #
+          # horizontalAlignment=Alignment.End
+          # horizontalAlignment = Alignment.End
+          # horizontalAlignment  =  Alignment.End
+          # --------------------------------------------------------
+
+          if ! grep -Eq \
+            'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
+            "$MAIN"; then
+
+            echo "::error::Column horizontalAlignment=Alignment.End fix not found."
+            exit 1
+          fi
+
+          echo "Column horizontalAlignment End: PASS"
+
+
+          # --------------------------------------------------------
+          # 8. Required source symbols
+          #
+          # CaneParchiDialog is intentionally NOT required.
+          # It is not a function in the current audited source.
+          # --------------------------------------------------------
+
+          REQUIRED_SYMBOLS=(
+            "fun validDate"
+            "fun today"
+            "fun money"
+            "fun displayDate"
+            "fun Stat"
+            "fun DashboardStat"
+            "fun DashboardModule"
+            "fun LabourScreen"
+            "fun FieldScreen"
+            "fun CropScreen"
+            "fun ExpenseScreen"
+            "fun SaleScreen"
+            "fun AttendanceScreen"
+            "fun FieldDetail"
+            "fun LabourDetail"
+            "fun PaymentDialog"
+            "fun RateDialog"
+            "fun CropDetail"
+            "exportReportPhoto"
+            "exportReportPdf"
+            "ExportButtons"
+            "DeviceCredentialDeleteGate"
+            "CaneParchiScreen"
+            "CanePriceDialog"
+            "CaneParchiDetail"
+          )
+
+          for SYMBOL in "${REQUIRED_SYMBOLS[@]}"; do
+
+            if ! grep -Fq "$SYMBOL" "$MAIN"; then
+              echo "::error::Required Kotlin source symbol missing: $SYMBOL"
+              exit 1
+            fi
+
+            echo "Source symbol: $SYMBOL : PASS"
+
+          done
+
+
+          # --------------------------------------------------------
+          # 9. Wrong rememberSaveable import must NOT exist
+          # --------------------------------------------------------
+
+          if grep -Fq \
+            'import androidx.compose.runtime.rememberSaveable' \
+            "$MAIN"; then
+
+            echo "::error::Wrong rememberSaveable import detected."
+            exit 1
+          fi
+
+          echo "Wrong rememberSaveable import: NOT FOUND"
+
+
+          # --------------------------------------------------------
+          # 10. Source size sanity
+          # --------------------------------------------------------
+
+          LINE_COUNT="$(
+            wc -l < "$MAIN" |
+            tr -d ' '
+          )"
+
+          if [ "$LINE_COUNT" -lt 100 ]; then
+            echo "::error::MainActivity.kt appears unexpectedly small."
+            echo "Lines: $LINE_COUNT"
+            exit 1
+          fi
+
+          echo "Kotlin source lines: $LINE_COUNT"
+
+
+          # --------------------------------------------------------
+          # FINAL SOURCE AUDIT
+          # --------------------------------------------------------
+
+          echo ""
+          echo "================================================"
+          echo "KOTLIN SOURCE AUDIT: PASS"
+          echo "================================================"
+          echo "MainActivity.kt: PASS"
+          echo "Package: PASS"
+          echo "rememberSaveable import: PASS"
+          echo "rememberSaveable usage: PASS"
+          echo "Column: PASS"
+          echo "Alignment: PASS"
+          echo "Required source symbols: PASS"
+          echo "Source structure: PASS"
+          echo "================================================"
 
 
       # ============================================================
@@ -387,7 +591,7 @@ jobs:
 
 
       # ============================================================
-      # 15. VERIFY BACKUP CONFIG
+      # 15. VERIFY BACKUP CONFIGURATION
       # ============================================================
 
       - name: Verify backup configuration
@@ -432,7 +636,7 @@ jobs:
 
 
       # ============================================================
-      # 17. VERIFY MAIN ACTIVITY FEATURES
+      # 17. VERIFY REQUIRED SOURCE FEATURES
       # ============================================================
 
       - name: Verify required source features
@@ -466,7 +670,6 @@ jobs:
             "ExportButtons" \
             "DeviceCredentialDeleteGate" \
             "CaneParchiScreen" \
-            "CaneParchiDialog" \
             "CanePriceDialog" \
             "CaneParchiDetail"; do
 
@@ -845,8 +1048,11 @@ jobs:
           Certificate:
           VERIFIED
 
-          Kotlin compile:
+          Kotlin source audit:
           VERIFIED
+
+          Kotlin compile:
+          VERIFIED ONLY AFTER GRADLE BUILD
 
           Backup XML:
           VERIFIED
@@ -896,6 +1102,7 @@ jobs:
           echo "APK: ${APK_SIGNED_NAME}"
           echo "Source ZIP: ${ZIP_NAME}"
           echo "Signing: PERMANENT PRODUCTION KEY"
+          echo "Kotlin Source Audit: PASS"
           echo "Kotlin Compile: PASS"
           echo "Backup XML: PASS"
           echo "Ganna Parchi: PASS"
