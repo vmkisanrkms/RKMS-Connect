@@ -172,10 +172,10 @@ jobs:
 
 
       # ============================================================
-      # 8. FIND FIXED V18 ZIP
+      # 8. FIND V4 BUILD-READY ZIP
       # ============================================================
 
-      - name: Locate Fixed V18 ZIP
+      - name: Locate V4 Build-Ready ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -192,7 +192,7 @@ jobs:
           fi
 
           if [ -z "$ZIP_PATH" ]; then
-            echo "::error::Fixed V18 ZIP not found:"
+            echo "::error::V4 Build-Ready ZIP not found:"
             echo "$ZIP_NAME"
 
             echo "Available ZIP files:"
@@ -226,12 +226,12 @@ jobs:
       # 10. EXTRACT PROJECT
       # ============================================================
 
-      - name: Extract Fixed V18 project
+      - name: Extract V4 project
         shell: bash
         run: |
           set -euo pipefail
 
-          EXTRACT_ROOT="$RUNNER_TEMP/majdoor-v18-project"
+          EXTRACT_ROOT="$RUNNER_TEMP/majdoor-v4-project"
 
           rm -rf "$EXTRACT_ROOT"
           mkdir -p "$EXTRACT_ROOT"
@@ -307,7 +307,7 @@ jobs:
 
 
       # ============================================================
-      # 13. VERIFY KOTLIN FIX
+      # 13. VERIFY KOTLIN FIXES
       # ============================================================
 
       - name: Verify Kotlin fixes
@@ -319,16 +319,50 @@ jobs:
 
           test -f "$MAIN"
 
+          # --------------------------------------------------------
+          # rememberSaveable
+          # --------------------------------------------------------
+
           grep -Fq \
             "import androidx.compose.runtime.saveable.rememberSaveable" \
             "$MAIN"
 
-          grep -Fq \
-            "maxLines=1)};Column(horizontalAlignment=Alignment.End)" \
+          # --------------------------------------------------------
+          # Column / Alignment fix
+          # --------------------------------------------------------
+
+          grep -Eq \
+            'Column[[:space:]]*\(' \
             "$MAIN"
 
+          grep -Fq \
+            "horizontalAlignment = Alignment.End" \
+            "$MAIN"
+
+          # --------------------------------------------------------
+          # Ganna Parchi full-screen form
+          # --------------------------------------------------------
+
+          grep -Fq \
+            "CaneParchiFormScreen" \
+            "$MAIN"
+
+          # --------------------------------------------------------
+          # Old dialog must NOT exist
+          # --------------------------------------------------------
+
+          if grep -Fq \
+            "CaneParchiDialog" \
+            "$MAIN"; then
+
+            echo "::error::Old CaneParchiDialog still exists in V4 source."
+            exit 1
+          fi
+
           echo "rememberSaveable fix: PASS"
-          echo "Column fix: PASS"
+          echo "Column / Alignment fix: PASS"
+          echo "CaneParchiFormScreen: PASS"
+          echo "Old CaneParchiDialog: REMOVED"
 
 
       # ============================================================
@@ -441,15 +475,26 @@ jobs:
             "ExportButtons" \
             "DeviceCredentialDeleteGate" \
             "CaneParchiScreen" \
-            "CaneParchiDialog" \
+            "CaneParchiFormScreen" \
             "CanePriceDialog" \
             "CaneParchiDetail"; do
 
-            grep -q "$symbol" "$MAIN"
+            if ! grep -Fq "$symbol" "$MAIN"; then
+              echo "::error::Required source feature missing: $symbol"
+              exit 1
+            fi
 
           done
 
+          # Old dialog must remain removed.
+          if grep -Fq "CaneParchiDialog" "$MAIN"; then
+            echo "::error::Old CaneParchiDialog must not exist in V4."
+            exit 1
+          fi
+
           echo "Required source features: PASS"
+          echo "New/Edit full-screen Ganna Parchi form: PASS"
+          echo "Old CaneParchiDialog: REMOVED"
 
 
       # ============================================================
@@ -823,6 +868,15 @@ jobs:
           Invalid cache backup domain:
           REMOVED
 
+          Ganna Parchi UI:
+          REFERENCE V4
+
+          New/Edit Parchi Form:
+          FULL SCREEN
+
+          Old CaneParchiDialog:
+          REMOVED
+
           Final status:
           SUCCESS
           EOF
@@ -863,6 +917,9 @@ jobs:
           echo "Signing: PERMANENT PRODUCTION KEY"
           echo "Kotlin Fix: PASS"
           echo "Backup XML Fix: PASS"
+          echo "Ganna Parchi UI: V4"
+          echo "New/Edit Form: FULL SCREEN"
+          echo "Old Dialog: REMOVED"
           echo "================================================"
 
 
