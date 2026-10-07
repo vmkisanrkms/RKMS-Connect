@@ -62,7 +62,7 @@ jobs:
 
 
       # ============================================================
-      # 3. GRADLE
+      # 3. GRADLE 8.11.1
       # ============================================================
 
       - name: Setup Gradle 8.11.1
@@ -72,7 +72,7 @@ jobs:
 
 
       # ============================================================
-      # 4. ANDROID SDK
+      # 4. LOCATE ANDROID SDK
       # ============================================================
 
       - name: Locate Android SDK
@@ -82,10 +82,13 @@ jobs:
 
           if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
             SDK_ROOT="$ANDROID_SDK_ROOT"
+
           elif [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
             SDK_ROOT="$ANDROID_HOME"
+
           elif [ -d "/usr/local/lib/android/sdk" ]; then
             SDK_ROOT="/usr/local/lib/android/sdk"
+
           else
             echo "::error::Android SDK not found."
             exit 1
@@ -117,7 +120,7 @@ jobs:
 
 
       # ============================================================
-      # 5. INSTALL API 36
+      # 5. INSTALL ANDROID API 36
       # ============================================================
 
       - name: Install Android API 36
@@ -140,7 +143,7 @@ jobs:
 
 
       # ============================================================
-      # 6. ANDROID TOOLS
+      # 6. VERIFY ANDROID TOOLS
       # ============================================================
 
       - name: Verify Android tools
@@ -157,7 +160,7 @@ jobs:
 
 
       # ============================================================
-      # 7. JAVA / GRADLE
+      # 7. VERIFY JAVA AND GRADLE
       # ============================================================
 
       - name: Verify Java and Gradle
@@ -193,12 +196,14 @@ jobs:
             echo "::error::Source ZIP not found."
             echo "Expected:"
             echo "$ZIP_NAME"
+
             echo ""
             echo "Available ZIP files:"
             find "$GITHUB_WORKSPACE" \
               -type f \
               -iname "*.zip" \
               -print || true
+
             exit 1
           fi
 
@@ -209,7 +214,7 @@ jobs:
 
 
       # ============================================================
-      # 9. ZIP INTEGRITY
+      # 9. VERIFY ZIP
       # ============================================================
 
       - name: Verify ZIP integrity
@@ -221,7 +226,7 @@ jobs:
 
 
       # ============================================================
-      # 10. EXTRACT
+      # 10. EXTRACT PROJECT
       # ============================================================
 
       - name: Extract Fixed V18 project
@@ -275,7 +280,7 @@ jobs:
 
 
       # ============================================================
-      # 12. PROJECT STRUCTURE
+      # 12. VERIFY ANDROID PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -311,7 +316,7 @@ jobs:
 
 
       # ============================================================
-      # 13. REPAIR KNOWN KOTLIN ERROR
+      # 13. REPAIR KNOWN KOTLIN COMPILE ERROR
       # ============================================================
 
       - name: Repair known Kotlin compile error
@@ -323,7 +328,9 @@ jobs:
 
           test -f "$MAIN"
 
-          echo "Checking known PaddingValues compile error..."
+          echo "================================================"
+          echo "CHECKING KNOWN KOTLIN COMPILE ERROR"
+          echo "================================================"
 
           BROKEN_COUNT="$(
             grep -F \
@@ -333,29 +340,11 @@ jobs:
             tr -d ' '
           )"
 
-          echo "Broken occurrences: $BROKEN_COUNT"
+          echo "Broken PaddingValues occurrences: $BROKEN_COUNT"
 
           if [ "$BROKEN_COUNT" -gt 0 ]; then
 
-            python3 - "$MAIN" <<'PY'
-import sys
-from pathlib import Path
-
-file_path = Path(sys.argv[1])
-
-text = file_path.read_text(encoding="utf-8")
-
-old_text = "PaddingValues(horizontal=14.dp,bottom=16.dp)"
-new_text = "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
-
-count = text.count(old_text)
-
-if count:
-    text = text.replace(old_text, new_text)
-    file_path.write_text(text, encoding="utf-8")
-
-print("Fixed occurrences:", count)
-PY
+            python3 -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); t=p.read_text(encoding="utf-8"); old="PaddingValues(horizontal=14.dp,bottom=16.dp)"; new="PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"; n=t.count(old); p.write_text(t.replace(old,new),encoding="utf-8"); print("Fixed occurrences:",n)' "$MAIN"
 
           fi
 
@@ -367,11 +356,16 @@ PY
             exit 1
           fi
 
-          echo "PaddingValues repair: PASS"
+          echo "PaddingValues compile repair: PASS"
+
+          echo "Correct PaddingValues occurrences:"
+          grep -n \
+            'PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)' \
+            "$MAIN" || true
 
 
       # ============================================================
-      # 14. KOTLIN SOURCE AUDIT
+      # 14. COMPLETE KOTLIN SOURCE AUDIT
       # ============================================================
 
       - name: Audit Kotlin source
@@ -387,26 +381,44 @@ PY
           echo "KOTLIN SOURCE AUDIT"
           echo "================================================"
 
+          # --------------------------------------------------------
+          # Package
+          # --------------------------------------------------------
+
           if ! grep -Eq \
             '^package[[:space:]]+com\.majdoor\.hisaabpro[[:space:]]*$' \
             "$MAIN"; then
+
             echo "::error::Wrong Kotlin package."
             exit 1
           fi
 
           echo "Package: PASS"
 
+
+          # --------------------------------------------------------
+          # rememberSaveable import
+          # --------------------------------------------------------
+
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
             "$MAIN"; then
+
             echo "::error::rememberSaveable import missing."
             exit 1
           fi
 
           echo "rememberSaveable import: PASS"
 
+
+          # --------------------------------------------------------
+          # rememberSaveable usage
+          # --------------------------------------------------------
+
           REMEMBER_COUNT="$(
-            grep -o 'rememberSaveable' "$MAIN" |
+            grep -o \
+              'rememberSaveable' \
+              "$MAIN" |
             wc -l |
             tr -d ' '
           )"
@@ -417,18 +429,32 @@ PY
           fi
 
           echo "rememberSaveable usage: PASS"
+          echo "rememberSaveable occurrences: $REMEMBER_COUNT"
+
+
+          # --------------------------------------------------------
+          # Alignment
+          # --------------------------------------------------------
 
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
+
             echo "::error::Alignment import missing."
             exit 1
           fi
 
           echo "Alignment import: PASS"
 
+
+          # --------------------------------------------------------
+          # Column
+          # --------------------------------------------------------
+
           COLUMN_COUNT="$(
-            grep -Eo 'Column[[:space:]]*\(' "$MAIN" |
+            grep -Eo \
+              'Column[[:space:]]*\(' \
+              "$MAIN" |
             wc -l |
             tr -d ' '
           )"
@@ -439,15 +465,27 @@ PY
           fi
 
           echo "Column usage: PASS"
+          echo "Column occurrences: $COLUMN_COUNT"
+
+
+          # --------------------------------------------------------
+          # Alignment.End
+          # --------------------------------------------------------
 
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
+
             echo "::error::horizontalAlignment=Alignment.End missing."
             exit 1
           fi
 
           echo "Alignment.End: PASS"
+
+
+          # --------------------------------------------------------
+          # Required source symbols
+          # --------------------------------------------------------
 
           REQUIRED_SYMBOLS=(
             "fun validDate"
@@ -478,27 +516,50 @@ PY
           )
 
           for SYMBOL in "${REQUIRED_SYMBOLS[@]}"; do
+
             if ! grep -Fq "$SYMBOL" "$MAIN"; then
               echo "::error::Missing source symbol: $SYMBOL"
               exit 1
             fi
+
+            echo "$SYMBOL : PASS"
+
           done
 
-          echo "Required source symbols: PASS"
+
+          # --------------------------------------------------------
+          # Wrong rememberSaveable import
+          # --------------------------------------------------------
 
           if grep -Fq \
             'import androidx.compose.runtime.rememberSaveable' \
             "$MAIN"; then
+
             echo "::error::Wrong rememberSaveable import found."
             exit 1
           fi
 
+          echo "Wrong rememberSaveable import: NOT FOUND"
+
+
+          # --------------------------------------------------------
+          # Broken PaddingValues must be gone
+          # --------------------------------------------------------
+
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
             "$MAIN"; then
+
             echo "::error::Broken PaddingValues still found."
             exit 1
           fi
+
+          echo "PaddingValues fix: PASS"
+
+
+          # --------------------------------------------------------
+          # Source size
+          # --------------------------------------------------------
 
           LINE_COUNT="$(
             wc -l < "$MAIN" |
@@ -511,6 +572,7 @@ PY
           fi
 
           echo "Source lines: $LINE_COUNT"
+
 
           echo "================================================"
           echo "KOTLIN SOURCE AUDIT: PASS"
@@ -557,7 +619,9 @@ PY
 
           MANIFEST="$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
 
-          grep -q 'android:allowBackup="true"' "$MANIFEST"
+          grep -q \
+            'android:allowBackup="true"' \
+            "$MANIFEST"
 
           grep -q \
             'fullBackupContent="@xml/backup_rules"' \
@@ -590,7 +654,7 @@ PY
 
 
       # ============================================================
-      # 18. SOURCE FEATURES
+      # 18. REQUIRED SOURCE FEATURES
       # ============================================================
 
       - name: Verify required source features
@@ -709,7 +773,7 @@ PY
 
 
       # ============================================================
-      # 22. PRODUCTION KEYSTORE
+      # 22. PREPARE PERMANENT KEYSTORE
       # ============================================================
 
       - name: Prepare permanent production keystore
@@ -744,7 +808,8 @@ PY
               -keystore "$KEYSTORE" \
               -storepass "$RELEASE_KEYSTORE_PASSWORD" \
               -alias "$RELEASE_KEY_ALIAS" |
-            awk -F': ' '/SHA256:/{print $2; exit}' |
+            awk -F': ' \
+              '/SHA256:/{print $2; exit}' |
             tr -d ' :\r\n' |
             tr '[:lower:]' '[:upper:]'
           )"
@@ -846,7 +911,7 @@ PY
 
 
       # ============================================================
-      # 27. APK SIGNATURE
+      # 27. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -863,7 +928,7 @@ PY
 
 
       # ============================================================
-      # 28. PRODUCTION CERTIFICATE
+      # 28. VERIFY PERMANENT CERTIFICATE
       # ============================================================
 
       - name: Verify permanent production certificate
@@ -903,7 +968,7 @@ PY
 
 
       # ============================================================
-      # 29. APK ALIGNMENT
+      # 29. VERIFY APK ALIGNMENT
       # ============================================================
 
       - name: Verify APK alignment
@@ -923,7 +988,7 @@ PY
 
 
       # ============================================================
-      # 30. PACKAGE / VERSION
+      # 30. VERIFY FINAL PACKAGE / VERSION
       # ============================================================
 
       - name: Verify final APK package and version
@@ -1005,7 +1070,7 @@ PY
 
 
       # ============================================================
-      # 33. UPLOAD APK
+      # 33. UPLOAD FINAL APK
       # ============================================================
 
       - name: Upload final signed APK
