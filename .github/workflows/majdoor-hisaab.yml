@@ -30,14 +30,13 @@ env:
   BUILD_TOOLS: "36.0.0"
 
   # ============================================================
-  # SOURCE ZIP
-  # IMPORTANT: V3 ONLY
+  # CORRECTED SOURCE ZIP
   # ============================================================
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_PADDING_FIXED_V4.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_V12.zip"
 
   # ============================================================
-  # APK NAMES
+  # FINAL APK
   # ============================================================
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
@@ -53,12 +52,12 @@ env:
 jobs:
 
   # ============================================================
-  # BUILD RELEASE
+  # ONLY ONE MAIN RELEASE BUILD
   # ============================================================
 
   build-release:
 
-    name: Build Android 16 Release APK
+    name: Main Final Signed Release APK
 
     runs-on: ubuntu-24.04
 
@@ -198,29 +197,29 @@ jobs:
 
 
       # ==========================================================
-      # 7. VERIFY SOURCE ZIP
+      # 7. VERIFY CORRECTED SOURCE ZIP
       # ==========================================================
 
-      - name: Verify corrected source ZIP
+      - name: Verify corrected V12 source ZIP
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY SOURCE ZIP"
+          echo "VERIFY V12 SOURCE ZIP"
           echo "=============================================="
 
           echo ""
-          echo "Looking for:"
+          echo "Required ZIP:"
           echo "${ZIP_NAME}"
 
           if [ ! -f "${ZIP_NAME}" ]; then
 
             echo ""
-            echo "ERROR: Required ZIP file was not found."
+            echo "ERROR: Required V12 ZIP was not found."
 
             echo ""
-            echo "ZIP files in repository:"
+            echo "ZIP files available in repository:"
 
             find . \
               -maxdepth 3 \
@@ -234,7 +233,7 @@ jobs:
           fi
 
           echo ""
-          echo "SOURCE ZIP FOUND."
+          echo "V12 SOURCE ZIP FOUND."
 
           ls -lh "${ZIP_NAME}"
 
@@ -256,16 +255,16 @@ jobs:
 
 
       # ==========================================================
-      # 9. EXTRACT SOURCE ZIP
+      # 9. EXTRACT V12 SOURCE ZIP
       # ==========================================================
 
-      - name: Extract source ZIP
+      - name: Extract V12 source ZIP
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "EXTRACT SOURCE ZIP"
+          echo "EXTRACT V12 SOURCE ZIP"
           echo "=============================================="
 
           unzip -q \
@@ -546,7 +545,7 @@ jobs:
 
 
       # ==========================================================
-      # 17. LOCATE APK
+      # 17. LOCATE GENERATED APK
       # ==========================================================
 
       - name: Locate generated Release APK
@@ -883,99 +882,10 @@ jobs:
 
 
       # ==========================================================
-      # 25. BUILD INFORMATION
+      # 25. UPLOAD ONLY ONE MAIN APK
       # ==========================================================
 
-      - name: Create build information
-        working-directory: ${{ steps.find_android.outputs.android_dir }}
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p final
-
-          {
-            printf '%s\n' "=============================================="
-            printf '%s\n' "MAJDOOR HISAAAB PRO V82"
-            printf '%s\n' "FINAL SIGNED RELEASE"
-            printf '%s\n' "=============================================="
-            printf '%s\n' ""
-            printf '%s\n' "Package: ${EXPECTED_PACKAGE}"
-            printf '%s\n' "Android API: ${ANDROID_API}"
-            printf '%s\n' "Build Tools: ${BUILD_TOOLS}"
-            printf '%s\n' "Java: ${JAVA_VERSION}"
-            printf '%s\n' "Gradle: ${GRADLE_VERSION}"
-            printf '%s\n' "Runner: ubuntu-24.04"
-            printf '%s\n' ""
-            printf '%s\n' "Source ZIP: ${ZIP_NAME}"
-            printf '%s\n' "APK: ${APK_SIGNED_NAME}"
-            printf '%s\n' ""
-            printf '%s\n' "Git commit: ${GITHUB_SHA}"
-            printf '%s\n' "Git ref: ${GITHUB_REF}"
-            printf '%s\n' "Run number: ${GITHUB_RUN_NUMBER}"
-            printf '%s\n' ""
-            printf '%s\n' "SHA256:"
-            sha256sum "final/${APK_SIGNED_NAME}"
-            printf '%s\n' ""
-            printf '%s\n' "Build completed successfully."
-            printf '%s\n' "=============================================="
-          } > final/BUILD_INFO.txt
-
-          cat final/BUILD_INFO.txt
-
-
-      # ==========================================================
-      # 26. COPY SOURCE ZIP
-      # ==========================================================
-
-      - name: Copy source ZIP to final output
-        working-directory: ${{ steps.find_android.outputs.android_dir }}
-        shell: bash
-        run: |
-          set -e
-
-          cp \
-            "${GITHUB_WORKSPACE}/${ZIP_NAME}" \
-            "final/${ZIP_NAME}"
-
-          echo ""
-          echo "Source ZIP copied."
-
-          ls -lh final/
-
-
-      # ==========================================================
-      # 27. CREATE FINAL RELEASE PACKAGE
-      # ==========================================================
-
-      - name: Create final release package
-        working-directory: ${{ steps.find_android.outputs.android_dir }}
-        shell: bash
-        run: |
-          set -e
-
-          cd final
-
-          rm -f \
-            "Majdoor_Hisaab_PRO_V82_FINAL_RELEASE_PACKAGE.zip"
-
-          zip -q \
-            "Majdoor_Hisaab_PRO_V82_FINAL_RELEASE_PACKAGE.zip" \
-            "${APK_SIGNED_NAME}" \
-            "BUILD_INFO.txt"
-
-          echo ""
-          echo "Final release package:"
-
-          ls -lh \
-            "Majdoor_Hisaab_PRO_V82_FINAL_RELEASE_PACKAGE.zip"
-
-
-      # ==========================================================
-      # 28. UPLOAD SIGNED APK
-      # ==========================================================
-
-      - name: Upload Final Signed APK
+      - name: Upload Main Final Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
@@ -986,36 +896,7 @@ jobs:
 
 
       # ==========================================================
-      # 29. UPLOAD RELEASE PACKAGE
-      # ==========================================================
-
-      - name: Upload Final Release Package
-        uses: actions/upload-artifact@v4
-        with:
-          name: Majdoor-Hisaab-PRO-V82-FINAL-RELEASE-PACKAGE
-          path: |
-            ${{ steps.find_android.outputs.android_dir }}/final/Majdoor_Hisaab_PRO_V82_FINAL_RELEASE_PACKAGE.zip
-            ${{ steps.find_android.outputs.android_dir }}/final/BUILD_INFO.txt
-          if-no-files-found: error
-          retention-days: 30
-
-
-      # ==========================================================
-      # 30. UPLOAD V3 SOURCE ZIP
-      # ==========================================================
-
-      - name: Upload V3 Source ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: Majdoor-Hisaab-PRO-V82-PADDING-FIXED-V3-SOURCE-ZIP
-          path: |
-            ${{ steps.find_android.outputs.android_dir }}/final/${{ env.ZIP_NAME }}
-          if-no-files-found: error
-          retention-days: 30
-
-
-      # ==========================================================
-      # 31. FINAL SUCCESS
+      # 26. FINAL SUCCESS
       # ==========================================================
 
       - name: Final success check
@@ -1026,39 +907,39 @@ jobs:
 
           echo ""
           echo "======================================================"
-          echo "       MAJDOOR HISAAAB PRO V82 - SUCCESS"
+          echo "     MAJDOOR HISAAAB PRO V82 - SUCCESS"
           echo "======================================================"
           echo ""
-          echo "Source ZIP:"
+          echo "SOURCE:"
           echo "  ${ZIP_NAME}"
           echo ""
-          echo "Signed APK:"
+          echo "FINAL APK:"
           echo "  ${APK_SIGNED_NAME}"
           echo ""
-          echo "Package:"
+          echo "PACKAGE:"
           echo "  ${EXPECTED_PACKAGE}"
           echo ""
-          echo "Android API:"
+          echo "ANDROID API:"
           echo "  ${ANDROID_API}"
           echo ""
-          echo "Build Tools:"
+          echo "BUILD TOOLS:"
           echo "  ${BUILD_TOOLS}"
           echo ""
-          echo "Java:"
+          echo "JAVA:"
           echo "  ${JAVA_VERSION}"
           echo ""
-          echo "Gradle:"
+          echo "GRADLE:"
           echo "  ${GRADLE_VERSION}"
           echo ""
-          echo "Zipalign:"
+          echo "ZIPALIGN:"
           echo "  VERIFIED"
           echo ""
-          echo "Signature:"
+          echo "SIGNATURE:"
           echo "  VERIFIED"
           echo ""
-          echo "Package:"
+          echo "PACKAGE:"
           echo "  VERIFIED"
           echo ""
           echo "======================================================"
-          echo "FINAL SIGNED APK BUILD SUCCESSFUL"
+          echo "ONLY ONE MAIN FINAL SIGNED APK GENERATED"
           echo "======================================================"
