@@ -328,7 +328,7 @@ jobs:
             "$MAIN"
 
           # --------------------------------------------------------
-          # Column / Alignment fix
+          # Column / Alignment
           # --------------------------------------------------------
 
           grep -Eq \
@@ -348,21 +348,23 @@ jobs:
             "$MAIN"
 
           # --------------------------------------------------------
-          # Old dialog must NOT exist
+          # OLD DIALOG:
+          # Only reject an actual function declaration.
+          # A simple string/reference/comment must not fail the build.
           # --------------------------------------------------------
 
-          if grep -Fq \
-            "CaneParchiDialog" \
+          if grep -Eq \
+            '^[[:space:]]*(private[[:space:]]+)?(fun|suspend[[:space:]]+fun)[[:space:]]+CaneParchiDialog[[:space:]]*\(' \
             "$MAIN"; then
 
-            echo "::error::Old CaneParchiDialog still exists in V4 source."
+            echo "::error::Old CaneParchiDialog function still exists."
             exit 1
           fi
 
           echo "rememberSaveable fix: PASS"
           echo "Column / Alignment fix: PASS"
           echo "CaneParchiFormScreen: PASS"
-          echo "Old CaneParchiDialog: REMOVED"
+          echo "Old CaneParchiDialog function: REMOVED"
 
 
       # ============================================================
@@ -486,15 +488,18 @@ jobs:
 
           done
 
-          # Old dialog must remain removed.
-          if grep -Fq "CaneParchiDialog" "$MAIN"; then
-            echo "::error::Old CaneParchiDialog must not exist in V4."
+          # Only reject an actual old Dialog function.
+          if grep -Eq \
+            '^[[:space:]]*(private[[:space:]]+)?(fun|suspend[[:space:]]+fun)[[:space:]]+CaneParchiDialog[[:space:]]*\(' \
+            "$MAIN"; then
+
+            echo "::error::Old CaneParchiDialog function still exists."
             exit 1
           fi
 
           echo "Required source features: PASS"
           echo "New/Edit full-screen Ganna Parchi form: PASS"
-          echo "Old CaneParchiDialog: REMOVED"
+          echo "Old CaneParchiDialog function: REMOVED"
 
 
       # ============================================================
@@ -874,7 +879,7 @@ jobs:
           New/Edit Parchi Form:
           FULL SCREEN
 
-          Old CaneParchiDialog:
+          Old CaneParchiDialog function:
           REMOVED
 
           Final status:
@@ -919,7 +924,7 @@ jobs:
           echo "Backup XML Fix: PASS"
           echo "Ganna Parchi UI: V4"
           echo "New/Edit Form: FULL SCREEN"
-          echo "Old Dialog: REMOVED"
+          echo "Old Dialog Function: REMOVED"
           echo "================================================"
 
 
