@@ -24,7 +24,7 @@ env:
   VERSION_CODE: "82"
   VERSION_NAME: "1.82.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_KOTLIN_BACKUP_FIXED.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -172,10 +172,10 @@ jobs:
 
 
       # ============================================================
-      # 8. FIND V18 ZIP
+      # 8. FIND FIXED V18 ZIP
       # ============================================================
 
-      - name: Locate V18 ZIP
+      - name: Locate Fixed V18 ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -192,7 +192,7 @@ jobs:
           fi
 
           if [ -z "$ZIP_PATH" ]; then
-            echo "::error::V18 ZIP not found:"
+            echo "::error::Fixed V18 ZIP not found:"
             echo "$ZIP_NAME"
 
             echo "Available ZIP files:"
@@ -226,7 +226,7 @@ jobs:
       # 10. EXTRACT PROJECT
       # ============================================================
 
-      - name: Extract V18 project
+      - name: Extract Fixed V18 project
         shell: bash
         run: |
           set -euo pipefail
@@ -635,7 +635,7 @@ jobs:
 
 
       # ============================================================
-      # 25. COPY FINAL APK
+      # 25. PREPARE FINAL APK
       # ============================================================
 
       - name: Prepare final APK
