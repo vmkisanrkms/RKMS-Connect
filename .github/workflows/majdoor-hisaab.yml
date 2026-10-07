@@ -24,7 +24,7 @@ env:
   VERSION_CODE: "82"
   VERSION_NAME: "1.82.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_FINAL_FIXED_V3.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GANNA_PARCHI_BACKUP_APPLOCK_FINAL_V18_REFERENCE_UI_FIXED_V4_FINAL_FIXED_V3_GOOGLE_DRIVE_DIRECT_API_FANDI_V3.zip"
 
   APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
@@ -396,7 +396,6 @@ jobs:
 
           print("trailingIcon replacements:", count)
 
-
           path.write_text(text, encoding="utf-8")
 
           print("Total source replacements:", fixes)
@@ -446,10 +445,6 @@ jobs:
           echo "KOTLIN SOURCE AUDIT"
           echo "================================================"
 
-          # --------------------------------------------------------
-          # Package
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^package[[:space:]]+com\.majdoor\.hisaabpro[[:space:]]*$' \
             "$MAIN"; then
@@ -460,11 +455,6 @@ jobs:
 
           echo "Package: PASS"
 
-
-          # --------------------------------------------------------
-          # rememberSaveable import
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
             "$MAIN"; then
@@ -474,11 +464,6 @@ jobs:
           fi
 
           echo "rememberSaveable import: PASS"
-
-
-          # --------------------------------------------------------
-          # rememberSaveable usage
-          # --------------------------------------------------------
 
           REMEMBER_COUNT="$(
             grep -o \
@@ -496,11 +481,6 @@ jobs:
           echo "rememberSaveable usage: PASS"
           echo "rememberSaveable occurrences: $REMEMBER_COUNT"
 
-
-          # --------------------------------------------------------
-          # Alignment
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
@@ -510,11 +490,6 @@ jobs:
           fi
 
           echo "Alignment import: PASS"
-
-
-          # --------------------------------------------------------
-          # Column
-          # --------------------------------------------------------
 
           COLUMN_COUNT="$(
             grep -Eo \
@@ -532,11 +507,6 @@ jobs:
           echo "Column usage: PASS"
           echo "Column occurrences: $COLUMN_COUNT"
 
-
-          # --------------------------------------------------------
-          # Alignment.End
-          # --------------------------------------------------------
-
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
@@ -546,11 +516,6 @@ jobs:
           fi
 
           echo "Alignment.End: PASS"
-
-
-          # --------------------------------------------------------
-          # Required source symbols
-          # --------------------------------------------------------
 
           REQUIRED_SYMBOLS=(
             "fun validDate"
@@ -591,11 +556,6 @@ jobs:
 
           done
 
-
-          # --------------------------------------------------------
-          # Wrong rememberSaveable import
-          # --------------------------------------------------------
-
           if grep -Fq \
             'import androidx.compose.runtime.rememberSaveable' \
             "$MAIN"; then
@@ -605,11 +565,6 @@ jobs:
           fi
 
           echo "Wrong rememberSaveable import: NOT FOUND"
-
-
-          # --------------------------------------------------------
-          # PaddingValues fix
-          # --------------------------------------------------------
 
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
@@ -621,11 +576,6 @@ jobs:
 
           echo "PaddingValues fix: PASS"
 
-
-          # --------------------------------------------------------
-          # trailingIcon fix
-          # --------------------------------------------------------
-
           if grep -Fq \
             'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
             "$MAIN"; then
@@ -635,11 +585,6 @@ jobs:
           fi
 
           echo "trailingIcon Compose fix: PASS"
-
-
-          # --------------------------------------------------------
-          # Source size
-          # --------------------------------------------------------
 
           LINE_COUNT="$(
             wc -l < "$MAIN" |
