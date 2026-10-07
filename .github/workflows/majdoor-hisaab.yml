@@ -33,7 +33,7 @@ env:
   # CORRECTED SOURCE ZIP
   # ============================================================
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_PADDING_FIXED.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_PADDING_FIXED_V2.zip"
 
   # ============================================================
   # APK NAMES
@@ -197,7 +197,7 @@ jobs:
 
 
       # ==========================================================
-      # 7. VERIFY CORRECTED SOURCE ZIP
+      # 7. VERIFY SOURCE ZIP
       # ==========================================================
 
       - name: Verify corrected source ZIP
@@ -216,7 +216,7 @@ jobs:
           if [ ! -f "${ZIP_NAME}" ]; then
 
             echo ""
-            echo "ERROR: Corrected ZIP file was not found."
+            echo "ERROR: Required ZIP file was not found."
 
             echo ""
             echo "ZIP files in repository:"
@@ -1006,7 +1006,7 @@ jobs:
       - name: Upload Corrected Source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: Majdoor-Hisaab-PRO-V82-PADDING-FIXED-SOURCE-ZIP
+          name: Majdoor-Hisaab-PRO-V82-PADDING-FIXED-V2-SOURCE-ZIP
           path: |
             ${{ steps.find_android.outputs.android_dir }}/final/${{ env.ZIP_NAME }}
           if-no-files-found: error
