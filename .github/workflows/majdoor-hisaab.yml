@@ -176,7 +176,7 @@ jobs:
       # 8. LOCATE SOURCE ZIP
       # ============================================================
 
-      - name: Locate Fixed V18 ZIP
+      - name: Locate Fixed V3 ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -229,7 +229,7 @@ jobs:
       # 10. EXTRACT PROJECT
       # ============================================================
 
-      - name: Extract Fixed V18 project
+      - name: Extract Fixed V3 project
         shell: bash
         run: |
           set -euo pipefail
@@ -316,10 +316,10 @@ jobs:
 
 
       # ============================================================
-      # 13. REPAIR KNOWN KOTLIN COMPILE ERROR
+      # 13. REPAIR KNOWN COMPOSE COMPILATION ERROR
       # ============================================================
 
-      - name: Repair known Kotlin compile error
+      - name: Repair known Compose compilation error
         shell: bash
         run: |
           set -euo pipefail
@@ -329,10 +329,15 @@ jobs:
           test -f "$MAIN"
 
           echo "================================================"
-          echo "CHECKING KNOWN KOTLIN COMPILE ERROR"
+          echo "REPAIRING KNOWN COMPOSE COMPILATION ERRORS"
           echo "================================================"
 
-          BROKEN_COUNT="$(
+          # --------------------------------------------------------
+          # FIX 1
+          # PaddingValues invalid named argument
+          # --------------------------------------------------------
+
+          BROKEN_PADDING="$(
             grep -F \
               'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
               "$MAIN" |
@@ -340,13 +345,69 @@ jobs:
             tr -d ' '
           )"
 
-          echo "Broken PaddingValues occurrences: $BROKEN_COUNT"
+          echo "Broken PaddingValues occurrences: $BROKEN_PADDING"
 
-          if [ "$BROKEN_COUNT" -gt 0 ]; then
+          if [ "$BROKEN_PADDING" -gt 0 ]; then
+            python3 -c '
+import sys
+from pathlib import Path
 
-            python3 -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); t=p.read_text(encoding="utf-8"); old="PaddingValues(horizontal=14.dp,bottom=16.dp)"; new="PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"; n=t.count(old); p.write_text(t.replace(old,new),encoding="utf-8"); print("Fixed occurrences:",n)' "$MAIN"
+p = Path(sys.argv[1])
+t = p.read_text(encoding="utf-8")
 
+old = "PaddingValues(horizontal=14.dp,bottom=16.dp)"
+new = "PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)"
+
+n = t.count(old)
+t = t.replace(old, new)
+
+p.write_text(t, encoding="utf-8")
+
+print("Fixed PaddingValues occurrences:", n)
+' "$MAIN"
           fi
+
+
+          # --------------------------------------------------------
+          # FIX 2
+          # Compose trailingIcon nested lambda
+          # --------------------------------------------------------
+
+          BROKEN_TRAILING="$(
+            grep -F \
+              'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
+              "$MAIN" |
+            wc -l |
+            tr -d ' '
+          )"
+
+          echo "Broken trailingIcon occurrences: $BROKEN_TRAILING"
+
+          if [ "$BROKEN_TRAILING" -gt 0 ]; then
+            python3 -c '
+import sys
+from pathlib import Path
+
+p = Path(sys.argv[1])
+t = p.read_text(encoding="utf-8")
+
+old = """trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}"""
+
+new = """trailingIcon={if(query.isNotBlank()){IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}} else null}"""
+
+n = t.count(old)
+t = t.replace(old, new)
+
+p.write_text(t, encoding="utf-8")
+
+print("Fixed trailingIcon occurrences:", n)
+' "$MAIN"
+          fi
+
+
+          # --------------------------------------------------------
+          # VERIFY FIXES
+          # --------------------------------------------------------
 
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
@@ -356,12 +417,22 @@ jobs:
             exit 1
           fi
 
-          echo "PaddingValues compile repair: PASS"
 
-          echo "Correct PaddingValues occurrences:"
-          grep -n \
-            'PaddingValues(start=14.dp,end=14.dp,bottom=16.dp)' \
-            "$MAIN" || true
+          if grep -Fq \
+            'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
+            "$MAIN"; then
+
+            echo "::error::Broken trailingIcon expression still exists."
+            exit 1
+          fi
+
+
+          echo "================================================"
+          echo "COMPOSE SOURCE REPAIR: PASS"
+          echo "================================================"
+
+          echo "PaddingValues repair: PASS"
+          echo "trailingIcon repair: PASS"
 
 
       # ============================================================
@@ -391,6 +462,7 @@ jobs:
 
           echo "Package: PASS"
 
+
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.runtime\.saveable\.rememberSaveable[[:space:]]*$' \
             "$MAIN"; then
@@ -400,6 +472,7 @@ jobs:
           fi
 
           echo "rememberSaveable import: PASS"
+
 
           REMEMBER_COUNT="$(
             grep -o \
@@ -417,6 +490,7 @@ jobs:
           echo "rememberSaveable usage: PASS"
           echo "rememberSaveable occurrences: $REMEMBER_COUNT"
 
+
           if ! grep -Eq \
             '^import[[:space:]]+androidx\.compose\.ui\.Alignment[[:space:]]*$' \
             "$MAIN"; then
@@ -426,6 +500,7 @@ jobs:
           fi
 
           echo "Alignment import: PASS"
+
 
           COLUMN_COUNT="$(
             grep -Eo \
@@ -443,6 +518,7 @@ jobs:
           echo "Column usage: PASS"
           echo "Column occurrences: $COLUMN_COUNT"
 
+
           if ! grep -Eq \
             'horizontalAlignment[[:space:]]*=[[:space:]]*Alignment\.End' \
             "$MAIN"; then
@@ -452,6 +528,7 @@ jobs:
           fi
 
           echo "Alignment.End: PASS"
+
 
           REQUIRED_SYMBOLS=(
             "fun validDate"
@@ -492,6 +569,7 @@ jobs:
 
           done
 
+
           if grep -Fq \
             'import androidx.compose.runtime.rememberSaveable' \
             "$MAIN"; then
@@ -502,6 +580,7 @@ jobs:
 
           echo "Wrong rememberSaveable import: NOT FOUND"
 
+
           if grep -Fq \
             'PaddingValues(horizontal=14.dp,bottom=16.dp)' \
             "$MAIN"; then
@@ -511,6 +590,18 @@ jobs:
           fi
 
           echo "PaddingValues fix: PASS"
+
+
+          if grep -Fq \
+            'trailingIcon={if(query.isNotBlank())({IconButton(onClick={query=""}){Icon(Icons.Default.Clear,null)}}) else null}' \
+            "$MAIN"; then
+
+            echo "::error::Broken trailingIcon still found."
+            exit 1
+          fi
+
+          echo "trailingIcon Compose fix: PASS"
+
 
           LINE_COUNT="$(
             wc -l < "$MAIN" |
@@ -1006,6 +1097,7 @@ jobs:
             "Source ZIP: ${ZIP_NAME}" \
             "" \
             "Known Kotlin PaddingValues fix: VERIFIED" \
+            "Compose trailingIcon fix: VERIFIED" \
             "Kotlin source audit: VERIFIED" \
             "Kotlin compile: VERIFIED BY GRADLE" \
             "Backup XML: VERIFIED" \
