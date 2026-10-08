@@ -33,13 +33,14 @@ env:
   # CORRECTED SOURCE ZIP
   # ============================================================
 
-  ZIP_NAME: "ZIP_NAME: "ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip"
 
   # ============================================================
-  # FINAL APK
+  # APK FILE NAMES
   # ============================================================
 
-  APK_SIGNED_NAME: "ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip"
+  APK_UNSIGNED_NAME: "unsigned-release.apk"
+  APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
   # ============================================================
   # EXPECTED PACKAGE
@@ -199,13 +200,13 @@ jobs:
       # 7. VERIFY CORRECTED SOURCE ZIP
       # ==========================================================
 
-      - name: Verify corrected V12 source ZIP
+      - name: Verify corrected source ZIP
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY V12 SOURCE ZIP"
+          echo "VERIFY SOURCE ZIP"
           echo "=============================================="
 
           echo ""
@@ -215,7 +216,7 @@ jobs:
           if [ ! -f "${ZIP_NAME}" ]; then
 
             echo ""
-            echo "ERROR: Required V12 ZIP was not found."
+            echo "ERROR: Required source ZIP was not found."
 
             echo ""
             echo "ZIP files available in repository:"
@@ -232,7 +233,7 @@ jobs:
           fi
 
           echo ""
-          echo "V12 SOURCE ZIP FOUND."
+          echo "SOURCE ZIP FOUND."
 
           ls -lh "${ZIP_NAME}"
 
@@ -254,16 +255,16 @@ jobs:
 
 
       # ==========================================================
-      # 9. EXTRACT V12 SOURCE ZIP
+      # 9. EXTRACT SOURCE ZIP
       # ==========================================================
 
-      - name: Extract V12 source ZIP
+      - name: Extract source ZIP
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "EXTRACT V12 SOURCE ZIP"
+          echo "EXTRACT SOURCE ZIP"
           echo "=============================================="
 
           unzip -q \
