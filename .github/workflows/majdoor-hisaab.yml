@@ -31,8 +31,7 @@ env:
 
   # ============================================================
   # FINAL SOURCE ZIP
-  # IMPORTANT:
-  # This exact ZIP must exist in repository root.
+  # MUST MATCH THE ZIP IN REPOSITORY ROOT
   # ============================================================
 
   ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip"
@@ -193,7 +192,7 @@ jobs:
 
 
       # ========================================================
-      # 7. VERIFY SOURCE ZIP
+      # 7. VERIFY FINAL SOURCE ZIP
       # ========================================================
 
       - name: Verify final source ZIP
@@ -211,8 +210,10 @@ jobs:
           if [ ! -f "${ZIP_NAME}" ]; then
             echo ""
             echo "ERROR: Final source ZIP was not found."
+
             echo ""
             echo "ZIP files available:"
+
             find . \
               -maxdepth 3 \
               -type f \
@@ -249,6 +250,7 @@ jobs:
 
           echo ""
           echo "SOURCE ZIP SHA256:"
+
           sha256sum "${ZIP_NAME}"
 
 
@@ -302,7 +304,7 @@ jobs:
 
 
       # ========================================================
-      # 11. LOCATE ANDROID PROJECT
+      # 11. LOCATE ANDROID GRADLE PROJECT
       # ========================================================
 
       - name: Locate Android Gradle project
@@ -359,7 +361,7 @@ jobs:
 
 
       # ========================================================
-      # 12. INSPECT PROJECT
+      # 12. INSPECT ANDROID PROJECT
       # ========================================================
 
       - name: Inspect Android project
@@ -376,6 +378,7 @@ jobs:
 
           echo ""
           echo "Gradle wrapper:"
+
           ls -la ./gradlew
 
           echo ""
@@ -437,7 +440,11 @@ jobs:
               f"distributions/gradle-{version}-bin.zip"
           )
 
-          if re.search(r"^distributionUrl=.*$", text, flags=re.MULTILINE):
+          if re.search(
+              r"^distributionUrl=.*$",
+              text,
+              flags=re.MULTILINE
+          ):
               text = re.sub(
                   r"^distributionUrl=.*$",
                   new_url,
@@ -447,6 +454,7 @@ jobs:
           else:
               if not text.endswith("\n"):
                   text += "\n"
+
               text += new_url + "\n"
 
           file.write_text(text)
@@ -454,6 +462,7 @@ jobs:
 
           echo ""
           echo "Final wrapper configuration:"
+
           cat "${WRAPPER_FILE}"
 
 
@@ -501,7 +510,7 @@ jobs:
 
 
       # ========================================================
-      # 15. CLEAN
+      # 15. GRADLE CLEAN
       # ========================================================
 
       - name: Gradle clean
@@ -585,15 +594,23 @@ jobs:
               -type f \
               -path "*/build/outputs/apk/release/*.apk" \
               -not -name "*-androidTest*" \
+              -not -name "*unsigned*" \
               | sort
           )
 
           echo "Release APK candidates:"
+
           printf '%s\n' "${APKS[@]}"
 
           if [ "${#APKS[@]}" -lt 1 ]; then
             echo ""
-            echo "ERROR: No Release APK found."
+            echo "ERROR: No signed/normal Release APK found."
+
+            find . \
+              -type f \
+              -name "*.apk" \
+              -print || true
+
             exit 1
           fi
 
@@ -607,7 +624,7 @@ jobs:
 
 
       # ========================================================
-      # 19. PREPARE FINAL DIRECTORY
+      # 19. PREPARE FINAL APK DIRECTORY
       # ========================================================
 
       - name: Prepare final APK directory
@@ -628,11 +645,12 @@ jobs:
 
           echo ""
           echo "Generated APK:"
+
           ls -lh "final/${APK_UNSIGNED_NAME}"
 
 
       # ========================================================
-      # 20. VERIFY PACKAGE NAME
+      # 20. VERIFY APK PACKAGE NAME
       # ========================================================
 
       - name: Verify APK package name
@@ -642,6 +660,7 @@ jobs:
           set -euo pipefail
 
           AAPT="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/aapt"
+
           APK="final/${APK_UNSIGNED_NAME}"
 
           echo "=============================================="
@@ -655,6 +674,7 @@ jobs:
             head -1
           )"
 
+          echo ""
           echo "Expected:"
           echo "${EXPECTED_PACKAGE}"
 
@@ -685,6 +705,7 @@ jobs:
           ZIPALIGN="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/zipalign"
 
           INPUT_APK="final/${APK_UNSIGNED_NAME}"
+
           ALIGNED_APK="final/${APK_ALIGNED_NAME}"
 
           echo "=============================================="
@@ -716,7 +737,6 @@ jobs:
 
       - name: Prepare signing key
         working-directory: ${{ steps.find_android.outputs.android_dir }}
-        shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.MAJDOOR_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.MAJDOOR_KEYSTORE_PASSWORD }}
@@ -726,13 +746,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=============================================="
+          echo "PREPARE SIGNING KEY"
+          echo "=============================================="
+
           mkdir -p signing
 
           KEYSTORE="signing/majdoor-hisaab-release.jks"
-
-          # ----------------------------------------------------
-          # Permanent keystore configured
-          # ----------------------------------------------------
 
           if [ -n "${KEYSTORE_B64:-}" ]; then
 
@@ -755,10 +775,6 @@ jobs:
 
             printf '%s' "${KEYSTORE_B64}" \
               | base64 --decode > "${KEYSTORE}"
-
-          # ----------------------------------------------------
-          # No permanent keystore configured
-          # ----------------------------------------------------
 
           else
 
@@ -789,7 +805,7 @@ jobs:
 
 
       # ========================================================
-      # 23. SIGN APK
+      # 23. SIGN RELEASE APK
       # ========================================================
 
       - name: Sign Release APK
@@ -803,17 +819,34 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=============================================="
+          echo "SIGNING APK"
+          echo "=============================================="
+
           APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner"
 
           KEYSTORE="signing/majdoor-hisaab-release.jks"
+
           ALIGNED_APK="final/${APK_ALIGNED_NAME}"
+
           SIGNED_APK="final/${APK_SIGNED_NAME}"
 
           if [ -n "${KEYSTORE_B64:-}" ]; then
 
-            test -n "${KEYSTORE_PASSWORD:-}"
-            test -n "${KEY_PASSWORD:-}"
-            test -n "${KEY_ALIAS:-}"
+            if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+              echo "ERROR: MAJDOOR_KEYSTORE_PASSWORD is missing."
+              exit 1
+            fi
+
+            if [ -z "${KEY_PASSWORD:-}" ]; then
+              echo "ERROR: MAJDOOR_KEY_PASSWORD is missing."
+              exit 1
+            fi
+
+            if [ -z "${KEY_ALIAS:-}" ]; then
+              echo "ERROR: MAJDOOR_KEY_ALIAS is missing."
+              exit 1
+            fi
 
           else
 
@@ -822,10 +855,6 @@ jobs:
             KEY_ALIAS="majdoor-hisaab"
 
           fi
-
-          echo "=============================================="
-          echo "SIGNING APK"
-          echo "=============================================="
 
           "${APKSIGNER}" sign \
             --ks "${KEYSTORE}" \
@@ -870,7 +899,7 @@ jobs:
 
 
       # ========================================================
-      # 25. VERIFY FINAL APK PACKAGE + VERSION
+      # 25. FINAL APK VALIDATION
       # ========================================================
 
       - name: Final APK validation
@@ -879,14 +908,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          AAPT="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/aapt"
-          APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner"
-
-          SIGNED_APK="final/${APK_SIGNED_NAME}"
-
           echo "=============================================="
           echo "FINAL APK VALIDATION"
           echo "=============================================="
+
+          AAPT="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/aapt"
+
+          APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner"
+
+          SIGNED_APK="final/${APK_SIGNED_NAME}"
 
           test -s "${SIGNED_APK}"
 
@@ -894,7 +924,9 @@ jobs:
           echo "APK:"
           ls -lh "${SIGNED_APK}"
 
-          BADGING="$("${AAPT}" dump badging "${SIGNED_APK}")"
+          BADGING="$(
+            "${AAPT}" dump badging "${SIGNED_APK}"
+          )"
 
           PACKAGE_NAME="$(
             printf '%s\n' "${BADGING}" |
@@ -936,13 +968,15 @@ jobs:
           fi
 
           echo ""
-          echo "Signature:"
+          echo "Signature verification:"
+
           "${APKSIGNER}" verify \
             --verbose \
             "${SIGNED_APK}"
 
           echo ""
           echo "SHA256:"
+
           sha256sum "${SIGNED_APK}"
 
           echo ""
@@ -950,7 +984,7 @@ jobs:
 
 
       # ========================================================
-      # 26. VERIFY ZIPALIGN
+      # 26. FINAL ZIPALIGN VERIFICATION
       # ========================================================
 
       - name: Final zipalign verification
@@ -978,7 +1012,7 @@ jobs:
 
 
       # ========================================================
-      # 27. VERIFY FINAL OUTPUT
+      # 27. VERIFY FINAL APK FILES
       # ========================================================
 
       - name: Verify final APK output
@@ -992,7 +1026,9 @@ jobs:
           echo "=============================================="
 
           test -s "final/${APK_UNSIGNED_NAME}"
+
           test -s "final/${APK_ALIGNED_NAME}"
+
           test -s "final/${APK_SIGNED_NAME}"
 
           echo ""
@@ -1002,6 +1038,7 @@ jobs:
 
           echo ""
           echo "Final signed APK:"
+
           ls -lh "final/${APK_SIGNED_NAME}"
 
           echo ""
@@ -1009,15 +1046,14 @@ jobs:
 
 
       # ========================================================
-      # 28. UPLOAD ONLY SIGNED APK
+      # 28. UPLOAD ONLY MAIN SIGNED APK
       # ========================================================
 
       - name: Upload Main Final Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: Majdoor-Hisaab-PRO-V82-FINAL-SIGNED-APK
-          path: |
-            ${{ steps.find_android.outputs.android_dir }}/final/${{ env.APK_SIGNED_NAME }}
+          path: ${{ steps.find_android.outputs.android_dir }}/final/${{ env.APK_SIGNED_NAME }}
           if-no-files-found: error
           retention-days: 30
 
@@ -1034,7 +1070,7 @@ jobs:
 
           echo ""
           echo "======================================================"
-          echo "       MAJDOOR HISAAAB PRO V82 - SUCCESS"
+          echo "       MAJDOOR HISAAB PRO V82 - SUCCESS"
           echo "======================================================"
           echo ""
 
