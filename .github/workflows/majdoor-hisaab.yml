@@ -33,13 +33,12 @@ env:
   # CORRECTED SOURCE ZIP
   # ============================================================
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_V12.zip"
+  ZIP_NAME: "ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip""
 
   # ============================================================
   # FINAL APK
   # ============================================================
 
-  APK_UNSIGNED_NAME: "Majdoor-Hisaab-PRO-V82-ALIGNED-UNSIGNED.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
   # ============================================================
