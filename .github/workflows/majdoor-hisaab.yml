@@ -34,7 +34,7 @@ env:
   # MUST EXIST IN REPOSITORY ROOT
   # ============================================================
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_GITHUB_READY_FINAL.zip"
 
   # ============================================================
   # APK FILE NAMES
