@@ -30,7 +30,7 @@ env:
   BUILD_TOOLS: "36.0.0"
 
   # ============================================================
-  # CORRECTED SOURCE ZIP
+  # FINAL SOURCE ZIP
   # ============================================================
 
   ZIP_NAME: "Majdoor_Hisaab_PRO_V82_ALL_POINTS_FIXED_FINAL.zip"
@@ -40,6 +40,7 @@ env:
   # ============================================================
 
   APK_UNSIGNED_NAME: "unsigned-release.apk"
+  APK_ALIGNED_NAME: "aligned-release.apk"
   APK_SIGNED_NAME: "Majdoor-Hisaab-PRO-V82-FINAL-SIGNED.apk"
 
   # ============================================================
@@ -137,7 +138,8 @@ jobs:
           echo "API LEVEL   : ${ANDROID_API}"
           echo "BUILD TOOLS : ${BUILD_TOOLS}"
 
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" \
+          sdkmanager \
+            --sdk_root="${ANDROID_SDK_ROOT}" \
             "platform-tools" \
             "platforms;android-${ANDROID_API}" \
             "build-tools;${BUILD_TOOLS}"
@@ -197,29 +199,29 @@ jobs:
 
 
       # ==========================================================
-      # 7. VERIFY CORRECTED SOURCE ZIP
+      # 7. VERIFY FINAL SOURCE ZIP EXISTS
       # ==========================================================
 
-      - name: Verify corrected source ZIP
+      - name: Verify final source ZIP
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY SOURCE ZIP"
+          echo "VERIFY FINAL SOURCE ZIP"
           echo "=============================================="
 
           echo ""
-          echo "Required ZIP:"
+          echo "Expected ZIP:"
           echo "${ZIP_NAME}"
 
           if [ ! -f "${ZIP_NAME}" ]; then
 
             echo ""
-            echo "ERROR: Required source ZIP was not found."
+            echo "ERROR: Final source ZIP was not found."
 
             echo ""
-            echo "ZIP files available in repository:"
+            echo "ZIP files available:"
 
             find . \
               -maxdepth 3 \
@@ -239,7 +241,31 @@ jobs:
 
 
       # ==========================================================
-      # 8. PREPARE BUILD DIRECTORY
+      # 8. VERIFY ZIP INTEGRITY
+      # ==========================================================
+
+      - name: Verify source ZIP integrity
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY ZIP INTEGRITY"
+          echo "=============================================="
+
+          unzip -t "${ZIP_NAME}"
+
+          echo ""
+          echo "ZIP integrity PASSED."
+
+          echo ""
+          echo "SOURCE ZIP SHA256:"
+
+          sha256sum "${ZIP_NAME}"
+
+
+      # ==========================================================
+      # 9. PREPARE BUILD DIRECTORY
       # ==========================================================
 
       - name: Prepare build directory
@@ -255,7 +281,7 @@ jobs:
 
 
       # ==========================================================
-      # 9. EXTRACT SOURCE ZIP
+      # 10. EXTRACT SOURCE ZIP
       # ==========================================================
 
       - name: Extract source ZIP
@@ -288,7 +314,7 @@ jobs:
 
 
       # ==========================================================
-      # 10. LOCATE ANDROID PROJECT
+      # 11. LOCATE ANDROID PROJECT
       # ==========================================================
 
       - name: Locate Android Gradle project
@@ -350,7 +376,61 @@ jobs:
 
 
       # ==========================================================
-      # 11. INSPECT ANDROID PROJECT
+      # 12. VERIFY ZIP INTERNAL WORKFLOW NAME
+      # ==========================================================
+
+      - name: Verify internal workflow ZIP name
+        working-directory: ${{ steps.find_android.outputs.android_dir }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY INTERNAL WORKFLOW"
+          echo "=============================================="
+
+          WORKFLOW_FILE=".github/workflows/majdoor-hisaab.yml"
+
+          if [ ! -f "$WORKFLOW_FILE" ]; then
+
+            echo ""
+            echo "WARNING: Internal workflow file not found."
+
+          else
+
+            echo ""
+            echo "Checking internal ZIP_NAME..."
+
+            INTERNAL_ZIP_NAME="$(
+              sed -n \
+                's/^[[:space:]]*ZIP_NAME:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                "$WORKFLOW_FILE" \
+                | head -1
+            )"
+
+            echo "Expected:"
+            echo "${ZIP_NAME}"
+
+            echo "Found:"
+            echo "${INTERNAL_ZIP_NAME}"
+
+            if [ "$INTERNAL_ZIP_NAME" != "${ZIP_NAME}" ]; then
+
+              echo ""
+              echo "ERROR: ZIP filename mismatch inside source ZIP."
+
+              exit 1
+
+            fi
+
+            echo ""
+            echo "Internal ZIP filename VERIFIED."
+
+          fi
+
+
+      # ==========================================================
+      # 13. INSPECT ANDROID PROJECT
       # ==========================================================
 
       - name: Inspect Android project
@@ -373,9 +453,15 @@ jobs:
           echo "Gradle wrapper properties:"
 
           if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+
             cat gradle/wrapper/gradle-wrapper.properties
+
           else
-            echo "WARNING: gradle-wrapper.properties not found."
+
+            echo "ERROR: gradle-wrapper.properties not found."
+
+            exit 1
+
           fi
 
           echo ""
@@ -397,7 +483,7 @@ jobs:
 
 
       # ==========================================================
-      # 12. FORCE GRADLE 8.11.1
+      # 14. FORCE GRADLE 8.11.1
       # ==========================================================
 
       - name: Enforce Gradle 8.11.1
@@ -413,13 +499,17 @@ jobs:
           WRAPPER_FILE="gradle/wrapper/gradle-wrapper.properties"
 
           if [ ! -f "$WRAPPER_FILE" ]; then
+
             echo ""
             echo "ERROR: gradle-wrapper.properties not found."
+
             exit 1
+
           fi
 
           echo ""
           echo "Before update:"
+
           cat "$WRAPPER_FILE"
 
           python3 - "$WRAPPER_FILE" "${GRADLE_VERSION}" <<'PY'
@@ -452,37 +542,58 @@ jobs:
 
           echo ""
           echo "After update:"
+
           cat "$WRAPPER_FILE"
 
 
       # ==========================================================
-      # 13. VERIFY GRADLE
+      # 15. VERIFY GRADLE 8.11.1
       # ==========================================================
 
-      - name: Verify Gradle
+      - name: Verify Gradle version
         working-directory: ${{ steps.find_android.outputs.android_dir }}
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "GRADLE VERIFICATION"
+          echo "GRADLE VERSION VERIFICATION"
           echo "=============================================="
 
           chmod +x ./gradlew
 
           ./gradlew --version
 
+          ACTUAL_GRADLE_VERSION="$(
+            ./gradlew --version \
+              | sed -n \
+                's/^Gradle \([0-9.]*\).*/\1/p' \
+              | head -1
+          )"
+
           echo ""
-          echo "Expected Gradle:"
+          echo "Expected:"
           echo "${GRADLE_VERSION}"
 
           echo ""
-          echo "Gradle verification completed."
+          echo "Found:"
+          echo "${ACTUAL_GRADLE_VERSION}"
+
+          if [ "$ACTUAL_GRADLE_VERSION" != "${GRADLE_VERSION}" ]; then
+
+            echo ""
+            echo "ERROR: Gradle version mismatch."
+
+            exit 1
+
+          fi
+
+          echo ""
+          echo "Gradle ${GRADLE_VERSION} VERIFIED."
 
 
       # ==========================================================
-      # 14. GRADLE CLEAN
+      # 16. GRADLE CLEAN
       # ==========================================================
 
       - name: Gradle clean
@@ -497,7 +608,7 @@ jobs:
 
 
       # ==========================================================
-      # 15. COMPILE RELEASE KOTLIN
+      # 17. COMPILE RELEASE KOTLIN
       # ==========================================================
 
       - name: Compile Release Kotlin
@@ -515,9 +626,14 @@ jobs:
             --stacktrace \
             --warning-mode all
 
+          echo ""
+          echo "=============================================="
+          echo "RELEASE KOTLIN COMPILE PASSED"
+          echo "=============================================="
+
 
       # ==========================================================
-      # 16. ASSEMBLE RELEASE APK
+      # 18. ASSEMBLE RELEASE APK
       # ==========================================================
 
       - name: Assemble Release APK
@@ -543,9 +659,12 @@ jobs:
             -path "*/build/outputs/apk/release/*.apk" \
             -print
 
+          echo ""
+          echo "RELEASE APK ASSEMBLY PASSED."
+
 
       # ==========================================================
-      # 17. LOCATE GENERATED APK
+      # 19. LOCATE GENERATED APK
       # ==========================================================
 
       - name: Locate generated Release APK
@@ -554,6 +673,30 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          APK_COUNT="$(
+            find . \
+              -type f \
+              -path "*/build/outputs/apk/release/*.apk" \
+              | wc -l
+          )"
+
+          echo "Release APK count:"
+          echo "$APK_COUNT"
+
+          if [ "$APK_COUNT" -lt 1 ]; then
+
+            echo ""
+            echo "ERROR: No Release APK found."
+
+            find . \
+              -type f \
+              -name "*.apk" \
+              -print || true
+
+            exit 1
+
+          fi
 
           APK="$(
             find . \
@@ -576,12 +719,7 @@ jobs:
 
           if [ -z "$APK" ]; then
 
-            echo "ERROR: Release APK not found."
-
-            find . \
-              -type f \
-              -name "*.apk" \
-              -print || true
+            echo "ERROR: Release APK could not be located."
 
             exit 1
 
@@ -596,7 +734,7 @@ jobs:
 
 
       # ==========================================================
-      # 18. PREPARE FINAL APK
+      # 20. PREPARE FINAL APK
       # ==========================================================
 
       - name: Prepare final APK
@@ -621,7 +759,7 @@ jobs:
 
 
       # ==========================================================
-      # 19. VERIFY PACKAGE NAME
+      # 21. VERIFY APK PACKAGE NAME
       # ==========================================================
 
       - name: Verify APK package name
@@ -638,7 +776,7 @@ jobs:
           echo "VERIFY APK PACKAGE"
           echo "=============================================="
 
-          test -f "$APK"
+          test -s "$APK"
 
           PACKAGE_NAME="$(
             "$AAPT" dump badging "$APK" |
@@ -655,7 +793,7 @@ jobs:
           echo "Found:"
           echo "${PACKAGE_NAME}"
 
-          if [ "$PACKAGE_NAME" != "$EXPECTED_PACKAGE" ]; then
+          if [ "$PACKAGE_NAME" != "${EXPECTED_PACKAGE}" ]; then
 
             echo ""
             echo "ERROR: Package name mismatch."
@@ -669,7 +807,7 @@ jobs:
 
 
       # ==========================================================
-      # 20. ZIPALIGN
+      # 22. ZIPALIGN
       # ==========================================================
 
       - name: Zipalign Release APK
@@ -682,7 +820,7 @@ jobs:
 
           INPUT_APK="final/${APK_UNSIGNED_NAME}"
 
-          ALIGNED_APK="final/aligned-release.apk"
+          ALIGNED_APK="final/${APK_ALIGNED_NAME}"
 
           echo "=============================================="
           echo "ZIPALIGN APK"
@@ -701,12 +839,14 @@ jobs:
             -v 4 \
             "$ALIGNED_APK"
 
+          test -s "$ALIGNED_APK"
+
           echo ""
           echo "ZIPALIGN VERIFIED."
 
 
       # ==========================================================
-      # 21. PREPARE SIGNING KEY
+      # 23. PREPARE SIGNING KEY
       # ==========================================================
 
       - name: Prepare signing key
@@ -748,14 +888,14 @@ jobs:
 
           fi
 
-          test -f "$KEYSTORE"
+          test -s "$KEYSTORE"
 
           echo ""
           echo "Signing key ready."
 
 
       # ==========================================================
-      # 22. SIGN APK
+      # 24. SIGN RELEASE APK
       # ==========================================================
 
       - name: Sign Release APK
@@ -772,7 +912,7 @@ jobs:
 
           KEYSTORE="signing/majdoor-hisaab-release.jks"
 
-          ALIGNED_APK="final/aligned-release.apk"
+          ALIGNED_APK="final/${APK_ALIGNED_NAME}"
 
           SIGNED_APK="final/${APK_SIGNED_NAME}"
 
@@ -800,7 +940,7 @@ jobs:
             --out "$SIGNED_APK" \
             "$ALIGNED_APK"
 
-          test -f "$SIGNED_APK"
+          test -s "$SIGNED_APK"
 
           echo ""
           echo "SIGNED APK CREATED."
@@ -809,7 +949,7 @@ jobs:
 
 
       # ==========================================================
-      # 23. VERIFY APK SIGNATURE
+      # 25. VERIFY APK SIGNATURE
       # ==========================================================
 
       - name: Verify APK signature
@@ -835,7 +975,7 @@ jobs:
 
 
       # ==========================================================
-      # 24. FINAL APK VALIDATION
+      # 26. FINAL APK VALIDATION
       # ==========================================================
 
       - name: Final APK validation
@@ -854,7 +994,7 @@ jobs:
           echo "FINAL APK VALIDATION"
           echo "=============================================="
 
-          test -f "$SIGNED_APK"
+          test -s "$SIGNED_APK"
 
           echo ""
           echo "APK:"
@@ -863,7 +1003,23 @@ jobs:
           echo ""
           echo "Package:"
 
-          "$AAPT" dump badging "$SIGNED_APK" | head -1
+          PACKAGE_NAME="$(
+            "$AAPT" dump badging "$SIGNED_APK" |
+            sed -n \
+              "s/^package: name='\([^']*\)'.*/\1/p" |
+            head -1
+          )"
+
+          echo "$PACKAGE_NAME"
+
+          if [ "$PACKAGE_NAME" != "${EXPECTED_PACKAGE}" ]; then
+
+            echo ""
+            echo "ERROR: Final APK package mismatch."
+
+            exit 1
+
+          fi
 
           echo ""
           echo "Signature:"
@@ -882,7 +1038,60 @@ jobs:
 
 
       # ==========================================================
-      # 25. UPLOAD ONLY ONE MAIN APK
+      # 27. VERIFY ONLY ONE FINAL APK
+      # ==========================================================
+
+      - name: Verify final APK output
+        working-directory: ${{ steps.find_android.outputs.android_dir }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY FINAL APK OUTPUT"
+          echo "=============================================="
+
+          APK_FILES="$(
+            find final \
+              -maxdepth 1 \
+              -type f \
+              -name "*.apk" \
+              -printf "%f\n" \
+              | sort
+          )"
+
+          echo ""
+          echo "APK files in final directory:"
+          echo "$APK_FILES"
+
+          FINAL_COUNT="$(
+            printf '%s\n' "$APK_FILES" \
+              | grep -c '\.apk$' \
+              || true
+          )"
+
+          if [ "$FINAL_COUNT" -ne 3 ]; then
+
+            echo ""
+            echo "ERROR: Unexpected APK count in final directory."
+
+            echo "Expected internal build files:"
+            echo "  unsigned-release.apk"
+            echo "  aligned-release.apk"
+            echo "  ${APK_SIGNED_NAME}"
+
+            exit 1
+
+          fi
+
+          test -s "final/${APK_SIGNED_NAME}"
+
+          echo ""
+          echo "Final APK output VERIFIED."
+
+
+      # ==========================================================
+      # 28. UPLOAD ONLY ONE MAIN SIGNED APK
       # ==========================================================
 
       - name: Upload Main Final Signed APK
@@ -896,7 +1105,7 @@ jobs:
 
 
       # ==========================================================
-      # 26. FINAL SUCCESS
+      # 29. FINAL SUCCESS
       # ==========================================================
 
       - name: Final success check
@@ -907,39 +1116,62 @@ jobs:
 
           echo ""
           echo "======================================================"
-          echo "     MAJDOOR HISAAAB PRO V82 - SUCCESS"
+          echo "       MAJDOOR HISAAAB PRO V82 - SUCCESS"
           echo "======================================================"
           echo ""
-          echo "SOURCE:"
+
+          echo "SOURCE ZIP:"
           echo "  ${ZIP_NAME}"
           echo ""
+
           echo "FINAL APK:"
           echo "  ${APK_SIGNED_NAME}"
           echo ""
+
           echo "PACKAGE:"
           echo "  ${EXPECTED_PACKAGE}"
           echo ""
+
           echo "ANDROID API:"
           echo "  ${ANDROID_API}"
           echo ""
+
           echo "BUILD TOOLS:"
           echo "  ${BUILD_TOOLS}"
           echo ""
+
           echo "JAVA:"
           echo "  ${JAVA_VERSION}"
           echo ""
+
           echo "GRADLE:"
           echo "  ${GRADLE_VERSION}"
           echo ""
+
+          echo "KOTLIN:"
+          echo "  COMPILE PASSED"
+          echo ""
+
+          echo "APK:"
+          echo "  ASSEMBLE PASSED"
+          echo ""
+
           echo "ZIPALIGN:"
           echo "  VERIFIED"
           echo ""
+
           echo "SIGNATURE:"
           echo "  VERIFIED"
           echo ""
+
           echo "PACKAGE:"
           echo "  VERIFIED"
           echo ""
+
+          echo "ARTIFACT:"
+          echo "  ONLY ONE MAIN SIGNED APK"
+          echo ""
+
           echo "======================================================"
-          echo "ONLY ONE MAIN FINAL SIGNED APK GENERATED"
+          echo "       FINAL RELEASE BUILD PASSED"
           echo "======================================================"
