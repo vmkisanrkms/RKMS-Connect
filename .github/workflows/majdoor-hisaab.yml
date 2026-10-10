@@ -20,7 +20,7 @@ env:
   ANDROID_API: "36"
   BUILD_TOOLS: "36.0.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_JOINT_REPORT_MONTH_LOCK_FIXED_V2_20261010.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_V82_DAILY_LABOUR_STATIC_CHECK_FIXED_20261010.zip"
 
   APK_UNSIGNED_NAME: "unsigned-release.apk"
   APK_ALIGNED_NAME: "aligned-release.apk"
