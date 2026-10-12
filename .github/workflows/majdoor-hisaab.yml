@@ -20,7 +20,7 @@ env:
   ANDROID_API: "36"
   BUILD_TOOLS: "36.0.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_PHASE41_KOTLIN_COMPILE_ERRORS_FIXED_20261012.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_PHASE45_FINAL_KOTLIN_WORKFLOW_FIXED_20261012.zip"
 
   APK_UNSIGNED_NAME: "unsigned-release.apk"
   APK_ALIGNED_NAME: "aligned-release.apk"
