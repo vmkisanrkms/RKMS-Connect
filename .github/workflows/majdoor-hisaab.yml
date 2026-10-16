@@ -20,7 +20,7 @@ env:
   ANDROID_API: "36"
   BUILD_TOOLS: "36.0.0"
 
-  ZIP_NAME: "Majdoor_Hisaab_PRO_HOME_DASHBOARD_FIX_V4_20261013.zip"
+  ZIP_NAME: "Majdoor_Hisaab_PRO_10_DAY_WORKERWISE_PDF_FIX_V2.zip"
 
   APK_UNSIGNED_NAME: "unsigned-release.apk"
   APK_ALIGNED_NAME: "aligned-release.apk"
